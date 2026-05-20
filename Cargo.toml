@@ -1,10 +1,13 @@
 [package]
-name = "pipa"
+name = "pipa-js"
 version = "0.1.1"
 edition = "2024"
 authors = ["jinti<shenjindi@fourz.cn>"]
 license = "MIT"
 description = "A fast, minimal ES2023 JavaScript runtime built in Rust."
+
+[lib]
+name = "pipa"
 
 [features]
 default = [

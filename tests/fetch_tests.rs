@@ -783,7 +783,7 @@ fn test_connection_tls_handshake() {
     let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
         .unwrap();
 
-    let mut conn = rx.recv().expect("TLS connection failed");
+    let conn = rx.recv().expect("TLS connection failed");
     assert!(
         conn.is_ok(),
         "TLS connection error: {:?}",
@@ -815,10 +815,7 @@ fn test_connection_plain_connect() {
 }
 
 fn compile_and_run_js(js_code: &str) -> Result<String, String> {
-    use pipa::compiler::codegen::OptLevel;
-    use pipa::runtime::context::JSContext;
     use pipa::runtime::runtime::JSRuntime;
-
     let mut runtime = JSRuntime::new();
     let mut ctx = runtime.new_context();
 
