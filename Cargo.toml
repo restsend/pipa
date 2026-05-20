@@ -1,0 +1,42 @@
+[package]
+name = "pipa"
+version = "0.1.1"
+edition = "2024"
+authors = ["jinti<shenjindi@fourz.cn>"]
+license = "MIT"
+description = "A fast, minimal ES2023 JavaScript runtime built in Rust."
+
+[features]
+default = [
+    "repl",
+] # bin defaults to REPL; library users: use `default-features = false` to opt out
+full_runtime_tests = []
+fetch = ["rustls", "webpki-roots", "flate2", "libc"]
+process = []
+repl = ["fetch", "process", "rustyline"]
+
+[dependencies]
+libc = { version = "0.2", optional = true }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "tls12",
+    "std",
+], optional = true }
+webpki-roots = { version = "1.0.7", optional = true }
+flate2 = { version = "1.1", default-features = false, features = [
+    "rust_backend",
+], optional = true }
+rustyline = { version = "18", optional = true }
+
+[dev-dependencies]
+serde_yaml = "0.9"
+
+[[bin]]
+name = "pipa"
+path = "bin/pipa.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -1,0 +1,2 @@
+// Using parentheses
+(/abc/).source

@@ -1,0 +1,352 @@
+use crate::object::array_obj::JSArrayObject;
+use crate::object::object::JSObject;
+use crate::runtime::context::JSContext;
+use crate::value::JSValue;
+
+pub fn json_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_string() {
+        return JSValue::undefined();
+    }
+
+    let atom = args[0].get_atom();
+    let s = ctx.get_atom_str(atom).to_string();
+
+    match super::json_parser::JsonParser::new(&s).parse_value(ctx) {
+        Ok(v) => v,
+        Err(_) => JSValue::undefined(),
+    }
+}
+
+pub fn json_stringify(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
+        return JSValue::undefined();
+    }
+
+    let value = &args[0];
+    let replacer = args.get(1);
+    let space = args.get(2);
+
+    let json_str = jsvalue_to_json_with_options(ctx, value, replacer, space, &mut Vec::new());
+
+    JSValue::new_string(ctx.intern(&json_str))
+}
+
+fn jsvalue_to_json_with_options(
+    ctx: &mut JSContext,
+    value: &JSValue,
+    replacer: Option<&JSValue>,
+    space: Option<&JSValue>,
+    seen: &mut Vec<usize>,
+) -> String {
+    let processed_value = if let Some(repl) = replacer {
+        if repl.is_function() {
+            let vm_ptr = ctx.get_register_vm_ptr();
+            if let Some(ptr) = vm_ptr {
+                let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                let args = vec![JSValue::new_string(ctx.intern("")), *value];
+                if let Ok(result) = vm.call_function(ctx, *repl, &args) {
+                    result
+                } else {
+                    *value
+                }
+            } else {
+                *value
+            }
+        } else {
+            *value
+        }
+    } else {
+        *value
+    };
+
+    let base_json = jsvalue_to_json_internal(ctx, &processed_value, replacer, seen);
+
+    if let Some(sp) = space {
+        let indent = get_indent_string_with_ctx(ctx, sp);
+        if !indent.is_empty() {
+            return format_json(&base_json, &indent);
+        }
+    }
+
+    base_json
+}
+
+fn get_indent_string_with_ctx(ctx: &mut JSContext, space: &JSValue) -> String {
+    if space.is_int() {
+        let n = space.get_int().min(10).max(0) as usize;
+        " ".repeat(n)
+    } else if space.is_string() {
+        let atom = space.get_atom();
+        let s_str = ctx.get_atom_str(atom).to_string();
+        s_str.chars().take(10).collect()
+    } else {
+        String::new()
+    }
+}
+
+fn format_json(json: &str, indent: &str) -> String {
+    let mut result = String::new();
+    let mut level = 0;
+    let mut in_string = false;
+    let mut escape = false;
+    let chars: Vec<char> = json.chars().collect();
+
+    for i in 0..chars.len() {
+        let c = chars[i];
+
+        if escape {
+            escape = false;
+            result.push(c);
+            continue;
+        }
+
+        if c == '\\' && in_string {
+            escape = true;
+            result.push(c);
+            continue;
+        }
+
+        if c == '"' {
+            in_string = !in_string;
+            result.push(c);
+            continue;
+        }
+
+        if in_string {
+            result.push(c);
+            continue;
+        }
+
+        match c {
+            '{' | '[' => {
+                result.push(c);
+                level += 1;
+                result.push('\n');
+                result.push_str(&indent.repeat(level));
+            }
+            '}' | ']' => {
+                level = level.saturating_sub(1);
+                result.push('\n');
+                result.push_str(&indent.repeat(level));
+                result.push(c);
+            }
+            ',' => {
+                result.push(c);
+                result.push('\n');
+                result.push_str(&indent.repeat(level));
+            }
+            ':' => {
+                result.push(c);
+                result.push(' ');
+            }
+            _ => {
+                result.push(c);
+            }
+        }
+    }
+
+    result
+}
+
+fn jsvalue_to_json_internal(
+    ctx: &mut JSContext,
+    value: &JSValue,
+    replacer: Option<&JSValue>,
+    seen: &mut Vec<usize>,
+) -> String {
+    if value.is_null() {
+        return "null".to_string();
+    }
+    if value.is_bool() {
+        return value.get_bool().to_string();
+    }
+    if value.is_int() {
+        return value.get_int().to_string();
+    }
+    if value.is_float() {
+        let f = value.get_float();
+        if f.is_nan() || f.is_infinite() {
+            return "null".to_string();
+        }
+        return f.to_string();
+    }
+    if value.is_string() {
+        let atom = value.get_atom();
+        let s = ctx.get_atom_str(atom);
+
+        let escaped = s
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        return format!("\"{}\"", escaped);
+    }
+    if value.is_undefined() || value.is_function() || value.is_symbol() {
+        return "null".to_string();
+    }
+
+    if value.is_object() {
+        let ptr = value.get_ptr() as usize;
+
+        if seen.contains(&ptr) {
+            return "null".to_string();
+        }
+        seen.push(ptr);
+
+        let obj = value.as_object();
+
+        if obj.is_array() {
+            let result = array_to_json(ctx, obj, replacer, seen);
+            seen.pop();
+            return result;
+        } else {
+            let result = object_to_json(ctx, obj, replacer, seen);
+            seen.pop();
+            return result;
+        }
+    }
+
+    "null".to_string()
+}
+
+fn array_to_json(
+    ctx: &mut JSContext,
+    arr: &JSObject,
+    replacer: Option<&JSValue>,
+    seen: &mut Vec<usize>,
+) -> String {
+    let len_atom = ctx.common_atoms.length;
+    let len = arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0);
+
+    let mut elements = Vec::new();
+    let arr_ptr = arr as *const JSObject as usize;
+    let is_jsarray = arr.is_dense_array();
+    for i in 0..len {
+        let val = if is_jsarray {
+            unsafe { &*(arr_ptr as *const JSArrayObject) }.get(i)
+        } else if let Some(v) = arr.get_indexed(i) {
+            Some(v)
+        } else {
+            let key = ctx.int_atom_mut(i);
+            arr.get(key)
+        };
+        if let Some(val) = val {
+            let processed = if let Some(repl) = replacer {
+                if repl.is_function() {
+                    let vm_ptr = ctx.get_register_vm_ptr();
+                    if let Some(ptr) = vm_ptr {
+                        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                        let args = vec![JSValue::new_string(ctx.intern(&i.to_string())), val];
+                        if let Ok(result) = vm.call_function(ctx, *repl, &args) {
+                            result
+                        } else {
+                            val
+                        }
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                }
+            } else {
+                val
+            };
+            elements.push(jsvalue_to_json_internal(ctx, &processed, replacer, seen));
+        } else {
+            elements.push("null".to_string());
+        }
+    }
+
+    format!("[{}]", elements.join(","))
+}
+
+fn object_to_json(
+    ctx: &mut JSContext,
+    obj: &JSObject,
+    replacer: Option<&JSValue>,
+    seen: &mut Vec<usize>,
+) -> String {
+    let mut pairs = Vec::new();
+
+    let filter_keys: Option<Vec<crate::runtime::atom::Atom>> = if let Some(repl) = replacer {
+        if repl.is_object() {
+            let repl_obj = repl.as_object();
+            if repl_obj.is_array() {
+                let len_atom = ctx.common_atoms.length;
+                let len = repl_obj
+                    .get(len_atom)
+                    .map(|v| v.get_int() as usize)
+                    .unwrap_or(0);
+                let mut keys = Vec::new();
+                let repl_ptr = repl_obj as *const JSObject as usize;
+                let is_jsarray = repl_obj.is_dense_array();
+                for i in 0..len {
+                    let val = if is_jsarray {
+                        unsafe { &*(repl_ptr as *const JSArrayObject) }.get(i)
+                    } else if let Some(v) = repl_obj.get_indexed(i) {
+                        Some(v)
+                    } else {
+                        let key = ctx.int_atom_mut(i);
+                        repl_obj.get(key)
+                    };
+                    if let Some(k) = val {
+                        if k.is_string() {
+                            keys.push(k.get_atom());
+                        }
+                    }
+                }
+                Some(keys)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let properties: Vec<(crate::runtime::atom::Atom, JSValue)> = obj.own_properties();
+
+    for (key, val) in properties {
+        if let Some(ref filter) = filter_keys {
+            if !filter.contains(&key) {
+                continue;
+            }
+        }
+
+        let key_str = ctx.get_atom_str(key).to_string();
+
+        let processed = if let Some(repl) = replacer {
+            if repl.is_function() {
+                let vm_ptr = ctx.get_register_vm_ptr();
+                if let Some(ptr) = vm_ptr {
+                    let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                    let args = vec![JSValue::new_string(ctx.intern(&key_str)), val];
+                    if let Ok(result) = vm.call_function(ctx, *repl, &args) {
+                        result
+                    } else {
+                        val
+                    }
+                } else {
+                    val
+                }
+            } else {
+                val
+            }
+        } else {
+            val
+        };
+
+        if processed.is_undefined() || processed.is_function() || processed.is_symbol() {
+            continue;
+        }
+
+        let value_str = jsvalue_to_json_internal(ctx, &processed, replacer, seen);
+        let escaped_key = key_str.replace('\\', "\\\\").replace('"', "\\\"");
+        pairs.push(format!("\"{}\":{}", escaped_key, value_str));
+    }
+
+    format!("{{{}}}", pairs.join(","))
+}

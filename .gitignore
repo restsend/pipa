@@ -1,0 +1,15 @@
+Cargo.lock
+target/
+bench-v8/
+test262/
+test262.tar.bz2
+/*.py
+/*.txt
+/*.md
+/*.log
+/*.json
+/*.md
+/*.js
+perf.data*
+.boa_history
+perf*.data
