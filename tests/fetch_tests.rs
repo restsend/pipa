@@ -156,9 +156,15 @@ impl TestServer {
                     Ok((mut stream, _)) => {
                         stream.set_nonblocking(true).unwrap();
                         let mut buf = [0u8; 4096];
-                        let n = match stream.read(&mut buf) {
-                            Ok(n) => n,
-                            Err(_) => continue,
+                        let n = loop {
+                            match stream.read(&mut buf) {
+                                Ok(n) => break n,
+                                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                    thread::sleep(Duration::from_millis(10));
+                                    continue;
+                                }
+                                Err(_) => return,
+                            }
                         };
                         if n == 0 {
                             continue;
