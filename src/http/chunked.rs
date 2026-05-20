@@ -36,8 +36,8 @@ impl ChunkedDecoder {
                             break;
                         }
                         let line = &self.buffer[..end];
-                        let size_str =
-                            core::str::from_utf8(line).map_err(|e| format!("chunk size utf8: {e}"))?;
+                        let size_str = core::str::from_utf8(line)
+                            .map_err(|e| format!("chunk size utf8: {e}"))?;
                         let size_end = size_str.find(|c: char| c == ';' || c == ' ');
                         let size_hex = match size_end {
                             Some(pos) => &size_str[..pos],
@@ -112,7 +112,9 @@ mod tests {
     #[test]
     fn test_multi_chunk() {
         let mut dec = ChunkedDecoder::new();
-        let out = dec.feed(b"6\r\nHello \r\n6\r\nWorld!\r\n0\r\n\r\n").unwrap();
+        let out = dec
+            .feed(b"6\r\nHello \r\n6\r\nWorld!\r\n0\r\n\r\n")
+            .unwrap();
         assert_eq!(out, b"Hello World!");
         assert!(dec.is_done());
     }

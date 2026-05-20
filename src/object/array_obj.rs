@@ -53,7 +53,6 @@ impl JSArrayObject {
         if index < self.elements.len() {
             self.elements[index] = value;
         } else if index == self.elements.len() && index < 100000 {
-            
             self.elements.push(value);
         } else if index < 100000 {
             self.elements.resize(index + 1, JSValue::undefined());

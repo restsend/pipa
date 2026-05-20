@@ -1,4 +1,3 @@
-
 use pipa::{JSRuntime, eval};
 
 #[test]
@@ -194,7 +193,10 @@ fn test_combined_js_scenario() {
         "Combined.js scenario should work: {:?}",
         result
     );
-    
+
     let val = result.unwrap();
-    assert!(val.is_string() && val.get_atom() == ctx.intern("success"), "Result should be 'success'");
+    assert!(
+        val.is_string() && val.get_atom() == ctx.intern("success"),
+        "Result should be 'success'"
+    );
 }

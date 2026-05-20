@@ -36,9 +36,9 @@ pub struct CallFrame {
     pub uses_arguments: bool,
     pub current_pc: usize,
     pub is_strict_frame: bool,
-    
+
     pub has_upvalues: bool,
-    
+
     pub var_name_map: *const Vec<(u32, u16)>,
     pub eval_bindings: Option<Box<std::collections::HashMap<u32, JSValue>>>,
     pub cached_arguments: Option<usize>,
@@ -201,7 +201,10 @@ impl VM {
 
     fn throw_reference_error(&mut self, ctx: &mut JSContext, msg: &str) -> Option<JSValue> {
         let mut err = crate::object::object::JSObject::new();
-        err.set(ctx.intern("name"), JSValue::new_string(ctx.intern("ReferenceError")));
+        err.set(
+            ctx.intern("name"),
+            JSValue::new_string(ctx.intern("ReferenceError")),
+        );
         err.set(ctx.intern("message"), JSValue::new_string(ctx.intern(msg)));
         if let Some(proto) = ctx.get_reference_error_prototype() {
             err.prototype = Some(proto);
@@ -236,7 +239,7 @@ impl VM {
         self.cached_registers_ptr =
             unsafe { self.registers.as_mut_ptr().add(self.cached_registers_base) };
         self.cached_ic_table_ptr = frame.ic_table_ptr;
-        
+
         if frame.has_upvalues {
             if let Some(func_ptr) = frame.function_ptr {
                 let func_val = JSValue::new_function(func_ptr);
@@ -313,11 +316,10 @@ impl VM {
         let total = base + needed;
         if total > self.registers.len() {
             if total > self.registers.capacity() {
-                
                 let new_cap = (self.registers.capacity() * 2 + 64).max(total);
                 self.registers.reserve(new_cap - self.registers.len());
             }
-            
+
             unsafe {
                 self.registers.set_len(total);
             }
@@ -417,11 +419,10 @@ impl VM {
 
         if total > self.registers.len() {
             if total > self.registers.capacity() {
-                
                 let new_cap = (self.registers.capacity() * 2 + 64).max(total);
                 self.registers.reserve(new_cap - self.registers.len());
             }
-            
+
             unsafe {
                 self.registers.set_len(total);
             }
@@ -529,7 +530,7 @@ impl VM {
         if self.frame_index == 0 {
             return;
         }
-        
+
         if self.eval_binding_frames > 0 && self.frames[self.frame_index].eval_bindings.is_some() {
             self.frames[self.frame_index].eval_bindings = None;
             self.eval_binding_frames -= 1;
@@ -613,7 +614,7 @@ impl VM {
                         .as_mut()
                         .unwrap()
                         .insert(name_atom, value);
-                    
+
                     if fi == 0 {
                         let global = ctx.global();
                         if global.is_object() {
@@ -641,7 +642,7 @@ impl VM {
                                 caller.frame_index = saved;
                                 caller.refresh_cache();
                             }
-                            
+
                             if fi == 0 {
                                 let global = ctx.global();
                                 if global.is_object() {
@@ -657,7 +658,7 @@ impl VM {
                     }
                 }
             }
-            
+
             for fi in (0..=caller.frame_index).rev() {
                 if caller.frames[fi].function_ptr.is_some() || fi == 0 {
                     if caller.frames[fi].eval_bindings.is_none() {
@@ -670,7 +671,7 @@ impl VM {
                         .as_mut()
                         .unwrap()
                         .insert(name_atom, value);
-                    
+
                     if fi == 0 {
                         let global = ctx.global();
                         if global.is_object() {
@@ -709,7 +710,7 @@ impl VM {
                     }
                 }
             }
-            
+
             for fi in (0..=caller.frame_index).rev() {
                 if caller.frames[fi].function_ptr.is_some() || fi == 0 {
                     if caller.frames[fi].eval_bindings.is_none() {
@@ -870,7 +871,7 @@ impl VM {
 
                     return Ok(false);
                 }
-                
+
                 if is_call_new && rb.is_simple_constructor {
                     if let Some(cached_shape) = rb.cached_constructor_final_shape {
                         if this_val.is_object() {
@@ -994,7 +995,6 @@ impl VM {
                     }
                 }
                 if is_call_new && !result.is_object_like() {
-                    
                     if this_val.is_object() {
                         this_val
                             .as_object_mut()
@@ -1483,14 +1483,14 @@ impl VM {
             let do_full = ctx.runtime().gc_heap().should_collect();
             if do_minor || do_full {
                 self.fill_gc_roots(ctx);
-                
+
                 let roots_ptr = self.gc_roots.as_ptr();
                 let roots_len = self.gc_roots.len();
                 let roots = unsafe { std::slice::from_raw_parts(roots_ptr, roots_len) };
                 if do_minor {
                     let _ = ctx.runtime_mut().minor_gc(roots);
                 }
-                
+
                 if do_full || ctx.runtime().gc_heap().should_collect() {
                     self.run_gc(ctx);
                 }
@@ -2050,7 +2050,6 @@ impl VM {
         ctx.reset_interrupt_counter();
 
         loop {
-            
             if self.pending_throw.is_some() {
                 let exc = unsafe { self.pending_throw.take().unwrap_unchecked() };
                 match self.dispatch_throw_value(ctx, exc) {
@@ -2099,7 +2098,7 @@ impl VM {
                     if frame.is_constructor && !ret.is_object() {
                         ret = frame.this_value;
                     }
-                    
+
                     if frame.is_constructor {
                         if let Some(fptr) = frame.function_ptr {
                             let func =
@@ -2756,7 +2755,7 @@ impl VM {
                     let a = self.get_reg(a_reg);
                     let b_reg = self.read_u16_pc();
                     let b = self.get_reg(b_reg);
-                    
+
                     if JSValue::both_int(&a, &b) {
                         let a_u32 = (a.get_int() as u64 & 0xffffffff) as u32;
                         let shift = (b.get_int() & 0x1f) as u32;
@@ -2817,7 +2816,7 @@ impl VM {
                     let dst = self.read_u16_pc();
                     let src = self.read_u16_pc();
                     let val = self.get_reg(src);
-                    
+
                     if val.is_int() || val.is_float() {
                         self.set_reg(dst, val);
                     } else {
@@ -3003,7 +3002,7 @@ impl VM {
                     let dst = self.read_u16_pc();
                     let src = self.read_u16_pc();
                     let a = self.get_reg(src);
-                    
+
                     if a.is_int()
                         && matches!(
                             op,
@@ -3042,7 +3041,7 @@ impl VM {
                         Opcode::MathAbs => f.abs(),
                         Opcode::MathFloor => {
                             let floored = f.floor();
-                            
+
                             const MAX_SAFE: f64 = (1i64 << 47) as f64;
                             if floored >= -MAX_SAFE && floored <= MAX_SAFE {
                                 self.set_reg(dst, JSValue::new_int(floored as i64));
@@ -3326,7 +3325,7 @@ impl VM {
                     self.set_reg(slot, result);
                 }
                 Opcode::GetGlobal => {
-                    let ic_pc = self.pc - 1; 
+                    let ic_pc = self.pc - 1;
                     let dst = self.read_u16_pc();
                     let idx = self.read_u32() as usize;
                     let name = if idx < self.frames[self.frame_index].constants_len {
@@ -3352,7 +3351,7 @@ impl VM {
                             let mut result = JSValue::undefined();
                             if global.is_object() {
                                 let global_obj = global.as_object();
-                                
+
                                 let global_shape_id = global_obj.shape_id_cache;
                                 let ic_table_ptr = self.cached_ic_table_ptr;
                                 let mut ic_hit = false;
@@ -3404,7 +3403,7 @@ impl VM {
                                         }
                                     } else if let Some(value) = global_obj.get(atom) {
                                         result = value;
-                                        
+
                                         if !ic_table_ptr.is_null() {
                                             if let Some(offset) = global_obj.find_offset(atom) {
                                                 unsafe {
@@ -3443,7 +3442,7 @@ impl VM {
                     };
                     let atom = name.get_atom();
                     let is_strict = self.frames[self.frame_index].is_strict_frame;
-                    
+
                     if self.caller_vm.is_some() {
                         if !self.set_var_in_caller_vm(ctx, atom.0, val) {
                             if is_strict {
@@ -3479,16 +3478,15 @@ impl VM {
                             }
                         }
                     } else {
-                        
                         if is_strict {
                             let mut found = false;
-                            
+
                             if self.eval_binding_frames == 0 && self.caller_vm.is_none() {
                                 let global = ctx.global();
                                 if global.is_object() {
                                     found = global.as_object().get_own(atom).is_some();
                                 }
-                                
+
                                 if !found && !self.frames[0].var_name_map.is_null() {
                                     let vnm = unsafe { &*self.frames[0].var_name_map };
                                     found = vnm.iter().any(|&(an, _)| an == atom.0);
@@ -3516,7 +3514,6 @@ impl VM {
                                     }
                                 }
                             } else {
-                                
                                 if self.get_var_in_caller_vm(atom.0).is_some() {
                                     found = true;
                                 }
@@ -3613,7 +3610,7 @@ impl VM {
                     } else {
                         if is_strict {
                             let mut found = false;
-                            
+
                             if self.eval_binding_frames == 0 && self.caller_vm.is_none() {
                                 let global = ctx.global();
                                 if global.is_object() {
@@ -3810,7 +3807,6 @@ impl VM {
                     let result = if !self.cached_upvalue_slot_ptr.is_null()
                         && slot < self.cached_upvalues_len
                     {
-                        
                         let rc = unsafe { &*self.cached_upvalue_slot_ptr.add(slot) };
                         unsafe { *(*std::rc::Rc::as_ptr(rc)).as_ptr() }
                     } else {
@@ -3827,7 +3823,6 @@ impl VM {
                     #[cfg(test)]
                     eprintln!("SETUPVALUE slot={} val={:?}", slot, val);
                     if !self.cached_upvalue_slot_ptr.is_null() && slot < self.cached_upvalues_len {
-                        
                         let rc = unsafe { &*self.cached_upvalue_slot_ptr.add(slot) };
                         unsafe { (*std::rc::Rc::as_ptr(rc)).as_ptr().write(val) };
                         #[cfg(test)]
@@ -3926,7 +3921,6 @@ impl VM {
                                             continue;
                                         }
                                     } else {
-                                        
                                         let saved = &self.frames[fi].saved_args;
                                         if idx_u < saved.len() {
                                             self.set_reg(dst, saved[idx_u]);
@@ -3994,7 +3988,7 @@ impl VM {
                     } else if obj_val.is_object_like() && key_val.is_string() {
                         let js_obj = unsafe { JSValue::object_from_ptr(obj_val.get_ptr()) };
                         let atom = key_val.get_atom();
-                        
+
                         if let Some(getter) = js_obj.get_own_accessor_value(atom) {
                             if getter.is_function() {
                                 match self.call_function_with_this(ctx, getter, obj_val, &[]) {
@@ -4070,7 +4064,7 @@ impl VM {
                                 }
                                 arr.elements.push(value);
                                 let len_atom = ctx.common_atoms.length;
-                                
+
                                 let new_elements_len = arr.elements.len();
                                 let old_len = arr
                                     .header
@@ -4089,7 +4083,6 @@ impl VM {
                         } else {
                             let idx = key_val.get_int();
                             if idx >= 0 && js_obj.maybe_set_indexed(idx as usize, value) {
-                                
                             } else {
                                 let atom = self.int_atom(idx as usize, ctx);
                                 js_obj.set_cached(atom, value, ctx.shape_cache_mut());
@@ -4098,7 +4091,7 @@ impl VM {
                     } else if obj_val.is_object_like() && key_val.is_string() {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(obj_val.get_ptr()) };
                         let atom = key_val.get_atom();
-                        
+
                         let setter = js_obj.get_own_accessor_entry(atom).and_then(|e| e.set);
                         if let Some(s) = setter {
                             if s.is_function() {
@@ -4114,7 +4107,7 @@ impl VM {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(obj_val.get_ptr()) };
                         let s = VM::js_to_string(&key_val, ctx);
                         let atom = s.get_atom();
-                        
+
                         let setter = js_obj.get_own_accessor_entry(atom).and_then(|e| e.set);
                         if let Some(s) = setter {
                             if s.is_function() {
@@ -4130,7 +4123,7 @@ impl VM {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(obj_val.get_ptr()) };
                         let sym_key =
                             crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id());
-                        
+
                         let setter = js_obj.get_own_accessor_entry(sym_key).and_then(|e| e.set);
                         if let Some(s) = setter {
                             if s.is_function() {
@@ -4239,7 +4232,6 @@ impl VM {
                                             continue;
                                         }
                                     } else {
-                                        
                                         let saved = &self.frames[fi].saved_args;
                                         if idx_u < saved.len() {
                                             self.set_reg(dst, saved[idx_u]);
@@ -4248,7 +4240,7 @@ impl VM {
                                     }
                                 }
                             }
-                            
+
                             if idx >= 0 {
                                 if let Some(val) = js_obj_check.get_indexed(idx as usize) {
                                     self.set_reg(dst, val);
@@ -4314,7 +4306,6 @@ impl VM {
                         value.is_function()
                     );
                     if key_val.is_string() {
-                        
                         self.set_named_prop(ctx, obj_val, value, key_val.get_atom(), usize::MAX);
                     } else if key_val.is_symbol() && obj_val.is_object_like() {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(obj_val.get_ptr()) };
@@ -4746,7 +4737,7 @@ impl VM {
                         }
                         continue;
                     }
-                    
+
                     let hi_atom = if self.cached_has_instance_atom.0 != 0 {
                         self.cached_has_instance_atom
                     } else {
@@ -4761,7 +4752,7 @@ impl VM {
                     };
                     let has_instance_handler = if ctor_val.is_function() {
                         let jf = ctor_val.as_function();
-                        
+
                         if jf.has_symbol_on_base() {
                             jf.base.get_own(hi_atom)
                         } else {
@@ -4808,7 +4799,7 @@ impl VM {
                         }
                         continue;
                     }
-                    
+
                     let result = if obj_val.is_object() || obj_val.is_function() {
                         let ctor_proto_opt = if ctor_val.is_function() {
                             let js_func = ctor_val.as_function();
@@ -4823,7 +4814,7 @@ impl VM {
                                     if v.is_object() {
                                         let ptr =
                                             v.get_ptr() as *mut crate::object::object::JSObject;
-                                        
+
                                         ctor_val.as_function_mut().cached_prototype_ptr = ptr;
                                         Some(ptr as *const crate::object::object::JSObject)
                                     } else {
@@ -4862,7 +4853,6 @@ impl VM {
                     self.set_reg(dst, JSValue::bool(result));
                 }
                 Opcode::NewRegExp => {
-                    
                     let cache_key = self.cached_code_ptr as usize + self.pc;
                     let dst = self.read_u16_pc();
                     let pattern_idx = self.read_u32() as usize;
@@ -4888,7 +4878,7 @@ impl VM {
                     } else {
                         String::new()
                     };
-                    
+
                     if let Some(cached_re) = self.regex_lit_cache.get(&cache_key) {
                         let cloned_re = cached_re.clone();
                         let re_val = crate::builtins::regexp::create_regexp_object_precompiled(
@@ -4905,7 +4895,7 @@ impl VM {
                                 JSValue::new_string(flags_atom),
                             ],
                         );
-                        
+
                         if re_val.is_object() {
                             if let Some(compiled) = re_val.as_object().get_compiled_regex() {
                                 self.regex_lit_cache.insert(cache_key, compiled.clone());
@@ -4931,7 +4921,7 @@ impl VM {
                         } else {
                             None
                         };
-                        
+
                         let own_accessor =
                             js_obj.get_own_private_accessor_entry(atom).or_else(|| {
                                 alt_atom.and_then(|a| js_obj.get_own_private_accessor_entry(a))
@@ -4949,7 +4939,6 @@ impl VM {
                         {
                             val
                         } else {
-                            
                             let mut getter_fn: Option<JSValue> = None;
                             let mut inherited_value: Option<JSValue> = None;
                             let mut cur = js_obj.prototype;
@@ -5007,7 +4996,7 @@ impl VM {
                         } else {
                             None
                         };
-                        
+
                         let own_accessor_entry = {
                             let js_obj = obj_val.as_object();
                             js_obj
@@ -5018,11 +5007,9 @@ impl VM {
                                 .cloned()
                         };
                         if let Some(entry) = own_accessor_entry {
-                            
                             if let Some(setter) = entry.set {
                                 let _ = self.call_function_with_this(ctx, setter, obj_val, &[val]);
                             } else {
-                                
                                 self.set_pending_type_error(
                                     ctx,
                                     "Cannot set private property without setter",
@@ -5036,7 +5023,6 @@ impl VM {
                                 }
                             }
                         } else {
-                            
                             let mut setter_fn: Option<JSValue> = None;
                             let mut accessor_found = false;
                             {
@@ -5067,7 +5053,6 @@ impl VM {
                             if let Some(setter) = setter_fn {
                                 let _ = self.call_function_with_this(ctx, setter, obj_val, &[val]);
                             } else if accessor_found {
-                                
                                 self.set_pending_type_error(
                                     ctx,
                                     "Cannot set private property without setter",
@@ -5206,9 +5191,13 @@ impl VM {
                             let dst_arr = unsafe {
                                 &mut *(dst_ptr as *mut crate::object::array_obj::JSArrayObject)
                             };
-                            let src_obj = unsafe { &*(src_ptr as *const crate::object::object::JSObject) };
+                            let src_obj =
+                                unsafe { &*(src_ptr as *const crate::object::object::JSObject) };
                             let len_atom = ctx.common_atoms.length;
-                            let arr_len = src_obj.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0);
+                            let arr_len = src_obj
+                                .get(len_atom)
+                                .map(|v| v.get_int() as usize)
+                                .unwrap_or(0);
                             if let Some(elems) = src_obj.get_array_elements() {
                                 for val in elems.iter() {
                                     dst_arr.push(*val);
@@ -5221,7 +5210,9 @@ impl VM {
                                     }
                                 }
                             }
-                            dst_arr.header.set(len_atom, JSValue::new_int(dst_arr.elements.len() as i64));
+                            dst_arr
+                                .header
+                                .set(len_atom, JSValue::new_int(dst_arr.elements.len() as i64));
                         }
                     }
                 }
@@ -5942,7 +5933,7 @@ impl VM {
                     ) = if let Some(ref nb) = cached {
                         self.pc = newfunc_start_pc + nb.parent_bytecode_span as usize;
                         let uvdescs: Vec<(u32, u32)> = nb.upvalue_descs.clone();
-                        
+
                         (
                             Vec::new(),
                             Vec::new(),
@@ -6048,7 +6039,6 @@ impl VM {
                                 &mut *(parent_ptr as *mut crate::object::function::JSFunction)
                             };
                             if let Some(bc) = parent_func.bytecode.as_mut() {
-                                
                                 let nb = if let Some(existing) =
                                     bc.nested_bytecodes.get(&(newfunc_start_pc as u32))
                                 {
@@ -6080,7 +6070,7 @@ impl VM {
                                         .insert(newfunc_start_pc as u32, nb.clone());
                                     nb
                                 };
-                                let _ = nb; 
+                                let _ = nb;
                             }
                         }
                         (
@@ -6098,7 +6088,7 @@ impl VM {
                     };
 
                     let mut func = crate::object::function::JSFunction::new();
-                    
+
                     if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
                         func.base.prototype = Some(fn_proto_ptr);
                     }
@@ -6135,9 +6125,8 @@ impl VM {
                     let effective_nb = nb_for_ic.or_else(|| cached.clone());
                     if let Some(ref nb_arc) = effective_nb {
                         if let Some(bc) = func.bytecode.as_mut() {
-                            
                             bc.shared_ic_table_ptr = nb_arc.ic_table.get();
-                            
+
                             if bc.code.is_empty() {
                                 bc.shared_code_ptr = nb_arc.code.as_ptr();
                                 bc.shared_code_len = nb_arc.code.len();
@@ -6207,10 +6196,13 @@ impl VM {
                             eprintln!(
                                 "NEWFUNC inherit atom={:?} parent_has={}",
                                 atom,
-                                parent_func.upvalues_ref().map_or(false, |u| u.upvalue_cells.contains_key(&atom))
+                                parent_func
+                                    .upvalues_ref()
+                                    .map_or(false, |u| u.upvalue_cells.contains_key(&atom))
                             );
-                            if let Some(parent_cell) =
-                                parent_func.upvalues_ref().and_then(|u| u.upvalue_cells.get(&atom))
+                            if let Some(parent_cell) = parent_func
+                                .upvalues_ref()
+                                .and_then(|u| u.upvalue_cells.get(&atom))
                             {
                                 parent_cell.clone()
                             } else {
@@ -6276,7 +6268,7 @@ impl VM {
                 Opcode::CheckRef => {
                     let reg = self.read_u16_pc();
                     let idx = self.read_u32() as usize;
-                    
+
                     let reg_val = self.get_reg(reg);
                     if !reg_val.is_undefined()
                         && !reg_val.is_tdz()
@@ -6294,7 +6286,6 @@ impl VM {
                     let mut exists = false;
                     let has_eval = self.eval_binding_frames > 0 || self.caller_vm.is_some();
                     if has_eval {
-                        
                         for fi in (0..=self.frame_index).rev() {
                             if let Some(ref eb) = self.frames[fi].eval_bindings {
                                 if eb.contains_key(&atom.0) {
@@ -6387,7 +6378,7 @@ impl VM {
                             } else {
                                 iterable.as_object()
                             };
-                            
+
                             let mut sym_iter_atom = None;
                             let global = ctx.global();
                             if global.is_object() {
@@ -6519,7 +6510,7 @@ impl VM {
                             }
                         }
                     } else if iterable.is_string() {
-                                            self.create_iter_object(ctx, iterable)
+                        self.create_iter_object(ctx, iterable)
                     } else {
                         JSValue::undefined()
                     };
@@ -6636,7 +6627,7 @@ impl VM {
                         if let Some(obj_proto) = ctx.get_object_prototype() {
                             args_obj.prototype = Some(obj_proto);
                         }
-                        
+
                         let args_shape = ctx.get_or_create_args_length_shape();
                         args_obj.set_first_prop_with_shape(
                             ctx.common_atoms.length,
@@ -6664,14 +6655,15 @@ impl VM {
                             }
                             let start = declared_param_count as usize;
                             if start < arg_count {
-                                args_obj.ensure_elements().resize(arg_count, JSValue::undefined());
+                                args_obj
+                                    .ensure_elements()
+                                    .resize(arg_count, JSValue::undefined());
                                 for i in start..arg_count {
                                     args_obj.set_indexed(i, saved_args[i]);
                                 }
                             }
                         } else {
                             if arg_count > 0 {
-                                
                                 args_obj
                                     .ensure_elements()
                                     .resize(arg_count, JSValue::undefined());
@@ -6711,7 +6703,7 @@ impl VM {
                                 );
                             }
                         }
-                        
+
                         let ptr = if ctx
                             .runtime_mut()
                             .gc_heap_mut()
@@ -6814,7 +6806,6 @@ impl VM {
             && !obj_val.is_function()
             && (obj_val.is_int() || obj_val.is_float() || obj_val.is_string() || obj_val.is_bool())
         {
-            
             if obj_val.is_string() && atom == ctx.common_atoms.length {
                 let len = ctx.string_char_count(obj_val.get_atom()) as i64;
                 let v = JSValue::new_int(len);
@@ -6865,7 +6856,7 @@ impl VM {
                 }
                 if let Some(val) = pobj.get_own(atom) {
                     self.set_reg(dst, val);
-                    
+
                     let ic_table_ptr = self.cached_ic_table_ptr;
                     if !ic_table_ptr.is_null() {
                         let pc = ic_pc;
@@ -7282,10 +7273,10 @@ impl VM {
         instr_pc: usize,
     ) -> bool {
         let obj_val = self.get_reg(obj_reg);
-        
+
         if obj_val.is_object_like() {
             let js_obj = unsafe { crate::value::JSValue::object_from_ptr(obj_val.get_ptr()) };
-            
+
             if js_obj.is_dense_array() && atom == ctx.common_atoms.length {
                 if js_obj.props_len() > 0 {
                     self.set_reg(dst, js_obj.get_by_offset_fast(0));
@@ -7302,12 +7293,11 @@ impl VM {
                         unsafe { (*ic_table_ptr).get_reads0_values(instr_pc, shape_id) };
                     if ic_hit {
                         if r0_proto == 0 {
-                            
                             let val = if r0_offset == u32::MAX {
                                 crate::value::JSValue::undefined()
                             } else {
                                 let off = r0_offset as usize;
-                                
+
                                 if off < crate::object::object::INLINE_PROPS
                                     && js_obj.has_no_deleted_props()
                                 {
@@ -7315,7 +7305,6 @@ impl VM {
                                 } else if let Some(v) = js_obj.get_by_offset(off) {
                                     v
                                 } else {
-                                    
                                     return self
                                         .get_named_prop_slow(ctx, dst, obj_val, atom, instr_pc);
                                 }
@@ -7323,7 +7312,6 @@ impl VM {
                             self.set_reg(dst, val);
                             return true;
                         } else {
-                            
                             if let Some(proto_raw) = js_obj.prototype {
                                 if proto_raw as usize == r0_proto {
                                     let proto_obj = unsafe { &*proto_raw };
@@ -7348,7 +7336,6 @@ impl VM {
                             );
                         }
                     } else {
-                        
                         return self
                             .get_named_prop_poly_hit(ctx, dst, obj_val, atom, instr_pc, shape_id);
                     }
@@ -7375,7 +7362,6 @@ impl VM {
             if ic_hit {
                 let js_obj = unsafe { JSValue::object_from_ptr(obj_val.get_ptr()) };
                 if r_proto == 0 {
-                    
                     let val = if r_offset == u32::MAX {
                         JSValue::undefined()
                     } else {
@@ -7393,7 +7379,6 @@ impl VM {
                     self.set_reg(dst, val);
                     return true;
                 } else {
-                    
                     if let Some(p) = js_obj.prototype {
                         if p as usize == r_proto {
                             let proto_obj = unsafe { &*p };
@@ -7411,7 +7396,7 @@ impl VM {
                             }
                         }
                     }
-                    
+
                     return self
                         .get_inherited_fast(ctx, dst, obj_val, atom, instr_pc, r_offset, r_proto);
                 }
@@ -7444,13 +7429,13 @@ impl VM {
                     self.set_reg(dst, v);
                     return true;
                 }
-                
+
                 break;
             }
             depth += 1;
             cur = unsafe { (*p).prototype };
         }
-        
+
         self.get_named_prop_slow(ctx, dst, obj_val, atom, instr_pc)
     }
 
@@ -7463,7 +7448,6 @@ impl VM {
         atom: crate::runtime::atom::Atom,
         instr_pc: usize,
     ) -> bool {
-        
         if (obj_val.is_string() && atom != ctx.common_atoms.length)
             || obj_val.is_int()
             || obj_val.is_float()
@@ -7664,7 +7648,7 @@ impl VM {
                 js_func.cached_prototype_ptr = std::ptr::null_mut();
             }
         }
-        
+
         if obj_val.is_function() && atom.0 & 0x40000000 != 0 {
             let js_func = unsafe { JSValue::function_from_ptr_mut(ptr) };
             js_func.mark_has_symbol_prop();
@@ -7677,14 +7661,13 @@ impl VM {
 
     #[cold]
     fn add_slow(&mut self, a: &JSValue, b: &JSValue, ctx: &mut JSContext) -> JSValue {
-        
         if a.is_int() && b.is_float() {
             return JSValue::new_float_raw(a.get_int() as f64 + b.get_float());
         }
         if a.is_float() && b.is_int() {
             return JSValue::new_float_raw(a.get_float() + b.get_int() as f64);
         }
-        
+
         let a = self.ordinary_to_primitive(a, "default", ctx);
         if self.pending_throw.is_some() {
             return JSValue::undefined();
@@ -7702,7 +7685,6 @@ impl VM {
             self.set_pending_type_error(ctx, "Cannot convert a Symbol value to a string");
             JSValue::undefined()
         } else if b.is_string() || a.is_string() {
-            
             let a_str = if a.is_object() || a.is_function() {
                 self.object_to_string(&a, ctx)
             } else {
@@ -7736,11 +7718,10 @@ impl VM {
         method_atom: crate::runtime::atom::Atom,
         ctx: &JSContext,
     ) -> Option<JSValue> {
-        
         if let Some(v) = obj.get(method_atom) {
             return Some(v);
         }
-        
+
         if obj.obj_type() == crate::object::object::ObjectType::Function {
             if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
                 unsafe {
@@ -7757,7 +7738,6 @@ impl VM {
         &self,
         ctx: &mut JSContext,
     ) -> Option<crate::runtime::atom::Atom> {
-        
         let global = ctx.global();
         if !global.is_object() {
             return None;
@@ -7777,7 +7757,6 @@ impl VM {
         this_val: JSValue,
         args: &[JSValue],
     ) -> Result<JSValue, String> {
-        
         let saved_handlers = std::mem::take(&mut self.exception_handlers);
         let result = self.call_function_with_this(ctx, func, this_val, args);
         self.exception_handlers = saved_handlers;
@@ -7796,7 +7775,7 @@ impl VM {
             v.as_object()
         } else if v.is_function() {
             let func = v.as_function();
-            
+
             if let Some(custom_fn) = func.base.get_own_value(ctx.common_atoms.value_of) {
                 if custom_fn.is_function() {
                     if let Ok(r) = self.call_function_with_this(ctx, custom_fn, *v, &[]) {
@@ -7806,7 +7785,7 @@ impl VM {
                     }
                 }
             }
-            
+
             if let Some(custom_fn) = func.base.get_own_value(ctx.common_atoms.to_string) {
                 if custom_fn.is_function() {
                     if let Ok(r) = self.call_function_with_this(ctx, custom_fn, *v, &[]) {
@@ -7832,7 +7811,7 @@ impl VM {
         };
 
         let mut has_tp = false;
-        
+
         let has_own_tp = self.get_symbol_to_primitive_atom(ctx).map_or(false, |a| {
             obj.get_own_value(a)
                 .or_else(|| {
@@ -7852,7 +7831,6 @@ impl VM {
         if has_own_tp {
             has_tp = true;
         } else if let Some(tp_atom) = self.get_symbol_to_primitive_atom(ctx) {
-            
             let tp_val = {
                 let saved_tp = std::mem::take(&mut self.exception_handlers);
                 let result = obj
@@ -7899,12 +7877,9 @@ impl VM {
         }
 
         if let Some(tp_atom) = self.get_symbol_to_primitive_atom(ctx) {
-            
             let tp_method = (|| -> Option<JSValue> {
-                
                 let from_own = obj.get_own_descriptor(tp_atom).and_then(|desc| {
                     if let Some(getter) = desc.get {
-                        
                         let saved = std::mem::take(&mut self.exception_handlers);
                         let result = self.call_function_with_this(ctx, getter, *v, &[]).ok();
                         self.exception_handlers = saved;
@@ -7916,7 +7891,7 @@ impl VM {
                 if from_own.is_some() {
                     return from_own;
                 }
-                
+
                 let mut current = obj.prototype;
                 while let Some(proto_ptr) = current {
                     unsafe {
@@ -7980,9 +7955,8 @@ impl VM {
                 }
             }
         }
-        
+
         if v.is_function() {
-            
             let func = v.as_function();
             let name = ctx.get_atom_str(func.name);
             if !name.is_empty() {
@@ -7992,7 +7966,7 @@ impl VM {
             }
             return JSValue::new_string(ctx.intern(&format!("function() {{ [native code] }}")));
         }
-        
+
         let name_atom = ctx.common_atoms.name;
         let message_atom = ctx.common_atoms.message;
         let mut err = crate::object::object::JSObject::new();
@@ -8051,7 +8025,7 @@ impl VM {
             return Self::js_to_string(v, ctx);
         };
         let to_str_atom = ctx.common_atoms.to_string;
-        
+
         if v.is_function() {
             let fn_builtin = ctx.get_builtin_func("function_toString");
             if let Some(f) = fn_builtin {
@@ -8060,7 +8034,7 @@ impl VM {
                     return result;
                 }
             }
-            
+
             let func = v.as_function();
             let name = ctx.get_atom_str(func.name);
             if name.is_empty() {
@@ -8080,7 +8054,7 @@ impl VM {
                 }
             }
         }
-        
+
         let obj_proto = if let Some(p) = ctx.get_object_prototype() {
             p
         } else {
@@ -8118,7 +8092,6 @@ impl VM {
         } else if v.is_symbol() {
             return f64::NAN;
         } else if v.is_object() {
-            
             if let Some(prim) = v.as_object().get(ctx.common_atoms.__value__) {
                 return Self::js_to_number(&prim, ctx);
             }
@@ -8295,44 +8268,41 @@ impl VM {
 
 #[inline(always)]
 fn loose_equal(ctx: &JSContext, a: JSValue, b: JSValue) -> bool {
-    
     if a.raw_bits() == b.raw_bits() {
-        
         return if a.is_float() {
             !a.get_float().is_nan()
         } else {
             true
         };
     }
-    
+
     if JSValue::both_int(&a, &b) {
         return false;
     }
-    
+
     if JSValue::both_object(&a, &b) {
         return false;
     }
-    
+
     if (a.is_object() || a.is_function()) && b.is_null_or_undefined() {
         return false;
     }
     if (b.is_object() || b.is_function()) && a.is_null_or_undefined() {
         return false;
     }
-    
+
     if a.is_null_or_undefined() {
         return b.is_null_or_undefined();
     }
     if b.is_null() || b.is_undefined() {
         return false;
     }
-    
+
     loose_equal_slow(ctx, a, b)
 }
 
 #[cold]
 fn loose_equal_slow(ctx: &JSContext, a: JSValue, b: JSValue) -> bool {
-    
     if a.is_undefined() && b.is_undefined() {
         return true;
     }
@@ -8353,11 +8323,10 @@ fn loose_equal_slow(ctx: &JSContext, a: JSValue, b: JSValue) -> bool {
     }
 
     if a.is_object() || a.is_function() {
-        
         if (a.is_object() && b.is_object()) || (a.is_function() && b.is_function()) {
             return a.strict_eq(&b);
         }
-        
+
         return false;
     }
     if b.is_object() || b.is_function() {
@@ -8380,7 +8349,7 @@ fn loose_equal_slow(ctx: &JSContext, a: JSValue, b: JSValue) -> bool {
     if (a.is_int() || a.is_float()) && b.is_bool() {
         return loose_equal(ctx, a, JSValue::new_int(if b.get_bool() { 1 } else { 0 }));
     }
-    
+
     if a.is_bool() && b.is_string() {
         let n = JSValue::new_int(if a.get_bool() { 1 } else { 0 });
         return loose_equal(ctx, n, b);
@@ -8388,7 +8357,7 @@ fn loose_equal_slow(ctx: &JSContext, a: JSValue, b: JSValue) -> bool {
     if a.is_string() && b.is_bool() {
         return loose_equal(ctx, b, a);
     }
-    
+
     if a.is_string() && (b.is_int() || b.is_float()) {
         let s = ctx.get_atom_str(a.get_atom());
         if let Ok(n) = s.parse::<f64>() {

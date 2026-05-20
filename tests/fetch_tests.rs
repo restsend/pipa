@@ -3,12 +3,12 @@
 use pipa::http::chunked::ChunkedDecoder;
 use pipa::http::conn::Connection;
 use pipa::http::headers::Headers;
-use pipa::util::iomux::Poller;
 use pipa::http::method::HttpMethod;
 use pipa::http::status::HttpStatus;
 use pipa::http::url::Url;
 use pipa::http::ws::frame::{OpCode, WsFrame};
 use pipa::http::ws::handshake::WsHandshake;
+use pipa::util::iomux::Poller;
 
 use std::fs;
 use std::io::{Read, Write};
@@ -30,9 +30,7 @@ impl TestServer {
         let (tx, rx) = mpsc::channel::<()>();
 
         let handle = thread::spawn(move || {
-            listener
-                .set_nonblocking(true)
-                .unwrap();
+            listener.set_nonblocking(true).unwrap();
             let _conns: Vec<TcpStream> = Vec::new();
             loop {
                 if rx.try_recv().is_ok() {
@@ -174,11 +172,7 @@ impl TestServer {
                             .lines()
                             .find(|l| l.to_lowercase().starts_with("sec-websocket-key:"));
                         if let Some(kv) = key_line {
-                            let key = kv
-                                .splitn(2, ':')
-                                .nth(1)
-                                .map(|s| s.trim())
-                                .unwrap_or("");
+                            let key = kv.splitn(2, ':').nth(1).map(|s| s.trim()).unwrap_or("");
                             let accept = WsHandshake::compute_accept(key);
                             let resp = format!(
                                 "HTTP/1.1 101 Switching Protocols\r\n\
@@ -196,8 +190,7 @@ impl TestServer {
                                 match stream.read(&mut read_buf) {
                                     Ok(0) => break,
                                     Ok(n) => {
-                                        let frames =
-                                            WsFrame::parse_all(&read_buf[..n]).unwrap();
+                                        let frames = WsFrame::parse_all(&read_buf[..n]).unwrap();
                                         for frame in &frames {
                                             let echo_frame = WsFrame {
                                                 fin: frame.fin,
@@ -332,7 +325,9 @@ fn test_chunked_single() {
 #[test]
 fn test_chunked_multi() {
     let mut dec = ChunkedDecoder::new();
-    let out = dec.feed(b"6\r\nHello \r\n6\r\nWorld!\r\n0\r\n\r\n").unwrap();
+    let out = dec
+        .feed(b"6\r\nHello \r\n6\r\nWorld!\r\n0\r\n\r\n")
+        .unwrap();
     assert_eq!(out, b"Hello World!");
     assert!(dec.is_done());
 }
@@ -389,9 +384,18 @@ fn test_e2e_http_get() {
     let n = stream.read(&mut buf).unwrap();
     let response = String::from_utf8_lossy(&buf[..n]);
 
-    assert!(response.contains("200 OK"), "expected 200 OK, got: {response}");
-    assert!(response.contains("Content-Length:"), "missing Content-Length");
-    assert!(response.contains("GET /echo"), "expected request echo in body");
+    assert!(
+        response.contains("200 OK"),
+        "expected 200 OK, got: {response}"
+    );
+    assert!(
+        response.contains("Content-Length:"),
+        "missing Content-Length"
+    );
+    assert!(
+        response.contains("GET /echo"),
+        "expected request echo in body"
+    );
 
     server.stop();
 }
@@ -486,9 +490,9 @@ impl TlsTestServer {
                 match listener.accept() {
                     Ok((stream, _)) => {
                         stream.set_read_timeout(Some(Duration::from_secs(2))).ok();
-                        let srv_conn = rustls::ServerConnection::new(
-                            std::sync::Arc::new(server_config.clone()),
-                        );
+                        let srv_conn = rustls::ServerConnection::new(std::sync::Arc::new(
+                            server_config.clone(),
+                        ));
                         match srv_conn {
                             Ok(sc) => {
                                 let mut tls = rustls::StreamOwned::new(sc, stream);
@@ -516,7 +520,9 @@ impl TlsTestServer {
                                             );
                                             resp.extend_from_slice(accept.as_bytes());
                                             resp.extend_from_slice(b"\r\n\r\n");
-                                            if tls.write_all(&resp).is_err() { return; }
+                                            if tls.write_all(&resp).is_err() {
+                                                return;
+                                            }
 
                                             let mut ws_buf = [0u8; 8192];
                                             loop {
@@ -526,10 +532,9 @@ impl TlsTestServer {
                                                 match tls.read(&mut ws_buf) {
                                                     Ok(0) => break,
                                                     Ok(n) => {
-                                                        let frames = WsFrame::parse_all(
-                                                            &ws_buf[..n],
-                                                        )
-                                                        .unwrap();
+                                                        let frames =
+                                                            WsFrame::parse_all(&ws_buf[..n])
+                                                                .unwrap();
                                                         for frame in &frames {
                                                             let echo = WsFrame {
                                                                 fin: frame.fin,
@@ -537,7 +542,12 @@ impl TlsTestServer {
                                                                 mask: None,
                                                                 payload: frame.payload.clone(),
                                                             };
-                                                            if tls.write_all(&echo.encode()).is_err() { break; }
+                                                            if tls
+                                                                .write_all(&echo.encode())
+                                                                .is_err()
+                                                            {
+                                                                break;
+                                                            }
                                                         }
                                                     }
                                                     Err(e)
@@ -603,20 +613,14 @@ fn test_e2e_https_get() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots(
-        "localhost".into(),
-        port,
-        true,
-        vec![cert_der],
-    )
-    .unwrap();
+    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
+        .unwrap();
 
     let mut conn = rx.recv().unwrap().unwrap();
     conn.set_nonblocking(false).unwrap();
 
-    let request = format!(
-        "GET /echo HTTP/1.1\r\nHost: localhost:{port}\r\nConnection: close\r\n\r\n"
-    );
+    let request =
+        format!("GET /echo HTTP/1.1\r\nHost: localhost:{port}\r\nConnection: close\r\n\r\n");
     conn.write_all(request.as_bytes()).unwrap();
     conn.flush().unwrap();
 
@@ -628,7 +632,10 @@ fn test_e2e_https_get() {
         response.contains("200 OK"),
         "HTTPS: expected 200 OK, got: {response}"
     );
-    assert!(response.contains("GET /echo"), "HTTPS: expected request echo");
+    assert!(
+        response.contains("GET /echo"),
+        "HTTPS: expected request echo"
+    );
 
     server.stop();
 }
@@ -639,13 +646,8 @@ fn test_e2e_https_post() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots(
-        "localhost".into(),
-        port,
-        true,
-        vec![cert_der],
-    )
-    .unwrap();
+    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
+        .unwrap();
 
     let mut conn = rx.recv().unwrap().unwrap();
     conn.set_nonblocking(false).unwrap();
@@ -678,13 +680,8 @@ fn test_e2e_wss_handshake() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots(
-        "localhost".into(),
-        port,
-        true,
-        vec![cert_der],
-    )
-    .unwrap();
+    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
+        .unwrap();
 
     let mut conn = rx.recv().unwrap().unwrap();
     conn.set_nonblocking(false).unwrap();
@@ -725,13 +722,8 @@ fn test_e2e_wss_frame_echo() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots(
-        "localhost".into(),
-        port,
-        true,
-        vec![cert_der],
-    )
-    .unwrap();
+    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
+        .unwrap();
 
     let mut conn = rx.recv().unwrap().unwrap();
     conn.set_nonblocking(false).unwrap();
@@ -759,7 +751,8 @@ fn test_e2e_wss_frame_echo() {
     let frame = WsFrame::new_text(msg.to_vec());
     conn.write_all(&frame.encode()).unwrap();
 
-    conn.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
+    conn.set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
     loop {
         match conn.read(&mut buf) {
             Ok(n) if n > 0 => {
@@ -771,8 +764,9 @@ fn test_e2e_wss_frame_echo() {
                     break;
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
-                || e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut => {}
             Err(e) => panic!("WSS read error: {e}"),
             Ok(_) => break,
         }
@@ -786,13 +780,8 @@ fn test_connection_tls_handshake() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots(
-        "localhost".into(),
-        port,
-        true,
-        vec![cert_der],
-    )
-    .unwrap();
+    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
+        .unwrap();
 
     let mut conn = rx.recv().expect("TLS connection failed");
     assert!(
@@ -826,9 +815,9 @@ fn test_connection_plain_connect() {
 }
 
 fn compile_and_run_js(js_code: &str) -> Result<String, String> {
+    use pipa::compiler::codegen::OptLevel;
     use pipa::runtime::context::JSContext;
     use pipa::runtime::runtime::JSRuntime;
-    use pipa::compiler::codegen::OptLevel;
 
     let mut runtime = JSRuntime::new();
     let mut ctx = runtime.new_context();
@@ -904,14 +893,15 @@ fn test_sse_e2e() {
     let port = server.port;
 
     let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
-    let req = format!(
-        "GET /sse HTTP/1.1\r\nHost: localhost:{port}\r\nAccept: text/event-stream\r\n\r\n"
-    );
+    let req =
+        format!("GET /sse HTTP/1.1\r\nHost: localhost:{port}\r\nAccept: text/event-stream\r\n\r\n");
     use std::io::Write;
     stream.write_all(req.as_bytes()).unwrap();
     stream.flush().unwrap();
 
-    stream.set_read_timeout(Some(std::time::Duration::from_millis(100))).unwrap();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_millis(100)))
+        .unwrap();
     let mut full_response = Vec::new();
     let mut buf = [0u8; 4096];
     loop {
@@ -924,7 +914,10 @@ fn test_sse_e2e() {
 
     let response = String::from_utf8_lossy(&full_response);
 
-    assert!(response.contains("200 OK"), "SSE: expected 200, got: {response}");
+    assert!(
+        response.contains("200 OK"),
+        "SSE: expected 200, got: {response}"
+    );
     assert!(
         response.contains("text/event-stream"),
         "SSE: expected text/event-stream"
@@ -939,7 +932,12 @@ fn test_sse_e2e() {
     while let Some(event) = pipa::builtins::eventsource::parse_sse_event(&mut sse_buf) {
         events.push(event);
     }
-    assert_eq!(events.len(), 5, "SSE: expected 5 events, got {}", events.len());
+    assert_eq!(
+        events.len(),
+        5,
+        "SSE: expected 5 events, got {}",
+        events.len()
+    );
     assert_eq!(events[0].data, "hello");
     assert_eq!(events[1].data, "world");
     assert_eq!(events[2].data, "{\"key\":\"value\"}");

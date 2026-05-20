@@ -303,17 +303,13 @@ fn test_re_export_all() {
     let mut rt = JSRuntime::new();
     let mut ctx = rt.new_context();
 
-    let mut module_a = pipa::runtime::module::Module::new(
-        "./a.js".to_string(),
-        "export var a = 10;".to_string(),
-    );
+    let mut module_a =
+        pipa::runtime::module::Module::new("./a.js".to_string(), "export var a = 10;".to_string());
     module_a.add_export("a".to_string(), pipa::JSValue::new_int(10), false);
     rt.module_registry_mut().register(module_a);
 
-    let mut module_b = pipa::runtime::module::Module::new(
-        "./b.js".to_string(),
-        "export var b = 20;".to_string(),
-    );
+    let mut module_b =
+        pipa::runtime::module::Module::new("./b.js".to_string(), "export var b = 20;".to_string());
     module_b.add_export("b".to_string(), pipa::JSValue::new_int(20), false);
     rt.module_registry_mut().register(module_b);
 
@@ -509,10 +505,8 @@ fn test_import_side_effect_only() {
     let mut rt = JSRuntime::new();
     let mut ctx = rt.new_context();
 
-    let mut module = pipa::runtime::module::Module::new(
-        "./sideeffect.js".to_string(),
-        "var x = 1;".to_string(),
-    );
+    let mut module =
+        pipa::runtime::module::Module::new("./sideeffect.js".to_string(), "var x = 1;".to_string());
     module.add_export("x".to_string(), pipa::JSValue::new_int(1), false);
     rt.module_registry_mut().register(module);
 

@@ -11,13 +11,15 @@ pub fn number_to_exponential(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let fraction_digits = if args.len() > 1 && !args[1].is_undefined() {
         let d = args[1].to_number() as i32;
         if d < 0 || d > 100 {
-            let err = JSValue::new_string(ctx.intern("RangeError: toExponential() argument must be between 0 and 100"));
+            let err = JSValue::new_string(
+                ctx.intern("RangeError: toExponential() argument must be between 0 and 100"),
+            );
             ctx.pending_exception = Some(err);
             return JSValue::undefined();
         }
         d as usize
     } else {
-        usize::MAX 
+        usize::MAX
     };
 
     let val = if this.is_int() {
@@ -32,13 +34,16 @@ pub fn number_to_exponential(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_string(ctx.intern("NaN"));
     }
     if val.is_infinite() {
-        return JSValue::new_string(ctx.intern(if val.is_sign_positive() { "Infinity" } else { "-Infinity" }));
+        return JSValue::new_string(ctx.intern(if val.is_sign_positive() {
+            "Infinity"
+        } else {
+            "-Infinity"
+        }));
     }
 
     let result = if fraction_digits == usize::MAX {
-        
         let s = format!("{:e}", val);
-        
+
         fix_exponent_sign(&s)
     } else {
         let s = format!("{:.1$e}", val, fraction_digits);
@@ -49,7 +54,6 @@ pub fn number_to_exponential(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn fix_exponent_sign(s: &str) -> String {
-    
     let mut result = String::with_capacity(s.len() + 1);
     let mut chars = s.chars().peekable();
     let mut seen_e = false;

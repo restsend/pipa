@@ -273,7 +273,12 @@ mod tests {
             .insert(Atom(1), JSValue::new_int(42));
         assert!(f.upvalues.is_some());
         assert_eq!(
-            f.upvalues_ref().unwrap().upvalues.get(&Atom(1)).unwrap().get_int(),
+            f.upvalues_ref()
+                .unwrap()
+                .upvalues
+                .get(&Atom(1))
+                .unwrap()
+                .get_int(),
             42
         );
     }
@@ -298,7 +303,12 @@ mod tests {
         let f = JSFunction::new().with_upvalues(map);
         assert!(f.upvalues.is_some());
         assert_eq!(
-            f.upvalues_ref().unwrap().upvalues.get(&Atom(1)).unwrap().get_int(),
+            f.upvalues_ref()
+                .unwrap()
+                .upvalues
+                .get(&Atom(1))
+                .unwrap()
+                .get_int(),
             10
         );
     }

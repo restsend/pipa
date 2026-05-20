@@ -1,4 +1,3 @@
-
 use pipa::{JSRuntime, eval};
 
 #[test]
@@ -290,7 +289,7 @@ fn test_typedarray_byte_length() {
     "#;
     let result = eval(&mut ctx, code).unwrap();
     assert!(result.is_int());
-    
+
     assert_eq!(result.get_int(), 16);
 }
 

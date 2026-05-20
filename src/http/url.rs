@@ -52,16 +52,28 @@ impl Url {
         }
 
         let (path, query) = if let Some(qmark) = path_and_query.find('?') {
-            let p = if qmark == 0 { "" } else { &path_and_query[..qmark] };
+            let p = if qmark == 0 {
+                ""
+            } else {
+                &path_and_query[..qmark]
+            };
             let p = if p.is_empty() { "/" } else { p };
             (p.to_string(), path_and_query[qmark..].to_string())
         } else {
-            let p = if path_and_query.is_empty() { "/" } else { path_and_query };
+            let p = if path_and_query.is_empty() {
+                "/"
+            } else {
+                path_and_query
+            };
             (p.to_string(), String::new())
         };
 
         Ok(Url {
-            scheme: if is_tls { "https".into() } else { "http".into() },
+            scheme: if is_tls {
+                "https".into()
+            } else {
+                "http".into()
+            },
             host,
             port,
             path,

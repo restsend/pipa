@@ -415,7 +415,9 @@ impl JSContext {
     }
 
     #[inline]
-    pub fn get_or_create_args_length_shape(&mut self) -> std::ptr::NonNull<crate::object::shape::Shape> {
+    pub fn get_or_create_args_length_shape(
+        &mut self,
+    ) -> std::ptr::NonNull<crate::object::shape::Shape> {
         if let Some(s) = self.args_length_shape {
             return s;
         }

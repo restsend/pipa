@@ -42,8 +42,8 @@ impl Connection {
         extra_roots: &[Vec<u8>],
     ) -> Result<Self, String> {
         let addr = format!("{host}:{port}");
-        let stream = TcpStream::connect(&addr)
-            .map_err(|e| format!("connect to {addr} failed: {e}"))?;
+        let stream =
+            TcpStream::connect(&addr).map_err(|e| format!("connect to {addr} failed: {e}"))?;
         stream
             .set_read_timeout(None)
             .map_err(|e| format!("set_read_timeout failed: {e}"))?;
@@ -61,14 +61,9 @@ impl Connection {
         }
     }
 
-    fn wrap_tls(
-        host: &str,
-        stream: TcpStream,
-        extra_roots: &[Vec<u8>],
-    ) -> Result<Self, String> {
-        let mut root_certs = rustls::RootCertStore::from_iter(
-            webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
-        );
+    fn wrap_tls(host: &str, stream: TcpStream, extra_roots: &[Vec<u8>]) -> Result<Self, String> {
+        let mut root_certs =
+            rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         for cert_der in extra_roots {
             root_certs
                 .add(cert_der.clone().into())
@@ -80,9 +75,8 @@ impl Connection {
         let server_name = rustls::pki_types::ServerName::try_from(host)
             .map_err(|e| format!("invalid server name: {e}"))?
             .to_owned();
-        let tls_conn =
-            rustls::ClientConnection::new(std::sync::Arc::new(config), server_name)
-                .map_err(|e| format!("tls handshake failed: {e}"))?;
+        let tls_conn = rustls::ClientConnection::new(std::sync::Arc::new(config), server_name)
+            .map_err(|e| format!("tls handshake failed: {e}"))?;
         let tls = rustls::StreamOwned::new(tls_conn, stream);
         Ok(Connection::Tls { tls })
     }

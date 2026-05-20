@@ -302,8 +302,8 @@ impl Lexer {
                     self.column = 1;
                     self.pos += 1;
                 }
-                ' ' | '\t' | '\u{000B}' | '\u{000C}' | '\u{00A0}'
-                | '\u{1680}' | '\u{202F}' | '\u{205F}' | '\u{3000}' | '\u{FEFF}' => {
+                ' ' | '\t' | '\u{000B}' | '\u{000C}' | '\u{00A0}' | '\u{1680}' | '\u{202F}'
+                | '\u{205F}' | '\u{3000}' | '\u{FEFF}' => {
                     self.column += 1;
                     self.pos += 1;
                 }
@@ -342,8 +342,10 @@ impl Lexer {
                 if self.source[self.pos].is_ascii_hexdigit() {
                     self.advance();
                 } else if self.source[self.pos] == '_' {
-                    if self.pos + 1 < self.source.len() && (self.source[self.pos + 1].is_ascii_hexdigit()) {
-                        self.advance(); 
+                    if self.pos + 1 < self.source.len()
+                        && (self.source[self.pos + 1].is_ascii_hexdigit())
+                    {
+                        self.advance();
                     } else {
                         break;
                     }
@@ -357,7 +359,11 @@ impl Lexer {
             }
             let value: String = self.source[start..self.pos].iter().collect();
             return Token {
-                token_type: if is_bigint { TokenType::BigInt } else { TokenType::Number },
+                token_type: if is_bigint {
+                    TokenType::BigInt
+                } else {
+                    TokenType::Number
+                },
                 value,
                 line: self.line,
                 column: self.column,
@@ -374,8 +380,10 @@ impl Lexer {
                 if matches!(self.source[self.pos], '0'..='7') {
                     self.advance();
                 } else if self.source[self.pos] == '_' {
-                    if self.pos + 1 < self.source.len() && matches!(self.source[self.pos + 1], '0'..='7') {
-                        self.advance(); 
+                    if self.pos + 1 < self.source.len()
+                        && matches!(self.source[self.pos + 1], '0'..='7')
+                    {
+                        self.advance();
                     } else {
                         break;
                     }
@@ -389,7 +397,11 @@ impl Lexer {
             }
             let value: String = self.source[start..self.pos].iter().collect();
             return Token {
-                token_type: if is_bigint { TokenType::BigInt } else { TokenType::Number },
+                token_type: if is_bigint {
+                    TokenType::BigInt
+                } else {
+                    TokenType::Number
+                },
                 value,
                 line: self.line,
                 column: self.column,
@@ -406,8 +418,10 @@ impl Lexer {
                 if matches!(self.source[self.pos], '0' | '1') {
                     self.advance();
                 } else if self.source[self.pos] == '_' {
-                    if self.pos + 1 < self.source.len() && matches!(self.source[self.pos + 1], '0' | '1') {
-                        self.advance(); 
+                    if self.pos + 1 < self.source.len()
+                        && matches!(self.source[self.pos + 1], '0' | '1')
+                    {
+                        self.advance();
                     } else {
                         break;
                     }
@@ -421,7 +435,11 @@ impl Lexer {
             }
             let value: String = self.source[start..self.pos].iter().collect();
             return Token {
-                token_type: if is_bigint { TokenType::BigInt } else { TokenType::Number },
+                token_type: if is_bigint {
+                    TokenType::BigInt
+                } else {
+                    TokenType::Number
+                },
                 value,
                 line: self.line,
                 column: self.column,
@@ -433,9 +451,8 @@ impl Lexer {
             if self.source[self.pos].is_ascii_digit() {
                 self.advance();
             } else if self.source[self.pos] == '_' {
-                
                 if self.pos + 1 < self.source.len() && self.source[self.pos + 1].is_ascii_digit() {
-                    self.advance(); 
+                    self.advance();
                 } else {
                     break;
                 }
@@ -460,8 +477,10 @@ impl Lexer {
                 if self.source[self.pos].is_ascii_digit() {
                     self.advance();
                 } else if self.source[self.pos] == '_' {
-                    if self.pos + 1 < self.source.len() && self.source[self.pos + 1].is_ascii_digit() {
-                        self.advance(); 
+                    if self.pos + 1 < self.source.len()
+                        && self.source[self.pos + 1].is_ascii_digit()
+                    {
+                        self.advance();
                     } else {
                         break;
                     }
@@ -515,11 +534,8 @@ impl Lexer {
             self.last_string_had_escape = true;
             let esc = self.source[self.pos];
             match esc {
-                '\n' | '\u{2028}' | '\u{2029}' => {
-                    
-                }
+                '\n' | '\u{2028}' | '\u{2029}' => {}
                 '\r' => {
-                    
                     if self.pos + 1 < self.source.len() && self.source[self.pos + 1] == '\n' {
                         self.advance();
                     }
@@ -532,21 +548,36 @@ impl Lexer {
                 'v' => value.push('\x0b'),
                 '0'..='7' => {
                     let first_val = esc as u32 - '0' as u32;
-                    if first_val == 0 && (self.pos + 1 >= self.source.len() || self.source[self.pos + 1] < '0' || self.source[self.pos + 1] > '7') {
+                    if first_val == 0
+                        && (self.pos + 1 >= self.source.len()
+                            || self.source[self.pos + 1] < '0'
+                            || self.source[self.pos + 1] > '7')
+                    {
                         value.push('\0');
                     } else {
                         let mut code = first_val;
                         let mut count = 1u32;
                         let mut lookahead = 1;
-                        while self.pos + lookahead < self.source.len() && count < 3 && self.source[self.pos + lookahead] >= '0' && self.source[self.pos + lookahead] <= '7' {
-                            let next = code * 8 + (self.source[self.pos + lookahead] as u32 - '0' as u32);
-                            if next > 255 { break; }
+                        while self.pos + lookahead < self.source.len()
+                            && count < 3
+                            && self.source[self.pos + lookahead] >= '0'
+                            && self.source[self.pos + lookahead] <= '7'
+                        {
+                            let next =
+                                code * 8 + (self.source[self.pos + lookahead] as u32 - '0' as u32);
+                            if next > 255 {
+                                break;
+                            }
                             code = next;
                             count += 1;
                             lookahead += 1;
                         }
-                        for _ in 1..lookahead { self.advance(); }
-                        if let Some(ch) = char::from_u32(code) { value.push(ch); }
+                        for _ in 1..lookahead {
+                            self.advance();
+                        }
+                        if let Some(ch) = char::from_u32(code) {
+                            value.push(ch);
+                        }
                     }
                 }
                 '\\' => value.push('\\'),
@@ -573,7 +604,6 @@ impl Lexer {
                 }
                 'u' => {
                     if self.pos + 1 < self.source.len() && self.source[self.pos + 1] == '{' {
-                        
                         let mut code: u32 = 0;
                         let mut i = self.pos + 2;
                         while i < self.source.len() && self.source[i] != '}' {
@@ -588,7 +618,7 @@ impl Lexer {
                             if let Some(decoded) = char::from_u32(code) {
                                 value.push(decoded);
                             }
-                            
+
                             let steps = i - self.pos;
                             for _ in 0..steps {
                                 self.advance();
@@ -735,7 +765,7 @@ impl Lexer {
     }
 
     fn read_private_identifier(&mut self) -> Token {
-        self.advance(); 
+        self.advance();
         let mut value = String::from("#");
         while self.pos < self.source.len() {
             let c = self.source[self.pos];
@@ -764,7 +794,12 @@ impl Lexer {
         self.advance();
         if self.pos < self.source.len() {
             if self.source[self.pos] == '/' {
-                while self.pos < self.source.len() && self.source[self.pos] != '\n' && self.source[self.pos] != '\r' && self.source[self.pos] != '\u{2028}' && self.source[self.pos] != '\u{2029}' {
+                while self.pos < self.source.len()
+                    && self.source[self.pos] != '\n'
+                    && self.source[self.pos] != '\r'
+                    && self.source[self.pos] != '\u{2028}'
+                    && self.source[self.pos] != '\u{2029}'
+                {
                     self.advance();
                 }
                 return self.next_token().unwrap_or(Token {
@@ -1076,7 +1111,8 @@ impl Lexer {
         if c == '\u{200C}' || c == '\u{200D}' {
             return true;
         }
-        Self::is_identifier_start(c) || crate::builtins::unicode_data::XID_CONTINUE.contains(c as u32)
+        Self::is_identifier_start(c)
+            || crate::builtins::unicode_data::XID_CONTINUE.contains(c as u32)
     }
 
     fn is_keyword(s: &str) -> bool {

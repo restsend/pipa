@@ -49,9 +49,7 @@ impl Headers {
             let colon_pos = line.iter().position(|&b| b == b':');
             match colon_pos {
                 Some(cpos) => {
-                    let name = String::from_utf8_lossy(&line[..cpos])
-                        .trim()
-                        .to_lowercase();
+                    let name = String::from_utf8_lossy(&line[..cpos]).trim().to_lowercase();
                     let value = String::from_utf8_lossy(&line[cpos + 1..])
                         .trim()
                         .to_string();

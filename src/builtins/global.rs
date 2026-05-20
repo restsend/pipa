@@ -3,15 +3,21 @@ use crate::builtins::base64::{global_atob, global_btoa};
 use crate::builtins::bigint;
 use crate::builtins::date;
 use crate::builtins::error;
+#[cfg(feature = "fetch")]
+use crate::builtins::eventsource;
+#[cfg(feature = "fetch")]
+use crate::builtins::fetch;
 use crate::builtins::function;
 use crate::builtins::generator;
-use crate::builtins::json::{json_parse, json_stringify};
 use crate::builtins::intl;
+use crate::builtins::json::{json_parse, json_stringify};
 use crate::builtins::map_set;
 use crate::builtins::math;
 use crate::builtins::number::number_to_string;
 use crate::builtins::object;
 use crate::builtins::parse::{global_parsefloat, global_parseint};
+#[cfg(feature = "process")]
+use crate::builtins::process;
 use crate::builtins::promise;
 use crate::builtins::regexp;
 use crate::builtins::string;
@@ -21,12 +27,6 @@ use crate::builtins::url::{
     global_decodeuri, global_decodeuricomponent, global_encodeuri, global_encodeuricomponent,
 };
 use crate::builtins::weakref;
-#[cfg(feature = "fetch")]
-use crate::builtins::eventsource;
-#[cfg(feature = "fetch")]
-use crate::builtins::fetch;
-#[cfg(feature = "process")]
-use crate::builtins::process;
 #[cfg(feature = "fetch")]
 use crate::builtins::websocket;
 use crate::host::HostFunction;
@@ -166,8 +166,8 @@ pub fn init_globals(ctx: &mut JSContext) {
         websocket::register_websocket(ctx);
         eventsource::register_eventsource(ctx);
 
-        let reactor = crate::runtime::io_reactor::IoReactor::new()
-            .expect("failed to create IoReactor");
+        let reactor =
+            crate::runtime::io_reactor::IoReactor::new().expect("failed to create IoReactor");
         ctx.add_extension(Box::new(reactor));
     }
 
@@ -182,7 +182,8 @@ pub fn init_globals(ctx: &mut JSContext) {
     if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
         let fn_proto = unsafe { &mut *fn_proto_ptr };
         let has_instance_sym = crate::builtins::symbol::get_symbol_has_instance(ctx);
-        let hi_func = crate::object::function::JSFunction::new_builtin(ctx.intern("[Symbol.hasInstance]"), 1);
+        let hi_func =
+            crate::object::function::JSFunction::new_builtin(ctx.intern("[Symbol.hasInstance]"), 1);
         let hi_value = {
             let mut func = hi_func;
             if let Some(fn_proto_ptr2) = ctx.get_function_prototype() {
@@ -555,15 +556,22 @@ fn init_console(ctx: &mut JSContext) {
     }
 }
 
-fn set_non_configurable(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, value: JSValue) {
-    obj.define_property(key, crate::object::object::PropertyDescriptor {
-        value: Some(value),
-        writable: false,
-        enumerable: false,
-        configurable: false,
-        get: None,
-        set: None,
-    });
+fn set_non_configurable(
+    obj: &mut crate::object::object::JSObject,
+    key: crate::runtime::atom::Atom,
+    value: JSValue,
+) {
+    obj.define_property(
+        key,
+        crate::object::object::PropertyDescriptor {
+            value: Some(value),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 }
 
 fn init_math(ctx: &mut JSContext) {
@@ -775,7 +783,10 @@ fn number_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn init_number(ctx: &mut JSContext) {
-    ctx.register_builtin("number_constructor", HostFunction::new("Number", 1, number_constructor));
+    ctx.register_builtin(
+        "number_constructor",
+        HostFunction::new("Number", 1, number_constructor),
+    );
     ctx.register_builtin("number_isNaN", HostFunction::new("isNaN", 1, number_is_nan));
     ctx.register_builtin(
         "number_isFinite",
@@ -813,8 +824,12 @@ fn init_number(ctx: &mut JSContext) {
     let number_atom = ctx.intern("Number");
     let mut num_func = JSFunction::new_builtin(number_atom, 1);
     num_func.set_builtin_marker(ctx, "number_constructor");
-    num_func.base.set(ctx.intern("MAX_VALUE"), JSValue::new_float(f64::MAX));
-    num_func.base.set(ctx.intern("MIN_VALUE"), JSValue::new_float(f64::MIN));
+    num_func
+        .base
+        .set(ctx.intern("MAX_VALUE"), JSValue::new_float(f64::MAX));
+    num_func
+        .base
+        .set(ctx.intern("MIN_VALUE"), JSValue::new_float(f64::MIN));
     num_func.base.set(
         ctx.intern("POSITIVE_INFINITY"),
         JSValue::new_float(f64::INFINITY),
@@ -823,7 +838,9 @@ fn init_number(ctx: &mut JSContext) {
         ctx.intern("NEGATIVE_INFINITY"),
         JSValue::new_float(f64::NEG_INFINITY),
     );
-    num_func.base.set(ctx.intern("NaN"), JSValue::new_float(f64::NAN));
+    num_func
+        .base
+        .set(ctx.intern("NaN"), JSValue::new_float(f64::NAN));
     num_func.base.set(
         ctx.intern("isNaN"),
         create_builtin_function(ctx, "number_isNaN"),
@@ -882,14 +899,20 @@ fn init_number(ctx: &mut JSContext) {
 
     let num_func_ptr = num_ptr as *mut crate::object::function::JSFunction;
     unsafe {
-        (*num_func_ptr).base.set(ctx.common_atoms.prototype, JSValue::new_object(proto_ptr));
+        (*num_func_ptr)
+            .base
+            .set(ctx.common_atoms.prototype, JSValue::new_object(proto_ptr));
     }
 }
 
 fn number_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() { return JSValue::undefined(); }
+    if args.is_empty() {
+        return JSValue::undefined();
+    }
     let this = &args[0];
-    if this.is_int() || this.is_float() { return *this; }
+    if this.is_int() || this.is_float() {
+        return *this;
+    }
     if this.is_object() {
         let obj = this.as_object();
         if let Some(v) = obj.get(ctx.common_atoms.__value__) {
@@ -1007,7 +1030,9 @@ fn boolean_constructor(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn boolean_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() { return JSValue::new_string(ctx.intern("false")); }
+    if args.is_empty() {
+        return JSValue::new_string(ctx.intern("false"));
+    }
     let this = &args[0];
     if this.is_bool() {
         return JSValue::new_string(ctx.intern(if this.get_bool() { "true" } else { "false" }));
@@ -1016,7 +1041,11 @@ fn boolean_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let obj = this.as_object();
         if let Some(v) = obj.get(ctx.common_atoms.__value__) {
             if v.is_bool() {
-                return JSValue::new_string(ctx.intern(if v.get_bool() { "true" } else { "false" }));
+                return JSValue::new_string(ctx.intern(if v.get_bool() {
+                    "true"
+                } else {
+                    "false"
+                }));
             }
         }
     }
@@ -1024,9 +1053,13 @@ fn boolean_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn boolean_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() { return JSValue::bool(false); }
+    if args.is_empty() {
+        return JSValue::bool(false);
+    }
     let this = &args[0];
-    if this.is_bool() { return *this; }
+    if this.is_bool() {
+        return *this;
+    }
     if this.is_object() {
         let obj = this.as_object();
         if let Some(v) = obj.get(ctx.common_atoms.__value__) {
@@ -1075,7 +1108,9 @@ fn init_boolean(ctx: &mut JSContext) {
 
     let bool_func_ptr = bool_ptr as *mut crate::object::function::JSFunction;
     unsafe {
-        (*bool_func_ptr).base.set(ctx.common_atoms.prototype, JSValue::new_object(proto_ptr));
+        (*bool_func_ptr)
+            .base
+            .set(ctx.common_atoms.prototype, JSValue::new_object(proto_ptr));
     }
 
     let global = ctx.global();
@@ -1271,27 +1306,42 @@ fn init_global_funcs(ctx: &mut JSContext) {
         );
 
         use crate::object::object::PropertyDescriptor;
-        global_obj.define_property(ctx.intern("undefined"), PropertyDescriptor {
-            value: Some(JSValue::undefined()),
-            writable: false, enumerable: false, configurable: false,
-            get: None, set: None,
-        });
-        global_obj.define_property(ctx.intern("NaN"), PropertyDescriptor {
-            value: Some(JSValue::new_float(f64::NAN)),
-            writable: false, enumerable: false, configurable: false,
-            get: None, set: None,
-        });
-        global_obj.define_property(ctx.intern("Infinity"), PropertyDescriptor {
-            value: Some(JSValue::new_float(f64::INFINITY)),
-            writable: false, enumerable: false, configurable: false,
-            get: None, set: None,
-        });
+        global_obj.define_property(
+            ctx.intern("undefined"),
+            PropertyDescriptor {
+                value: Some(JSValue::undefined()),
+                writable: false,
+                enumerable: false,
+                configurable: false,
+                get: None,
+                set: None,
+            },
+        );
+        global_obj.define_property(
+            ctx.intern("NaN"),
+            PropertyDescriptor {
+                value: Some(JSValue::new_float(f64::NAN)),
+                writable: false,
+                enumerable: false,
+                configurable: false,
+                get: None,
+                set: None,
+            },
+        );
+        global_obj.define_property(
+            ctx.intern("Infinity"),
+            PropertyDescriptor {
+                value: Some(JSValue::new_float(f64::INFINITY)),
+                writable: false,
+                enumerable: false,
+                configurable: false,
+                get: None,
+                set: None,
+            },
+        );
         #[cfg(feature = "fetch")]
         {
-            global_obj.set(
-                ctx.intern("fetch"),
-                create_builtin_function(ctx, "fetch"),
-            );
+            global_obj.set(ctx.intern("fetch"), create_builtin_function(ctx, "fetch"));
             global_obj.set(
                 ctx.intern("WebSocket"),
                 create_builtin_function(ctx, "WebSocket"),

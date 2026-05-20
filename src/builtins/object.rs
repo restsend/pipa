@@ -123,14 +123,14 @@ pub fn init_object(ctx: &mut JSContext) {
         create_builtin_function(ctx, "object_assign"),
     );
     {
-        let mut create_func = crate::object::function::JSFunction::new_builtin(ctx.intern("object_create"), 2);
+        let mut create_func =
+            crate::object::function::JSFunction::new_builtin(ctx.intern("object_create"), 2);
         create_func.set_builtin_marker(ctx, "object_create");
         let ptr = Box::into_raw(Box::new(create_func)) as usize;
         ctx.runtime_mut().gc_heap_mut().track_function(ptr);
-        object_obj.base.set(
-            ctx.intern("create"),
-            JSValue::new_function(ptr),
-        );
+        object_obj
+            .base
+            .set(ctx.intern("create"), JSValue::new_function(ptr));
     }
     object_obj.base.set(
         ctx.intern("getPrototypeOf"),
@@ -204,7 +204,7 @@ pub fn init_object(ctx: &mut JSContext) {
     let object_ptr = Box::into_raw(Box::new(object_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(object_ptr);
     let object_value = JSValue::new_function(object_ptr);
-    
+
     if let Some(op) = ctx.get_object_prototype() {
         unsafe {
             (*op).set(ctx.common_atoms.constructor, object_value);
@@ -224,7 +224,7 @@ fn object_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         if arg.is_object() || arg.is_function() {
             return arg;
         }
-        
+
         if arg.is_bigint() {
             let mut obj = JSObject::new();
             if let Some(proto_ptr) = ctx.get_object_prototype() {
@@ -1109,7 +1109,10 @@ fn object_get_own_property_names(ctx: &mut JSContext, args: &[JSValue]) -> JSVal
         let a_is_idx = a_str.parse::<i64>().is_ok();
         let b_is_idx = b_str.parse::<i64>().is_ok();
         match (a_is_idx, b_is_idx) {
-            (true, true) => a_str.parse::<i64>().unwrap().cmp(&b_str.parse::<i64>().unwrap()),
+            (true, true) => a_str
+                .parse::<i64>()
+                .unwrap()
+                .cmp(&b_str.parse::<i64>().unwrap()),
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             (false, false) => std::cmp::Ordering::Equal,

@@ -56,7 +56,7 @@ fn test_for_of_array_with_break() {
         eval_int(
             "var sum = 0; for (var x of [1, 2, 3, 4, 5]) { if (x === 3) break; sum += x; } sum"
         ),
-        3 
+        3
     );
 }
 
@@ -66,13 +66,12 @@ fn test_for_of_array_with_continue() {
         eval_int(
             "var sum = 0; for (var x of [1, 2, 3, 4, 5]) { if (x === 3) continue; sum += x; } sum"
         ),
-        12 
+        12
     );
 }
 
 #[test]
 fn test_for_of_array_let_binding() {
-    
     eval_ok(
         r#"
         function test() {
@@ -145,7 +144,6 @@ fn test_for_of_existing_var() {
 
 #[test]
 fn test_for_of_var_after_loop() {
-    
     assert_eq!(eval_int("var x = 0; for (x of [1, 2, 3]) {} x"), 3);
 }
 
@@ -201,7 +199,6 @@ fn test_default_constructor_multi_arg() {
 
 #[test]
 fn test_generator_parses_and_creates_function() {
-    
     eval_ok(
         "var gen = function*() { yield 1; }; if (typeof gen !== 'function') throw new Error('generator not a function');",
     );

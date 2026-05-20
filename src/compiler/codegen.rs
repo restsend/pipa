@@ -218,8 +218,7 @@ impl CodeGenerator {
             "PIPA_OPT_FUSED_GETPROP_CALL",
             settings.opt_fused_getprop_call,
         );
-        settings.opt_tiny_inline =
-            Self::env_flag("PIPA_OPT_TINY_INLINE", settings.opt_tiny_inline);
+        settings.opt_tiny_inline = Self::env_flag("PIPA_OPT_TINY_INLINE", settings.opt_tiny_inline);
         settings.opt_branch_result_prealloc = Self::env_flag(
             "PIPA_OPT_BRANCH_RESULT_PREALLOC",
             settings.opt_branch_result_prealloc,
@@ -790,12 +789,11 @@ impl CodeGenerator {
                         if !has_escape && s == "use strict" {
                             return true;
                         }
-                        
                     } else {
-                        return false; 
+                        return false;
                     }
                 }
-                _ => return false, 
+                _ => return false,
             }
         }
         false
@@ -2802,7 +2800,6 @@ impl CodeGenerator {
             self.free_register(r);
         }
         if let Some(frame) = self.breakable_frames.last_mut() {
-            
             frame.continue_target = Some(update_pos);
         }
 
@@ -5346,7 +5343,7 @@ impl CodeGenerator {
         ctx: &mut JSContext,
     ) -> Result<u16, String> {
         let obj = self.gen_expression(&member.object, ctx)?;
-        
+
         if matches!(&*member.object, Expression::Super) && !self.in_static_method {
             let proto_key = self.alloc_register();
             let proto_key_idx = self.add_constant(JSValue::new_string(ctx.common_atoms.prototype));
@@ -5937,7 +5934,6 @@ impl CodeGenerator {
                     ..
                 } => {
                     if *getter || *setter {
-                        
                         let func_reg = self.gen_expression(value, ctx)?;
                         let key_reg = match key {
                             PropertyKey::Identifier(name)
@@ -6173,7 +6169,7 @@ impl CodeGenerator {
             .collect();
 
         let mut class_parent_vars = FxHashMap::default();
-        
+
         for (scope_idx, scope) in self.scope_stack.iter().enumerate() {
             if self
                 .scope_is_global
@@ -6193,7 +6189,7 @@ impl CodeGenerator {
                 );
             }
         }
-        
+
         for (var_name, &slot) in &self.upvalue_slots {
             if !class_parent_vars.contains_key(var_name) {
                 class_parent_vars.insert(
@@ -6205,7 +6201,7 @@ impl CodeGenerator {
                 );
             }
         }
-        
+
         if !class_name.is_empty() {
             class_parent_vars.insert(
                 class_name.to_string(),

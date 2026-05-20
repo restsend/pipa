@@ -10,14 +10,8 @@ use crate::value::JSValue;
 
 pub fn register_fetch(ctx: &mut JSContext) {
     ctx.register_builtin("fetch", HostFunction::new("fetch", 1, fetch_impl));
-    ctx.register_builtin(
-        "response_text",
-        HostFunction::new("text", 1, response_text),
-    );
-    ctx.register_builtin(
-        "response_json",
-        HostFunction::new("json", 1, response_json),
-    );
+    ctx.register_builtin("response_text", HostFunction::new("text", 1, response_text));
+    ctx.register_builtin("response_json", HostFunction::new("json", 1, response_json));
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {

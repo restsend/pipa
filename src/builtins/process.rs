@@ -8,23 +8,18 @@ use crate::value::JSValue;
 pub fn init_process_module(ctx: &mut JSContext) {
     let specifier = "pipa:process";
 
-    ctx.register_builtin(
-        "process_exit",
-        HostFunction::new("exit", 1, process_exit),
-    );
-    ctx.register_builtin(
-        "process_cwd",
-        HostFunction::new("cwd", 0, process_cwd),
-    );
-    ctx.register_builtin(
-        "process_exec",
-        HostFunction::new("exec", 2, process_exec),
-    );
+    ctx.register_builtin("process_exit", HostFunction::new("exit", 1, process_exit));
+    ctx.register_builtin("process_cwd", HostFunction::new("cwd", 0, process_cwd));
+    ctx.register_builtin("process_exec", HostFunction::new("exec", 2, process_exec));
 
     let mut module = crate::runtime::module::Module::new(specifier.to_string(), String::new());
 
     module.add_export("argv".to_string(), make_argv(ctx), false);
-    module.add_export("argc".to_string(), JSValue::new_int(ctx.runtime().argv.len() as i64), false);
+    module.add_export(
+        "argc".to_string(),
+        JSValue::new_int(ctx.runtime().argv.len() as i64),
+        false,
+    );
     module.add_export("env".to_string(), make_env(ctx), false);
 
     let (cwd_fn, exit_fn, exec_fn) = make_functions(ctx);
@@ -32,9 +27,7 @@ pub fn init_process_module(ctx: &mut JSContext) {
     module.add_export("exit".to_string(), exit_fn, false);
     module.add_export("exec".to_string(), exec_fn, false);
 
-    ctx.runtime_mut()
-        .module_registry_mut()
-        .register(module);
+    ctx.runtime_mut().module_registry_mut().register(module);
 }
 
 fn make_argv(ctx: &mut JSContext) -> JSValue {
@@ -81,7 +74,11 @@ fn make_function_value(ctx: &mut JSContext, name: &str, arity: u32, marker: &str
 }
 
 fn process_exit(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let code = if args.is_empty() || !args[0].is_int() { 0 } else { args[0].get_int() as i32 };
+    let code = if args.is_empty() || !args[0].is_int() {
+        0
+    } else {
+        args[0].get_int() as i32
+    };
     std::process::exit(code);
 }
 
@@ -97,7 +94,6 @@ fn process_cwd(ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
 }
 
 fn process_exec(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    
     let start_idx = if args.len() >= 3 { 1 } else { 0 };
     let real_args = &args[start_idx..];
 
@@ -127,12 +123,29 @@ fn process_exec(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         super::promise::reject_promise_with_value(ctx, promise_ptr, msg);
     } else {
         let mut result_obj = crate::object::object::JSObject::new();
-        result_obj.set(ctx.intern("stdout"), JSValue::new_string(ctx.intern(&String::from_utf8_lossy(&result.stdout))));
-        result_obj.set(ctx.intern("stderr"), JSValue::new_string(ctx.intern(&String::from_utf8_lossy(&result.stderr))));
+        result_obj.set(
+            ctx.intern("stdout"),
+            JSValue::new_string(ctx.intern(&String::from_utf8_lossy(&result.stdout))),
+        );
+        result_obj.set(
+            ctx.intern("stderr"),
+            JSValue::new_string(ctx.intern(&String::from_utf8_lossy(&result.stderr))),
+        );
         result_obj.set(ctx.intern("code"), JSValue::new_int(result.code as i64));
-        result_obj.set(ctx.intern("signal"), if let Some(sig) = result.signal { JSValue::new_int(sig as i64) } else { JSValue::null() });
+        result_obj.set(
+            ctx.intern("signal"),
+            if let Some(sig) = result.signal {
+                JSValue::new_int(sig as i64)
+            } else {
+                JSValue::null()
+            },
+        );
         let result_ptr = Box::into_raw(Box::new(result_obj)) as usize;
-        super::promise::fulfill_promise_with_value(ctx, promise_ptr, JSValue::new_object(result_ptr));
+        super::promise::fulfill_promise_with_value(
+            ctx,
+            promise_ptr,
+            JSValue::new_object(result_ptr),
+        );
     }
 
     promise_val
@@ -150,7 +163,11 @@ fn parse_js_array(ctx: &mut JSContext, arg: Option<&JSValue>) -> Vec<String> {
         unsafe { &*arr_ptr }.len()
     } else {
         let len_val = obj.get(ctx.intern("length")).unwrap_or(JSValue::new_int(0));
-        if len_val.is_int() { len_val.get_int() as usize } else { 0 }
+        if len_val.is_int() {
+            len_val.get_int() as usize
+        } else {
+            0
+        }
     };
 
     let mut result = Vec::with_capacity(len);

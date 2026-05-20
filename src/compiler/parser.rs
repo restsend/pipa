@@ -394,10 +394,7 @@ impl Parser {
         matches!(
             self.cur_type(),
             Some(TokenType::Identifier) | Some(TokenType::Keyword)
-        ) && !matches!(
-            self.cur_value(),
-            "true" | "false" | "null"
-        )
+        ) && !matches!(self.cur_value(), "true" | "false" | "null")
     }
 
     fn parse_function_declaration(
@@ -558,7 +555,6 @@ impl Parser {
     fn parse_class_body(&mut self) -> Result<ClassBody, String> {
         let mut elements = Vec::new();
         while !self.at_punct("}") && !self.is_eof() {
-            
             if self.at_punct(";") {
                 self.advance();
                 continue;
@@ -960,12 +956,18 @@ impl Parser {
     }
 
     fn has_line_terminator(&self) -> bool {
-        self.current.as_ref().map_or(false, |t| t.line > self.saved_line)
+        self.current
+            .as_ref()
+            .map_or(false, |t| t.line > self.saved_line)
     }
 
     fn parse_return_statement(&mut self) -> Result<ASTNode, String> {
         self.expect("return")?;
-        let argument = if self.is_eof() || self.at_punct(";") || self.at_punct("}") || self.has_line_terminator() {
+        let argument = if self.is_eof()
+            || self.at_punct(";")
+            || self.at_punct("}")
+            || self.has_line_terminator()
+        {
             None
         } else {
             Some(self.parse_expression()?)
@@ -983,7 +985,11 @@ impl Parser {
 
     fn parse_break_statement(&mut self) -> Result<ASTNode, String> {
         self.expect("break")?;
-        let label = if !self.has_line_terminator() && self.is_identifier_name() && !self.at_punct(";") && !self.is_eof() {
+        let label = if !self.has_line_terminator()
+            && self.is_identifier_name()
+            && !self.at_punct(";")
+            && !self.is_eof()
+        {
             Some(self.cur_value().to_string())
         } else {
             None
@@ -997,7 +1003,11 @@ impl Parser {
 
     fn parse_continue_statement(&mut self) -> Result<ASTNode, String> {
         self.expect("continue")?;
-        let label = if !self.has_line_terminator() && self.is_identifier_name() && !self.at_punct(";") && !self.is_eof() {
+        let label = if !self.has_line_terminator()
+            && self.is_identifier_name()
+            && !self.at_punct(";")
+            && !self.is_eof()
+        {
             Some(self.cur_value().to_string())
         } else {
             None
@@ -1976,7 +1986,9 @@ impl Parser {
             self.advance();
             return Ok(Expression::Literal(Literal::Null));
         }
-        if self.at_keyword("undefined") || (self.cur_type() == Some(TokenType::Identifier) && self.cur_value() == "undefined") {
+        if self.at_keyword("undefined")
+            || (self.cur_type() == Some(TokenType::Identifier) && self.cur_value() == "undefined")
+        {
             self.advance();
             return Ok(Expression::Literal(Literal::Undefined));
         }
@@ -2214,7 +2226,6 @@ impl Parser {
 
                 if let Some(accessor_kind) = accessor {
                     if self.at_punct(":") {
-                        
                     } else {
                         let (acc_key, _acc_computed, _acc_shorthand) = self.parse_property_key()?;
                         if self.at_punct("(") {
@@ -2313,7 +2324,11 @@ impl Parser {
             let val = self.cur_value().to_string();
             self.advance();
             let has_escape = self.lexer.last_string_had_escape;
-            return Ok((PropertyKey::Literal(Literal::String(val, has_escape)), false, false));
+            return Ok((
+                PropertyKey::Literal(Literal::String(val, has_escape)),
+                false,
+                false,
+            ));
         }
         if self.cur_type() == Some(TokenType::Number) {
             let raw = self.cur_value().to_string();
@@ -2321,11 +2336,16 @@ impl Parser {
             self.advance();
             return Ok(match lit {
                 NumberLit::Normal(v) => (PropertyKey::Literal(Literal::Number(v)), false, false),
-                NumberLit::LegacyOctal(v) => (PropertyKey::Literal(Literal::LegacyOctal(v)), false, false),
+                NumberLit::LegacyOctal(v) => {
+                    (PropertyKey::Literal(Literal::LegacyOctal(v)), false, false)
+                }
             });
         }
         if self.is_identifier_name()
-            || matches!(self.cur_value(), "true" | "false" | "null" | "undefined" | "NaN" | "Infinity")
+            || matches!(
+                self.cur_value(),
+                "true" | "false" | "null" | "undefined" | "NaN" | "Infinity"
+            )
         {
             let name = self.cur_value().to_string();
             self.advance();
@@ -2514,7 +2534,6 @@ fn expr_to_target(expr: Expression) -> Result<AssignmentTarget, String> {
             }))
         }
         Expression::AssignmentExpression(a) => {
-            
             Ok(AssignmentTarget::AssignmentPattern(AssignmentPattern {
                 left: Box::new(a.left),
                 right: a.right,
@@ -2542,22 +2561,34 @@ enum NumberLit {
 fn parse_number_literal(raw: &str) -> NumberLit {
     if raw.starts_with("0x") || raw.starts_with("0X") {
         let clean: String = raw[2..].chars().filter(|&c| c != '_').collect();
-        NumberLit::Normal(i64::from_str_radix(&clean, 16).map(|n| n as f64).unwrap_or(0.0))
+        NumberLit::Normal(
+            i64::from_str_radix(&clean, 16)
+                .map(|n| n as f64)
+                .unwrap_or(0.0),
+        )
     } else if raw.starts_with("0o") || raw.starts_with("0O") {
         let clean: String = raw[2..].chars().filter(|&c| c != '_').collect();
-        NumberLit::Normal(i64::from_str_radix(&clean, 8).map(|n| n as f64).unwrap_or(0.0))
+        NumberLit::Normal(
+            i64::from_str_radix(&clean, 8)
+                .map(|n| n as f64)
+                .unwrap_or(0.0),
+        )
     } else if raw.starts_with("0b") || raw.starts_with("0B") {
         let clean: String = raw[2..].chars().filter(|&c| c != '_').collect();
-        NumberLit::Normal(i64::from_str_radix(&clean, 2).map(|n| n as f64).unwrap_or(0.0))
-    } else if raw.len() > 1
-        && raw.as_bytes()[0] == b'0'
-        && raw.as_bytes()[1].is_ascii_digit()
-    {
+        NumberLit::Normal(
+            i64::from_str_radix(&clean, 2)
+                .map(|n| n as f64)
+                .unwrap_or(0.0),
+        )
+    } else if raw.len() > 1 && raw.as_bytes()[0] == b'0' && raw.as_bytes()[1].is_ascii_digit() {
         let chars: Vec<char> = raw.chars().collect();
         if chars[1] == '8' || chars[1] == '9' {
             let clean: String = raw.chars().filter(|&c| c != '_').collect();
             NumberLit::Normal(clean.parse::<f64>().unwrap_or(0.0))
-        } else if chars[1..].iter().all(|&c| c == '_' || (c.is_ascii_digit() && c <= '7')) {
+        } else if chars[1..]
+            .iter()
+            .all(|&c| c == '_' || (c.is_ascii_digit() && c <= '7'))
+        {
             let clean: String = raw[1..].chars().filter(|&c| c != '_').collect();
             NumberLit::LegacyOctal(i64::from_str_radix(&clean, 8).unwrap_or(0))
         } else {

@@ -500,7 +500,7 @@ impl GcHeap {
                     self.mark_value(s);
                 }
             });
-            
+
             if let Some(items_to_mark) = arr.header.get_private_accessors_for_gc() {
                 for item in items_to_mark {
                     self.mark_value(&item);
@@ -528,7 +528,7 @@ impl GcHeap {
                     self.mark_value(s);
                 }
             });
-            
+
             if let Some(items_to_mark) = obj.get_private_accessors_for_gc() {
                 for item in items_to_mark {
                     self.mark_value(&item);

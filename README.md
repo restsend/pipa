@@ -4,6 +4,7 @@
 
 - **ES2023 compliant** — implements the ECMAScript 2023 specification
 - **Async/await built-in** — first-class async/await support without transpilation
+- **Bytecode support** — compile JavaScript to `.jsc` bytecode files for fast loading and execution, with configurable optimization levels (`-O0` through `-O3`)
 - **Fast** — outperforms QuickJS in benchmarks
 - **Small** — ~5.2 MB binary (with `repl` feature)
 - **Zero-dependency** built-in implementations for:
@@ -39,6 +40,18 @@ Ranking: **#1 node** (54642) · **#2 pipa** (1256) · **#3 qjs** (1219) · **#4 
 cargo install pipa-js
 # Run a script
 pipa script.js
+
+# Run precompiled bytecode
+pipa script.jsc
+
+# Compile JavaScript to bytecode
+pipa -compile input.js output.jsc
+
+# Disassemble bytecode (debugging)
+pipa -diss script.jsc
+
+# Specify optimization level (default: -O2)
+pipa -O3 script.js
 
 # Start REPL (requires the repl feature)
 pipa

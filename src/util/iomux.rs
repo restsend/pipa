@@ -67,11 +67,18 @@ mod platform {
     impl SelectorBackend for Selector {
         fn register(&mut self, fd: RawFd, readable: bool, writable: bool) -> Result<(), String> {
             let mut events = 0u32;
-            if readable { events |= EPOLLIN; }
-            if writable { events |= EPOLLOUT; }
+            if readable {
+                events |= EPOLLIN;
+            }
+            if writable {
+                events |= EPOLLOUT;
+            }
             events |= EPOLLERR | EPOLLHUP;
 
-            let ev = EpollEvent { events, data: fd as u64 };
+            let ev = EpollEvent {
+                events,
+                data: fd as u64,
+            };
             let ret = unsafe { epoll_ctl(self.epfd, EPOLL_CTL_ADD, fd, &ev) };
             if ret < 0 {
                 return Err(format!("epoll_ctl ADD failed for fd {fd}: {ret}"));
@@ -92,9 +99,16 @@ mod platform {
 
         fn modify(&mut self, fd: RawFd, readable: bool, writable: bool) -> Result<(), String> {
             let mut events = 0u32;
-            if readable { events |= EPOLLIN; }
-            if writable { events |= EPOLLOUT; }
-            let ev = EpollEvent { events, data: fd as u64 };
+            if readable {
+                events |= EPOLLIN;
+            }
+            if writable {
+                events |= EPOLLOUT;
+            }
+            let ev = EpollEvent {
+                events,
+                data: fd as u64,
+            };
             let ret = unsafe { epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev) };
             if ret < 0 {
                 return Err(format!("epoll_ctl MOD failed for fd {fd}: {ret}"));
@@ -103,13 +117,7 @@ mod platform {
         }
 
         fn wait(&mut self, timeout_ms: i32) -> Result<Vec<Event>, String> {
-            let mut raw_events = vec![
-                EpollEvent {
-                    events: 0,
-                    data: 0
-                };
-                EPOLL_MAX_EVENTS
-            ];
+            let mut raw_events = vec![EpollEvent { events: 0, data: 0 }; EPOLL_MAX_EVENTS];
             let n = unsafe {
                 epoll_wait(
                     self.epfd,
@@ -148,7 +156,12 @@ mod platform {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))]
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
 mod platform {
     use super::*;
     use std::os::unix::io::RawFd;
@@ -317,7 +330,9 @@ mod platform {
             } else {
                 None
             };
-            let ts_ptr = ts.as_ref().map_or(std::ptr::null(), |t| t as *const _ as *const std::ffi::c_void);
+            let ts_ptr = ts.as_ref().map_or(std::ptr::null(), |t| {
+                t as *const _ as *const std::ffi::c_void
+            });
 
             let n = unsafe {
                 kevent(

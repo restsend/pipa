@@ -84,12 +84,7 @@ impl HttpRequest {
         }
     }
 
-    pub fn new(
-        url: Url,
-        method: HttpMethod,
-        req_headers: Headers,
-        body: Option<Vec<u8>>,
-    ) -> Self {
+    pub fn new(url: Url, method: HttpMethod, req_headers: Headers, body: Option<Vec<u8>>) -> Self {
         HttpRequest {
             url,
             state: RequestState::Resolving,
@@ -128,23 +123,21 @@ impl HttpRequest {
     pub fn try_advance(&mut self) -> Result<RequestEvent, String> {
         loop {
             match self.state {
-                RequestState::Resolving => {
-                    match self.connect_rx.as_ref().unwrap().try_recv() {
-                        Ok(result) => {
-                            let conn = result?;
-                            conn.set_nonblocking(true)?;
-                            self.conn = Some(conn);
-                            self.build_request();
-                            self.state = RequestState::WritingRequest;
-                        }
-                        Err(mpsc::TryRecvError::Empty) => {
-                            return Ok(RequestEvent::NeedRead);
-                        }
-                        Err(mpsc::TryRecvError::Disconnected) => {
-                            return Err("connect thread disconnected".into());
-                        }
+                RequestState::Resolving => match self.connect_rx.as_ref().unwrap().try_recv() {
+                    Ok(result) => {
+                        let conn = result?;
+                        conn.set_nonblocking(true)?;
+                        self.conn = Some(conn);
+                        self.build_request();
+                        self.state = RequestState::WritingRequest;
                     }
-                }
+                    Err(mpsc::TryRecvError::Empty) => {
+                        return Ok(RequestEvent::NeedRead);
+                    }
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        return Err("connect thread disconnected".into());
+                    }
+                },
 
                 RequestState::WritingRequest => {
                     let conn = self.conn.as_mut().unwrap();
@@ -186,20 +179,17 @@ impl HttpRequest {
                                 if let Some(status) = self.parse_status_line()? {
                                     self.resp_status = Some(status);
                                     let header_data = &self.read_data[headers_start..];
-                                    let (headers, _) = Headers::from_bytes(
-                                        &self.read_data[headers_start..],
-                                    )?;
+                                    let (headers, _) =
+                                        Headers::from_bytes(&self.read_data[headers_start..])?;
                                     let body_mode = self.determine_body_mode(&headers);
                                     self.resp_headers = Some(headers.clone());
-                                    let enc = headers
-                                        .get("content-encoding")
-                                        .map(|s| s.to_string());
-                                    self.decompressor =
-                                        Some(Decompressor::new(enc.as_deref()));
+                                    let enc =
+                                        headers.get("content-encoding").map(|s| s.to_string());
+                                    self.decompressor = Some(Decompressor::new(enc.as_deref()));
                                     self.body_reader = Some(BodyReader::new(body_mode));
-                                    self.parse_buf =
-                                        self.read_data[headers_start + header_data.len()..]
-                                            .to_vec();
+                                    self.parse_buf = self.read_data
+                                        [headers_start + header_data.len()..]
+                                        .to_vec();
                                     self.state = RequestState::ReadingBody;
                                     continue;
                                 }
@@ -239,14 +229,10 @@ impl HttpRequest {
                                 let (headers, _) = Headers::from_bytes(header_data)?;
                                 let body_mode = self.determine_body_mode(&headers);
                                 self.resp_headers = Some(headers.clone());
-                                let enc = headers
-                                    .get("content-encoding")
-                                    .map(|s| s.to_string());
-                                self.decompressor =
-                                    Some(Decompressor::new(enc.as_deref()));
+                                let enc = headers.get("content-encoding").map(|s| s.to_string());
+                                self.decompressor = Some(Decompressor::new(enc.as_deref()));
                                 self.body_reader = Some(BodyReader::new(body_mode));
-                                self.parse_buf =
-                                    self.read_data[headers_end + 4..].to_vec();
+                                self.parse_buf = self.read_data[headers_end + 4..].to_vec();
                                 self.state = RequestState::ReadingBody;
                                 continue;
                             }
@@ -265,11 +251,7 @@ impl HttpRequest {
 
                     if !self.parse_buf.is_empty() {
                         let data = std::mem::take(&mut self.parse_buf);
-                        let _ = self
-                            .body_reader
-                            .as_mut()
-                            .unwrap()
-                            .feed(&data)?;
+                        let _ = self.body_reader.as_mut().unwrap().feed(&data)?;
                     }
 
                     if self.body_reader.as_ref().unwrap().is_done() {
@@ -322,7 +304,10 @@ impl HttpRequest {
                         String::from_utf8_lossy(line)
                     ));
                 }
-                let http_end = line.iter().position(|&b| b == b' ').ok_or("no space after HTTP/x.y")?;
+                let http_end = line
+                    .iter()
+                    .position(|&b| b == b' ')
+                    .ok_or("no space after HTTP/x.y")?;
                 let status_start = http_end + 1;
                 if status_start >= line.len() {
                     return Err("missing status code".into());
@@ -337,7 +322,9 @@ impl HttpRequest {
                     .parse()
                     .map_err(|e| format!("invalid status code: {e}"))?;
                 let reason = if status_end < line.len() {
-                    String::from_utf8_lossy(&line[status_end + 1..]).trim().to_string()
+                    String::from_utf8_lossy(&line[status_end + 1..])
+                        .trim()
+                        .to_string()
                 } else {
                     String::new()
                 };
@@ -406,9 +393,10 @@ impl HttpRequest {
         self.state = RequestState::Done;
         let (code, status_text) = self.resp_status.take().unwrap_or((0, String::new()));
         let headers = self.resp_headers.take().unwrap_or_default();
-        let mut body_reader = self.body_reader.take().unwrap_or_else(|| {
-            BodyReader::new(BodyMode::None)
-        });
+        let mut body_reader = self
+            .body_reader
+            .take()
+            .unwrap_or_else(|| BodyReader::new(BodyMode::None));
         let body = body_reader.take_body();
 
         let decompressed = if let Some(ref mut decomp) = self.decompressor {

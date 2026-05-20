@@ -30,9 +30,7 @@ impl WsHandshake {
         if status.0 != 101 {
             return Err(format!("expected 101, got {}", status.0));
         }
-        let upgrade = headers
-            .get("upgrade")
-            .ok_or("missing Upgrade header")?;
+        let upgrade = headers.get("upgrade").ok_or("missing Upgrade header")?;
         if !upgrade.eq_ignore_ascii_case("websocket") {
             return Err(format!("unexpected Upgrade: {upgrade}"));
         }
@@ -68,12 +66,8 @@ fn sha1(data: &[u8]) -> [u8; 20] {
         let mut w = [0u32; 80];
         for (i, word) in w.iter_mut().enumerate().take(16) {
             let idx = i * 4;
-            *word = u32::from_be_bytes([
-                chunk[idx],
-                chunk[idx + 1],
-                chunk[idx + 2],
-                chunk[idx + 3],
-            ]);
+            *word =
+                u32::from_be_bytes([chunk[idx], chunk[idx + 1], chunk[idx + 2], chunk[idx + 3]]);
         }
         for i in 16..80 {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
@@ -86,7 +80,12 @@ fn sha1(data: &[u8]) -> [u8; 20] {
                 40..=59 => ((b & c) | (b & d) | (c & d), 0x8F1BBCDC),
                 _ => (b ^ c ^ d, 0xCA62C1D6),
             };
-            let temp = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(w[i]);
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(w[i]);
             e = d;
             d = c;
             c = b.rotate_left(30);
@@ -116,8 +115,10 @@ mod tests {
         let hash = sha1(b"hello");
         assert_eq!(
             hash,
-            [0xaa, 0xf4, 0xc6, 0x1d, 0xdc, 0xc5, 0xe8, 0xa2, 0xda, 0xbe,
-             0xde, 0x0f, 0x3b, 0x48, 0x2c, 0xd9, 0xae, 0xa9, 0x43, 0x4d]
+            [
+                0xaa, 0xf4, 0xc6, 0x1d, 0xdc, 0xc5, 0xe8, 0xa2, 0xda, 0xbe, 0xde, 0x0f, 0x3b, 0x48,
+                0x2c, 0xd9, 0xae, 0xa9, 0x43, 0x4d
+            ]
         );
     }
 

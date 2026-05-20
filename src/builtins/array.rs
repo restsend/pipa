@@ -42,7 +42,7 @@ fn init_array_length(obj: &mut JSObject, len: i64, ctx: &mut JSContext) {
             },
         );
     }
-    
+
     obj.assign_shape_from_existing_props(ctx.shape_cache_mut());
 }
 

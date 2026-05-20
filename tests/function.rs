@@ -109,13 +109,13 @@ fn test_arrow_expression_body() {
         "var getN = () => 42; if (getN() !== 42) throw new Error('arrow zero-arg mismatch');",
         "arrow zero-arg failed",
     );
-    
+
     assert_js_ok(
         &mut ctx,
         "var mul = (a) => (b) => a * b; if (mul(3)(4) !== 12) throw new Error('nested arrow mismatch');",
         "nested arrow failed",
     );
-    
+
     assert_js_ok(
         &mut ctx,
         "var mkObj = (x) => ({ x: x }); if (mkObj(5).x !== 5) throw new Error('arrow object return mismatch');",

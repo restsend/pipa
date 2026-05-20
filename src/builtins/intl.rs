@@ -22,12 +22,7 @@ fn create_builtin_function(
     JSValue::new_function(ptr)
 }
 
-fn define_name_length(
-    ctx: &mut JSContext,
-    obj: &mut JSObject,
-    name: &str,
-    length: i64,
-) {
+fn define_name_length(ctx: &mut JSContext, obj: &mut JSObject, name: &str, length: i64) {
     let name_desc = PropertyDescriptor {
         value: Some(JSValue::new_string(ctx.intern(name))),
         writable: false,
@@ -198,11 +193,7 @@ fn value_to_string(ctx: &mut JSContext, v: JSValue) -> String {
     String::new()
 }
 
-fn parse_bool_option(
-    ctx: &mut JSContext,
-    options: &JSObject,
-    key: &str,
-) -> Option<bool> {
+fn parse_bool_option(ctx: &mut JSContext, options: &JSObject, key: &str) -> Option<bool> {
     let key_atom = ctx.intern(key);
     let value = options.get(key_atom)?;
     if value.is_undefined() {
@@ -237,10 +228,7 @@ fn parse_string_option(
     }
 }
 
-fn parse_collator_state(
-    ctx: &mut JSContext,
-    args: &[JSValue],
-) -> Result<CollatorState, ()> {
+fn parse_collator_state(ctx: &mut JSContext, args: &[JSValue]) -> Result<CollatorState, ()> {
     let mut locale = match get_locale_from_first_arg(ctx, args) {
         AtomOrDefault::Atom(a) => a,
         AtomOrDefault::Default => ctx.intern("en"),
@@ -255,13 +243,15 @@ fn parse_collator_state(
     let mut has_case_first = false;
     let mut case_first = ctx.intern("false");
 
-    let options_val = if args.len() > 1 { args[1] } else { JSValue::undefined() };
+    let options_val = if args.len() > 1 {
+        args[1]
+    } else {
+        JSValue::undefined()
+    };
     if options_val.is_object() {
         let options = options_val.as_object();
 
-        if let Some(usage_opt) =
-            parse_string_option(ctx, options, "usage", &["sort", "search"])?
-        {
+        if let Some(usage_opt) = parse_string_option(ctx, options, "usage", &["sort", "search"])? {
             usage = ctx.intern(&usage_opt);
         }
 
@@ -290,12 +280,9 @@ fn parse_collator_state(
             case_first = ctx.intern(&case_first_opt);
         }
 
-        if let Some(collation_opt) = parse_string_option(
-            ctx,
-            options,
-            "collation",
-            &["default", "phonebk", "eor"],
-        )? {
+        if let Some(collation_opt) =
+            parse_string_option(ctx, options, "collation", &["default", "phonebk", "eor"])?
+        {
             collation = ctx.intern(&collation_opt);
         }
     }
@@ -352,7 +339,9 @@ fn parse_collator_state(
         }
     }
     if locale_str.contains("-u-kf-") {
-        if has_case_first && !locale_str.contains(&format!("-u-kf-{}", ctx.get_atom_str(case_first))) {
+        if has_case_first
+            && !locale_str.contains(&format!("-u-kf-{}", ctx.get_atom_str(case_first)))
+        {
             let mut cut = locale_str.clone();
             if let Some(pos) = cut.find("-u-kf-") {
                 cut.truncate(pos);
@@ -375,8 +364,14 @@ fn parse_collator_state(
 }
 
 fn set_collator_state(ctx: &mut JSContext, target: &mut JSObject, state: CollatorState) {
-    target.set(ctx.intern("__intlLocale__"), JSValue::new_string(state.locale));
-    target.set(ctx.intern("__intlUsage__"), JSValue::new_string(state.usage));
+    target.set(
+        ctx.intern("__intlLocale__"),
+        JSValue::new_string(state.locale),
+    );
+    target.set(
+        ctx.intern("__intlUsage__"),
+        JSValue::new_string(state.usage),
+    );
     target.set(
         ctx.intern("__intlSensitivity__"),
         JSValue::new_string(state.sensitivity),
@@ -460,12 +455,7 @@ fn get_collator_state_from_value(ctx: &mut JSContext, value: JSValue) -> Option<
     })
 }
 
-fn compare_strings_by_state(
-    ctx: &JSContext,
-    state: &CollatorState,
-    a: &str,
-    b: &str,
-) -> i64 {
+fn compare_strings_by_state(ctx: &JSContext, state: &CollatorState, a: &str, b: &str) -> i64 {
     let mut aa = simple_canonicalize(a);
     let mut bb = simple_canonicalize(b);
 
@@ -478,14 +468,8 @@ fn compare_strings_by_state(
     }
 
     if state.ignore_punctuation {
-        aa = aa
-            .chars()
-            .filter(|c| c.is_alphanumeric())
-            .collect();
-        bb = bb
-            .chars()
-            .filter(|c| c.is_alphanumeric())
-            .collect();
+        aa = aa.chars().filter(|c| c.is_alphanumeric()).collect();
+        bb = bb.chars().filter(|c| c.is_alphanumeric()).collect();
     }
 
     if aa == bb {
@@ -524,11 +508,17 @@ fn compare_strings_by_state(
 
 fn intl_collator_compare_getter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let Some(this) = args.first().copied() else {
-        throw_type_error(ctx, "Intl.Collator.prototype.compare called on incompatible receiver");
+        throw_type_error(
+            ctx,
+            "Intl.Collator.prototype.compare called on incompatible receiver",
+        );
         return JSValue::undefined();
     };
     let Some(state) = get_collator_state_from_value(ctx, this) else {
-        throw_type_error(ctx, "Intl.Collator.prototype.compare called on incompatible receiver");
+        throw_type_error(
+            ctx,
+            "Intl.Collator.prototype.compare called on incompatible receiver",
+        );
         return JSValue::undefined();
     };
 
@@ -548,16 +538,25 @@ fn intl_collator_compare_getter(ctx: &mut JSContext, args: &[JSValue]) -> JSValu
 
 fn intl_collator_compare_call(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let Some(callee) = args.first().copied() else {
-        throw_type_error(ctx, "Intl.Collator compare function called on incompatible receiver");
+        throw_type_error(
+            ctx,
+            "Intl.Collator compare function called on incompatible receiver",
+        );
         return JSValue::undefined();
     };
     if !callee.is_function() {
-        throw_type_error(ctx, "Intl.Collator compare function called on incompatible receiver");
+        throw_type_error(
+            ctx,
+            "Intl.Collator compare function called on incompatible receiver",
+        );
         return JSValue::undefined();
     }
     let f = callee.as_function();
     if f.cached_prototype_ptr.is_null() {
-        throw_type_error(ctx, "Intl.Collator compare function called on incompatible receiver");
+        throw_type_error(
+            ctx,
+            "Intl.Collator compare function called on incompatible receiver",
+        );
         return JSValue::undefined();
     }
     let state = unsafe { *((f.cached_prototype_ptr as usize) as *const CollatorState) };
@@ -678,11 +677,19 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "intl_numberformat_supported_locales_of",
-        HostFunction::new("supportedLocalesOf", 1, intl_numberformat_supported_locales_of),
+        HostFunction::new(
+            "supportedLocalesOf",
+            1,
+            intl_numberformat_supported_locales_of,
+        ),
     );
     ctx.register_builtin(
         "intl_datetimeformat_supported_locales_of",
-        HostFunction::new("supportedLocalesOf", 1, intl_datetimeformat_supported_locales_of),
+        HostFunction::new(
+            "supportedLocalesOf",
+            1,
+            intl_datetimeformat_supported_locales_of,
+        ),
     );
 
     ctx.register_builtin(
@@ -742,12 +749,8 @@ fn init_collator(ctx: &mut JSContext) -> JSValue {
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto.prototype = Some(obj_proto_ptr);
     }
-    let compare_getter = create_builtin_function(
-        ctx,
-        "intl_collator_compare_getter",
-        "get compare",
-        0,
-    );
+    let compare_getter =
+        create_builtin_function(ctx, "intl_collator_compare_getter", "get compare", 0);
     proto.define_property(
         ctx.intern("compare"),
         PropertyDescriptor {
@@ -761,12 +764,7 @@ fn init_collator(ctx: &mut JSContext) -> JSValue {
     );
     proto.set(
         ctx.intern("resolvedOptions"),
-        create_builtin_function(
-            ctx,
-            "intl_collator_resolved_options",
-            "resolvedOptions",
-            0,
-        ),
+        create_builtin_function(ctx, "intl_collator_resolved_options", "resolvedOptions", 0),
     );
     let proto_ptr = Box::into_raw(Box::new(proto)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);

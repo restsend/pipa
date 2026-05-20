@@ -662,7 +662,6 @@ pub fn init_date_to_primitive(ctx: &mut JSContext) {
 }
 
 pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    
     if args.len() < 2 {
         return JSValue::undefined();
     }
@@ -682,7 +681,7 @@ pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 fn get_date_timestamp_with_ctx(this: &JSValue, ctx: &mut JSContext) -> f64 {
     if this.is_object() {
         let obj = this.as_object();
-        
+
         if let Some(ts) = obj.get(ctx.intern("__dateValue__")) {
             if ts.is_int() {
                 return ts.get_int() as f64;
@@ -690,7 +689,7 @@ fn get_date_timestamp_with_ctx(this: &JSValue, ctx: &mut JSContext) -> f64 {
                 return ts.get_float();
             }
         }
-        
+
         if let Some(ts) = obj.get(ctx.common_atoms.__value__) {
             if ts.is_int() {
                 return ts.get_int() as f64;

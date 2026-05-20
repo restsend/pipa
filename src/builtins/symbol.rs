@@ -266,9 +266,10 @@ pub fn init_symbol(ctx: &mut JSContext) {
 
     let symbol_is_concat_spreadable =
         get_or_create_well_known_symbol(ctx, SYMBOL_IS_CONCAT_SPREADABLE_DESC);
-    symbol_ctor
-        .base
-        .set(ctx.intern("isConcatSpreadable"), symbol_is_concat_spreadable);
+    symbol_ctor.base.set(
+        ctx.intern("isConcatSpreadable"),
+        symbol_is_concat_spreadable,
+    );
 
     let symbol_match = get_or_create_well_known_symbol(ctx, SYMBOL_MATCH_DESC);
     symbol_ctor.base.set(ctx.intern("match"), symbol_match);

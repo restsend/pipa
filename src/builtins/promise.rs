@@ -765,13 +765,21 @@ pub fn create_rejected_promise(ctx: &mut JSContext, reason: JSValue) -> JSValue 
 }
 
 #[cfg(feature = "process")]
-pub(crate) fn fulfill_promise_with_value(ctx: &mut JSContext, promise_obj_ptr: usize, value: JSValue) {
+pub(crate) fn fulfill_promise_with_value(
+    ctx: &mut JSContext,
+    promise_obj_ptr: usize,
+    value: JSValue,
+) {
     let promise = unsafe { &mut *(promise_obj_ptr as *mut JSObject) };
     fulfill_promise(ctx, promise, value);
 }
 
 #[cfg(feature = "process")]
-pub(crate) fn reject_promise_with_value(ctx: &mut JSContext, promise_obj_ptr: usize, reason: JSValue) {
+pub(crate) fn reject_promise_with_value(
+    ctx: &mut JSContext,
+    promise_obj_ptr: usize,
+    reason: JSValue,
+) {
     let promise = unsafe { &mut *(promise_obj_ptr as *mut JSObject) };
     reject_promise(ctx, promise, reason);
 }

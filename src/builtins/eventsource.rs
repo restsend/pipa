@@ -71,7 +71,8 @@ fn es_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
 
-    conn.set_read_timeout(Some(std::time::Duration::from_secs(5))).ok();
+    conn.set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .ok();
     let mut resp_buf = Vec::new();
     loop {
         let mut tmp = [0u8; 4096];
@@ -92,7 +93,10 @@ fn es_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let resp_str = String::from_utf8_lossy(&resp_buf);
     if !resp_str.contains("200") && !resp_str.contains("201") {
-        eprintln!("EventSource: bad status: {}", &resp_str[..resp_str.find('\r').unwrap_or(resp_str.len())]);
+        eprintln!(
+            "EventSource: bad status: {}",
+            &resp_str[..resp_str.find('\r').unwrap_or(resp_str.len())]
+        );
         return JSValue::undefined();
     }
 
@@ -117,10 +121,16 @@ fn es_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn get_conn_idx(ctx: &mut JSContext, args: &[JSValue]) -> usize {
-    if args.is_empty() || !args[0].is_object() { return usize::MAX; }
+    if args.is_empty() || !args[0].is_object() {
+        return usize::MAX;
+    }
     let obj = args[0].as_object();
-    let val = obj.get(ctx.intern("__conn__")).unwrap_or(JSValue::undefined());
-    if !val.is_int() { return usize::MAX; }
+    let val = obj
+        .get(ctx.intern("__conn__"))
+        .unwrap_or(JSValue::undefined());
+    if !val.is_int() {
+        return usize::MAX;
+    }
     val.get_int() as usize
 }
 
@@ -143,19 +153,31 @@ fn es_read(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let mut evt = crate::object::object::JSObject::new();
-    evt.set(ctx.intern("data"), JSValue::new_string(ctx.intern(&parsed.data)));
+    evt.set(
+        ctx.intern("data"),
+        JSValue::new_string(ctx.intern(&parsed.data)),
+    );
     if !parsed.event_type.is_empty() {
-        evt.set(ctx.intern("event"), JSValue::new_string(ctx.intern(&parsed.event_type)));
+        evt.set(
+            ctx.intern("event"),
+            JSValue::new_string(ctx.intern(&parsed.event_type)),
+        );
     }
     if !parsed.last_event_id.is_empty() {
-        evt.set(ctx.intern("lastEventId"), JSValue::new_string(ctx.intern(&parsed.last_event_id)));
+        evt.set(
+            ctx.intern("lastEventId"),
+            JSValue::new_string(ctx.intern(&parsed.last_event_id)),
+        );
     }
 
     let ptr = Box::into_raw(Box::new(evt)) as usize;
     let evt_val = JSValue::new_object(ptr);
 
     if args[0].is_object() {
-        let cb = args[0].as_object().get(ctx.intern("onmessage")).unwrap_or(JSValue::undefined());
+        let cb = args[0]
+            .as_object()
+            .get(ctx.intern("onmessage"))
+            .unwrap_or(JSValue::undefined());
         if cb.is_function() {
             if let Some(vp) = ctx.get_register_vm_ptr() {
                 let vm = unsafe { &mut *(vp as *mut crate::runtime::vm::VM) };
@@ -169,11 +191,15 @@ fn es_read(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn read_parsed(ctx: &mut JSContext, args: &[JSValue]) -> Option<SseEvent> {
     let idx = get_conn_idx(ctx, args);
-    if idx == usize::MAX { return None; }
+    if idx == usize::MAX {
+        return None;
+    }
 
     let timeout_ms = if args.len() > 1 && args[1].is_int() {
         args[1].get_int().max(0)
-    } else { 0i64 };
+    } else {
+        0i64
+    };
 
     let conn = match ctx.runtime_mut().get_connection(idx) {
         Some(c) => c,
@@ -197,7 +223,14 @@ fn read_parsed(ctx: &mut JSContext, args: &[JSValue]) -> Option<SseEvent> {
     loop {
         let mut buf = [0u8; 16384];
         match conn.read(&mut buf) {
-            Ok(0) => return Some(SseEvent { data: String::new(), event_type: String::new(), last_event_id: String::new(), is_closed: true }),
+            Ok(0) => {
+                return Some(SseEvent {
+                    data: String::new(),
+                    event_type: String::new(),
+                    last_event_id: String::new(),
+                    is_closed: true,
+                });
+            }
             Ok(n) => {
                 sse_buf.extend_from_slice(&buf[..n]);
                 if let Some(evt) = parse_sse_event(&mut sse_buf) {
@@ -246,10 +279,14 @@ pub fn parse_sse_event(buf: &mut Vec<u8>) -> Option<SseEvent> {
     let mut last_event_id = String::new();
 
     for line in section.split(|&b| b == b'\n') {
-        if line.is_empty() || line == b"\r" { continue; }
+        if line.is_empty() || line == b"\r" {
+            continue;
+        }
         if line.starts_with(b"data:") {
             let val = line[5..].strip_prefix(b" ").unwrap_or(&line[5..]);
-            if !data.is_empty() { data.push('\n'); }
+            if !data.is_empty() {
+                data.push('\n');
+            }
             data.push_str(&String::from_utf8_lossy(val));
         } else if line.starts_with(b"event:") {
             let val = line[6..].strip_prefix(b" ").unwrap_or(&line[6..]);
@@ -262,6 +299,14 @@ pub fn parse_sse_event(buf: &mut Vec<u8>) -> Option<SseEvent> {
 
     buf.drain(..double_nl + 2);
 
-    if data.is_empty() { None }
-    else { Some(SseEvent { data, event_type, last_event_id, is_closed: false }) }
+    if data.is_empty() {
+        None
+    } else {
+        Some(SseEvent {
+            data,
+            event_type,
+            last_event_id,
+            is_closed: false,
+        })
+    }
 }

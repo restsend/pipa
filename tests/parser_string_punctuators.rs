@@ -1,9 +1,7 @@
-
 use pipa::parse_to_ast;
 
 #[test]
 fn test_string_with_paren() {
-    
     let code = r#"var x = "(";"#;
     let result = parse_to_ast(code);
     assert!(result.is_ok(), "Should parse string with (: {:?}", result);
@@ -11,7 +9,6 @@ fn test_string_with_paren() {
 
 #[test]
 fn test_string_with_dash() {
-    
     let code = r#"if (s == "-") { return true; }"#;
     let result = parse_to_ast(code);
     assert!(result.is_ok(), "Should parse string with -: {:?}", result);
@@ -19,7 +16,6 @@ fn test_string_with_dash() {
 
 #[test]
 fn test_string_with_bracket() {
-    
     let code = r#"var arr = "[";"#;
     let result = parse_to_ast(code);
     assert!(result.is_ok(), "Should parse string with [: {:?}", result);
@@ -27,7 +23,6 @@ fn test_string_with_bracket() {
 
 #[test]
 fn test_string_with_brace() {
-    
     let code = r#"var obj = "{";"#;
     let result = parse_to_ast(code);
     assert!(result.is_ok(), "Should parse string with {{: {:?}", result);
@@ -35,7 +30,6 @@ fn test_string_with_brace() {
 
 #[test]
 fn test_string_with_comparison_ops() {
-    
     let code = r#"var a = "<", b = ">", c = "=";"#;
     let result = parse_to_ast(code);
     assert!(
@@ -47,7 +41,6 @@ fn test_string_with_comparison_ops() {
 
 #[test]
 fn test_string_in_function_call() {
-    
     let code = r#"console.log("(");"#;
     let result = parse_to_ast(code);
     assert!(
@@ -59,7 +52,6 @@ fn test_string_in_function_call() {
 
 #[test]
 fn test_complex_case_from_combined_js() {
-    
     let code = r#"
         sc_Pair.prototype.sc_toWriteOrDisplayString = function(writeOrDisplay) {
             var current = this;

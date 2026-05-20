@@ -3,17 +3,23 @@ pub mod base64;
 pub mod bigint;
 pub mod date;
 pub mod error;
+#[cfg(feature = "fetch")]
+pub mod eventsource;
+#[cfg(feature = "fetch")]
+pub mod fetch;
 pub mod function;
 pub mod generator;
 pub mod global;
+pub mod intl;
 pub mod json;
 pub mod json_parser;
-pub mod intl;
 pub mod map_set;
 pub mod math;
 pub mod number;
 pub mod object;
 pub mod parse;
+#[cfg(feature = "process")]
+pub mod process;
 pub mod promise;
 pub mod regexp;
 pub mod string;
@@ -22,12 +28,6 @@ pub mod typedarray;
 pub mod unicode_data;
 pub mod url;
 pub mod weakref;
-#[cfg(feature = "fetch")]
-pub mod eventsource;
-#[cfg(feature = "fetch")]
-pub mod fetch;
-#[cfg(feature = "process")]
-pub mod process;
 #[cfg(feature = "fetch")]
 pub mod websocket;
 

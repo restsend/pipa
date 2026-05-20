@@ -22,21 +22,16 @@ impl ProcessExtension {
 
 impl MacroTaskExtension for ProcessExtension {
     fn tick(&mut self, _ctx: &mut JSContext) -> Result<bool, String> {
-        
         Ok(false)
     }
 
     fn has_pending(&self) -> bool {
-        
         false
     }
 }
 
 pub fn run_command_sync(command: &str, args: &[String]) -> ProcessResult {
-    match std::process::Command::new(command)
-        .args(args)
-        .output()
-    {
+    match std::process::Command::new(command).args(args).output() {
         Ok(output) => {
             let code = output.status.code().unwrap_or(-1);
             let signal = if output.status.signal().is_some() {

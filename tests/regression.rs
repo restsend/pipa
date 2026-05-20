@@ -1,4 +1,3 @@
-
 use pipa::{JSRuntime, eval};
 
 const ASSERT_LIB: &str = r#"
@@ -96,7 +95,6 @@ fn closure_self_ref_via_var_non_recursive() {
 
 #[test]
 fn closure_self_ref_via_var_recursive() {
-    
     js(r#"
         var step = 0;
         var f;
@@ -111,7 +109,6 @@ fn closure_self_ref_via_var_recursive() {
 
 #[test]
 fn closure_named_function_expr_recursion() {
-    
     js(r#"
         var factorial = function fact(n) {
             return n <= 1 ? 1 : n * fact(n - 1);

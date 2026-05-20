@@ -114,7 +114,7 @@ pub fn init_function(ctx: &mut JSContext) {
     let function_ptr = Box::into_raw(Box::new(function_ctor)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(function_ptr);
     let function_value = JSValue::new_function(function_ptr);
-    
+
     unsafe {
         let proto_obj_ptr = proto_ptr as *mut crate::object::object::JSObject;
         (*proto_obj_ptr).set(ctx.common_atoms.constructor, function_value);
@@ -227,7 +227,6 @@ fn function_has_instance(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn function_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    
     if args.is_empty() {
         return match crate::eval(ctx, "(function(){})") {
             Ok(val) => val,
@@ -406,7 +405,6 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                                     JSValue::undefined()
                                 }
                             } else if i < saved.len() {
-                                
                                 saved[i]
                             } else {
                                 arr_obj.get_indexed(i).unwrap_or(JSValue::undefined())

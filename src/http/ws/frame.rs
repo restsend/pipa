@@ -138,9 +138,7 @@ impl WsFrame {
             }
 
             if payload_len == 126 {
-                payload_len = u64::from_be_bytes([
-                    0, 0, 0, 0, 0, 0, data[pos + 2], data[pos + 3],
-                ]);
+                payload_len = u64::from_be_bytes([0, 0, 0, 0, 0, 0, data[pos + 2], data[pos + 3]]);
             } else if payload_len == 127 {
                 let mut arr = [0u8; 8];
                 arr.copy_from_slice(&data[pos + 2..pos + 10]);

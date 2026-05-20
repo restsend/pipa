@@ -103,7 +103,6 @@ impl BodyReader {
     }
 
     pub fn body_text(&self) -> Result<String, String> {
-        String::from_utf8(self.buffer.clone())
-            .map_err(|e| format!("body utf8 decode: {e}"))
+        String::from_utf8(self.buffer.clone()).map_err(|e| format!("body utf8 decode: {e}"))
     }
 }

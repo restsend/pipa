@@ -97,7 +97,7 @@ pub struct Identifier {
 #[derive(Debug, Clone)]
 pub enum Literal {
     Number(f64),
-    String(String, bool), 
+    String(String, bool),
     Boolean(bool),
     Null,
     Undefined,

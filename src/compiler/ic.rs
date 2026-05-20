@@ -44,9 +44,8 @@ const IC_POLY: usize = 2;
 
 #[derive(Clone, Debug)]
 pub struct InlineCache {
-    
     reads: [InlineCacheRead; IC_POLY],
-    
+
     write: InlineCacheWrite,
 }
 
@@ -107,7 +106,6 @@ impl InlineCache {
     }
 
     pub fn insert(&mut self, shape_id: ShapeId, offset: u32, proto_ptr: Option<usize>) {
-        
         self.reads[1] = self.reads[0];
         self.reads[0] = InlineCacheRead {
             shape_id: shape_id.0 as u32,
@@ -157,7 +155,6 @@ impl InlineCacheTable {
     #[inline(always)]
     pub fn ensure_capacity(&mut self, len: usize) {
         if self.caches.len() < len {
-            
             let new_len = (self.caches.len() * 2).max(len);
             self.caches.resize(new_len, InlineCache::new());
         }
@@ -239,7 +236,7 @@ impl InlineCacheTable {
     pub fn get_global_cache(&self, pc: usize, global_shape_id: usize, atom_id: u32) -> Option<u32> {
         if let Some(ic) = self.caches.get(pc) {
             let r = &ic.reads[0];
-            
+
             if r.shape_id == global_shape_id as u32 && r.proto_ptr == atom_id as usize + 1 {
                 return Some(r.offset);
             }
@@ -260,7 +257,7 @@ impl InlineCacheTable {
             ic.reads[0] = InlineCacheRead {
                 shape_id: global_shape_id as u32,
                 offset,
-                proto_ptr: atom_id as usize + 1, 
+                proto_ptr: atom_id as usize + 1,
             };
         }
     }
@@ -318,7 +315,7 @@ mod tests {
             shapes.push(s);
             ic.insert(s, i as u32, None);
         }
-        
+
         for (i, &s) in shapes.iter().enumerate() {
             assert_eq!(ic.get(s), Some((i as u32, None)));
         }
@@ -326,9 +323,9 @@ mod tests {
         let new_shape = test_shape_id();
         ic.insert(new_shape, 100, None);
         assert_eq!(ic.get(new_shape), Some((100, None)));
-        
+
         assert_eq!(ic.get(shapes[0]), None);
-        
+
         for i in 1..IC_POLY {
             assert_eq!(ic.get(shapes[i]), Some((i as u32, None)));
         }

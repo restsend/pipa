@@ -177,7 +177,6 @@ impl JSValue {
 
     #[inline(always)]
     pub fn is_null_or_undefined(&self) -> bool {
-        
         Self::is_tagged(self.0) && self.get_tag() <= TAG_NULL
     }
 
@@ -378,9 +377,7 @@ impl JSValue {
 
     #[inline(always)]
     pub fn strict_eq(&self, other: &JSValue) -> bool {
-        
         if self.0 == other.0 {
-            
             if self.is_float() {
                 return !self.get_float().is_nan();
             }

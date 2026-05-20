@@ -14,9 +14,9 @@ pub struct JSRuntime {
     interrupt: AtomicBool,
     module_registry: ModuleRegistry,
     next_symbol_id: u32,
-    
+
     pub argv: Vec<String>,
-    
+
     #[cfg(feature = "fetch")]
     pub connections: Vec<Option<Box<Connection>>>,
 }

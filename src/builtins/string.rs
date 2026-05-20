@@ -183,7 +183,9 @@ pub fn init_string(ctx: &mut JSContext) {
 
     let string_func_ptr = string_ptr as *mut crate::object::function::JSFunction;
     unsafe {
-        (*string_func_ptr).base.set(ctx.common_atoms.prototype, proto_value);
+        (*string_func_ptr)
+            .base
+            .set(ctx.common_atoms.prototype, proto_value);
     }
 
     if global.is_object() {
@@ -407,11 +409,15 @@ fn string_char_code_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let v = args[1];
         if v.is_int() {
             let i = v.get_int();
-            if i < 0 { return JSValue::new_float(f64::NAN); }
+            if i < 0 {
+                return JSValue::new_float(f64::NAN);
+            }
             i as usize
         } else if v.is_float() {
             let f = v.get_float();
-            if f < 0.0 || f.is_nan() || f.is_infinite() { return JSValue::new_float(f64::NAN); }
+            if f < 0.0 || f.is_nan() || f.is_infinite() {
+                return JSValue::new_float(f64::NAN);
+            }
             f as usize
         } else {
             0
@@ -1013,13 +1019,23 @@ fn string_replace(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else if args[2].is_function() {
             if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
                 let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
-                let result = vm.call_function_with_this(ctx, args[2], JSValue::undefined(), &[args[1].clone(), JSValue::new_int(0), args[0].clone()]);
+                let result = vm.call_function_with_this(
+                    ctx,
+                    args[2],
+                    JSValue::undefined(),
+                    &[args[1].clone(), JSValue::new_int(0), args[0].clone()],
+                );
                 match result {
                     Ok(v) => {
-                        if v.is_string() { ctx.get_atom_str(v.get_atom()).to_string() }
-                        else if v.is_undefined() { "undefined".to_string() }
-                        else if v.is_null() { "null".to_string() }
-                        else { format!("{}", v.get_int()) }
+                        if v.is_string() {
+                            ctx.get_atom_str(v.get_atom()).to_string()
+                        } else if v.is_undefined() {
+                            "undefined".to_string()
+                        } else if v.is_null() {
+                            "null".to_string()
+                        } else {
+                            format!("{}", v.get_int())
+                        }
                     }
                     Err(_) => String::new(),
                 }

@@ -262,7 +262,9 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta) -> TestOutco
     }
 
     let prepared_code = if meta.flags.contains(&"onlyStrict".to_string()) {
-        if !code.trim_start().starts_with("\"use strict\"") && !code.trim_start().starts_with("'use strict'") {
+        if !code.trim_start().starts_with("\"use strict\"")
+            && !code.trim_start().starts_with("'use strict'")
+        {
             format!("\"use strict\";\n{}", code)
         } else {
             code.to_string()
@@ -377,15 +379,12 @@ fn main() {
                     if fname == "assert.js" || fname == "sta.js" {
                         continue;
                     }
-                    
+
                     if fname == "RegExp-leading-escape-BMP.js" {
                         continue;
                     }
                     if let Ok(content) = fs::read_to_string(&path) {
-                        tests.push((
-                            content,
-                            format!("{}/{}", prefix, fname),
-                        ));
+                        tests.push((content, format!("{}/{}", prefix, fname)));
                     }
                 }
             }
@@ -394,7 +393,11 @@ fn main() {
 
     let test_dir_path = Path::new(&test_dir);
     if test_dir_path.is_file() {
-        if test_dir_path.extension().map(|e| e == "js").unwrap_or(false) {
+        if test_dir_path
+            .extension()
+            .map(|e| e == "js")
+            .unwrap_or(false)
+        {
             if let Ok(content) = fs::read_to_string(test_dir_path) {
                 let name = test_dir_path
                     .file_name()

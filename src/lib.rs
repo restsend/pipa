@@ -1,8 +1,8 @@
 pub mod builtins;
 pub mod compiler;
+pub mod host;
 #[cfg(feature = "fetch")]
 pub mod http;
-pub mod host;
 pub mod object;
 pub mod regexp;
 pub mod runtime;

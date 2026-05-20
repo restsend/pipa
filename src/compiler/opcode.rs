@@ -460,9 +460,9 @@ pub struct Bytecode {
     pub param_count: u16,
     pub line_number_table: Option<crate::compiler::location::LineNumberTable>,
     pub ic_table: crate::compiler::InlineCacheTable,
-    
+
     pub shared_ic_table_ptr: *mut crate::compiler::InlineCacheTable,
-    
+
     pub shared_code_ptr: *const u8,
     pub shared_code_len: usize,
     pub shared_const_ptr: *const crate::value::JSValue,

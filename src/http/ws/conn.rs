@@ -74,24 +74,22 @@ impl WsConnection {
     pub fn try_advance(&mut self) -> Result<Option<WsEvent>, String> {
         loop {
             match self.state {
-                WsState::Connecting => {
-                    match self.connect_rx.as_ref().unwrap().try_recv() {
-                        Ok(result) => {
-                            let conn = result?;
-                            conn.set_nonblocking(true)?;
-                            self.conn = Some(conn);
-                            self.key = WsHandshake::generate_key();
-                            self.build_handshake_request();
-                            self.state = WsState::Handshake;
-                        }
-                        Err(mpsc::TryRecvError::Empty) => {
-                            return Ok(None);
-                        }
-                        Err(mpsc::TryRecvError::Disconnected) => {
-                            return Err("connect thread disconnected".into());
-                        }
+                WsState::Connecting => match self.connect_rx.as_ref().unwrap().try_recv() {
+                    Ok(result) => {
+                        let conn = result?;
+                        conn.set_nonblocking(true)?;
+                        self.conn = Some(conn);
+                        self.key = WsHandshake::generate_key();
+                        self.build_handshake_request();
+                        self.state = WsState::Handshake;
                     }
-                }
+                    Err(mpsc::TryRecvError::Empty) => {
+                        return Ok(None);
+                    }
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        return Err("connect thread disconnected".into());
+                    }
+                },
 
                 WsState::Handshake => {
                     if !self.write_buf.is_empty() {
@@ -217,8 +215,7 @@ impl WsConnection {
                                                 Self::parse_close_payload(&frame.payload);
                                             self.close_code = code;
                                             self.close_reason = reason.clone();
-                                            let close_frame =
-                                                WsFrame::new_close(code, &reason);
+                                            let close_frame = WsFrame::new_close(code, &reason);
                                             self.pending_frames.push_back(close_frame);
                                             self.state = WsState::Closing;
                                             self.ready_state = 2;

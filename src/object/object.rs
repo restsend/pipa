@@ -201,13 +201,11 @@ impl SmallPropVec {
     #[inline(always)]
     pub fn push(&mut self, slot: PropSlot) {
         if (self.len as usize) < INLINE_PROPS {
-            
             self.inline[self.len as usize].write(slot);
             self.len += 1;
         } else if let Some(ref mut v) = self.heap {
             v.push(slot);
         } else {
-            
             let mut v: Vec<PropSlot> = Vec::with_capacity(4);
             v.push(slot);
             self.heap = Some(v);
@@ -217,10 +215,8 @@ impl SmallPropVec {
     #[inline(always)]
     pub fn get(&self, idx: usize) -> Option<&PropSlot> {
         if idx < self.len as usize {
-            
             Some(unsafe { self.inline[idx].assume_init_ref() })
         } else if let Some(ref v) = self.heap {
-            
             v.get(idx - INLINE_PROPS)
         } else {
             None
@@ -254,7 +250,6 @@ impl SmallPropVec {
     }
 
     pub fn retain<F: FnMut(&mut PropSlot) -> bool>(&mut self, mut f: F) {
-        
         let mut write = 0usize;
         let read_len = self.len as usize;
         for read in 0..read_len {
@@ -268,7 +263,7 @@ impl SmallPropVec {
             }
         }
         self.len = write as u8;
-        
+
         if let Some(ref mut v) = self.heap {
             v.retain_mut(|s| f(s));
         }
@@ -872,7 +867,6 @@ impl JSObject {
 
     #[inline(always)]
     pub fn get_by_offset(&self, offset: usize) -> Option<JSValue> {
-        
         if offset < self.props.len as usize {
             let slot = unsafe { self.props.inline[offset].assume_init_ref() };
             if slot.attrs != ATTR_DELETED {
@@ -880,7 +874,7 @@ impl JSObject {
             }
             return None;
         }
-        
+
         if let Some(ref v) = self.props.heap {
             let h_idx = offset - INLINE_PROPS;
             if let Some(slot) = v.get(h_idx) {
@@ -917,7 +911,6 @@ impl JSObject {
 
     #[inline(always)]
     pub fn set_by_offset(&mut self, offset: usize, value: JSValue) -> bool {
-        
         if offset < self.props.len as usize {
             let slot = unsafe { self.props.inline[offset].assume_init_mut() };
             if slot.attrs == ATTR_DELETED {
@@ -929,7 +922,7 @@ impl JSObject {
             slot.value = value;
             return true;
         }
-        
+
         if let Some(ref mut v) = self.props.heap {
             let h_idx = offset - INLINE_PROPS;
             if let Some(slot) = v.get_mut(h_idx) {
@@ -962,7 +955,7 @@ impl JSObject {
     }
 
     #[inline(always)]
-    
+
     pub fn fast_init_from_simple_constructor<I>(
         &mut self,
         props: I,
@@ -1169,19 +1162,17 @@ impl JSObject {
             if let Some(offset) = unsafe { (*shape.as_ptr()).get_offset(prop) } {
                 let off = offset as usize;
                 if off < self.props.len() {
-                    
                     self.props[off].value = value;
                     return;
                 }
             }
-            
+
             let new_shape = cache.transition(shape, prop);
             self.shape = Some(new_shape);
             self.shape_id_cache = unsafe { (*new_shape.as_ptr()).id.0 };
             self.props.push(PropSlot::new(prop, value, ATTR_WRITABLE));
             self.update_property_map(prop);
         } else {
-            
             self.set_length(prop, value);
         }
     }
@@ -1944,7 +1935,7 @@ impl JSObject {
             return;
         }
         let mut current = cache.root_shape();
-        
+
         let inline_len = self.props.len().min(INLINE_PROPS);
         for i in 0..inline_len {
             let slot = unsafe { self.props.inline[i].assume_init_ref() };
@@ -1952,7 +1943,7 @@ impl JSObject {
                 current = cache.transition(current, slot.atom);
             }
         }
-        
+
         if let Some(ref heap) = self.props.heap {
             for slot in heap.iter() {
                 if slot.attrs != ATTR_DELETED {

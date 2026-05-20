@@ -55,7 +55,6 @@ fn json_parse_empty_string() {
 
 #[test]
 fn json_parse_string_escapes() {
-    
     js_eq("if (JSON.parse('\"\\\\n\"') !== '\\n') throw new Error('newline');");
 
     js_eq("if (JSON.parse('\"\\\\t\"') !== '\\t') throw new Error('tab');");
@@ -146,7 +145,6 @@ fn json_parse_whitespace() {
 
 #[test]
 fn json_parse_invalid_returns_undefined() {
-    
     let mut rt = JSRuntime::new();
     let mut ctx = rt.new_context();
     let r = eval(&mut ctx, "JSON.parse('invalid')").unwrap();

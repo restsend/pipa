@@ -1,4 +1,3 @@
-
 use pipa::{JSRuntime, eval};
 use std::fs;
 use std::path::Path;
@@ -131,7 +130,6 @@ fn sem_var_declarations() {
 
 #[test]
 fn sem_var_shadowing() {
-    
     js_eq("var x = 1; var x = 2; __assert_eq(x, 2, 'var redeclared');");
 }
 
@@ -157,7 +155,6 @@ fn sem_do_while() {
 
 #[test]
 fn sem_for_in() {
-    
     js_eq(
         "var count = 0; var obj = {a:1,b:2,c:3}; for (var k in obj) count++; __assert_eq(count, 3, 'for-in');",
     );
@@ -205,7 +202,6 @@ fn sem_function_declaration() {
 
 #[test]
 fn sem_function_expression() {
-    
     js_eq("var add = function(a, b) { return a + b; }; __assert_eq(add(3, 4), 7, 'func expr');");
 }
 
@@ -248,7 +244,6 @@ fn sem_object_computed_key() {
 
 #[test]
 fn sem_object_method() {
-    
     js_eq(
         "var o = { double: function(x) { return x * 2; } }; __assert_eq(o.double(21), 42, 'obj method');",
     );
