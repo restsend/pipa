@@ -501,6 +501,17 @@ impl JSContext {
         self.builtin_functions.insert(name.to_string(), func);
     }
 
+    pub fn register_global_builtin(&mut self, name: &'static str, arity: u32, func: crate::host::HostFunc) {
+        self.register_builtin(name, HostFunction::new(name, arity, func));
+        let mut f = crate::object::function::JSFunction::new_builtin(self.intern(name), arity);
+        f.set_builtin_marker(self, name);
+        let ptr = Box::into_raw(Box::new(f)) as usize;
+        self.runtime_mut().gc_heap_mut().track_function(ptr);
+        self.global()
+            .as_object_mut()
+            .set(self.intern(name), crate::value::JSValue::new_function(ptr));
+    }
+
     pub fn call_builtin(&mut self, name: &str, args: &[JSValue]) -> JSValue {
         let func = self.builtin_functions.get(name).cloned();
         if let Some(f) = func {

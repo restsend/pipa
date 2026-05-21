@@ -57,6 +57,115 @@ pipa -O3 script.js
 pipa
 ```
 
+## Embedding in Rust
+
+Use pipa-js as a library to embed JavaScript in your Rust project:
+
+```toml
+[dependencies]
+pipa-js = "0.1.2"
+```
+
+### Evaluate JavaScript
+
+```rust
+use pipa::{JSRuntime, eval};
+
+let mut rt = JSRuntime::new();
+let mut ctx = rt.new_context();
+
+let val = eval(&mut ctx, "1 + 2").unwrap();
+assert_eq!(val.get_int(), 3);
+```
+
+### Read strings & values from JavaScript
+
+```rust
+use pipa::{JSRuntime, eval};
+
+let mut rt = JSRuntime::new();
+let mut ctx = rt.new_context();
+
+eval(&mut ctx, r#"
+    function greet(name) {
+        return "Hello, " + name + "!";
+    }
+"#).unwrap();
+
+let val = eval(&mut ctx, r#"greet("world")"#).unwrap();
+assert!(val.is_string());
+let s = ctx.get_atom_str(val.get_atom());
+assert_eq!(s, "Hello, world!");
+```
+
+### Call custom Rust functions from JavaScript
+
+```rust
+use pipa::{JSRuntime, eval, JSValue};
+
+fn js_print(ctx: &mut pipa::JSContext, args: &[JSValue]) -> JSValue {
+    for arg in args {
+        if arg.is_string() {
+            print!("{}", ctx.get_atom_str(arg.get_atom()));
+        } else if arg.is_int() {
+            print!("{}", arg.get_int());
+        }
+    }
+    println!();
+    JSValue::undefined()
+}
+
+let mut rt = JSRuntime::new();
+let mut ctx = rt.new_context();
+
+ctx.register_global_builtin("print", 1, js_print);
+eval(&mut ctx, r#"print("hello from Rust!")"#).unwrap();
+```
+
+### Async/await with event loop
+
+```rust
+use pipa::{JSRuntime, eval, run_event_loop};
+
+let mut rt = JSRuntime::new();
+let mut ctx = rt.new_context();
+
+eval(&mut ctx, r#"
+    var result = null;
+    async function main() {
+        var data = await fetch("https://httpbin.org/json");
+        result = data;
+    }
+    main();
+"#).unwrap();
+
+run_event_loop(&mut ctx).unwrap();
+
+let val = eval(&mut ctx, "JSON.stringify(result)").unwrap();
+let s = ctx.get_atom_str(val.get_atom());
+println!("{}", s);
+```
+
+> Requires the `fetch` feature (enabled by default).
+
+### Bytecode compilation
+
+```rust
+use pipa::{JSRuntime, eval, compile_to_register_bytecode};
+
+let mut rt = JSRuntime::new();
+let mut ctx = rt.new_context();
+
+// Compile JavaScript to register-based bytecode
+let (code, constants) = compile_to_register_bytecode(
+    &mut ctx,
+    "function fib(n) { return n < 2 ? n : fib(n-1) + fib(n-2); } fib(20)",
+).unwrap();
+
+// code: Vec<u8>, constants: Vec<JSValue>
+assert!(!code.is_empty());
+```
+
 ## Build
 
 ```bash
