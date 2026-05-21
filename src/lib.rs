@@ -99,3 +99,19 @@ pub fn run_event_loop_with_timeout(
 ) -> Result<EventLoopResult, String> {
     compiler::run_event_loop_with_timeout(ctx, timeout_ms)
 }
+
+pub fn eval_async(ctx: &mut JSContext, code: &str) -> Result<JSValue, String> {
+    let result = compiler::eval_code(ctx, code)?;
+    compiler::run_event_loop(ctx)?;
+    Ok(result)
+}
+
+pub fn eval_async_with_timeout(
+    ctx: &mut JSContext,
+    code: &str,
+    timeout_ms: u64,
+) -> Result<JSValue, String> {
+    let result = compiler::eval_code(ctx, code)?;
+    compiler::run_event_loop_with_timeout(ctx, timeout_ms)?;
+    Ok(result)
+}

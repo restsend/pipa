@@ -125,28 +125,23 @@ eval(&mut ctx, r#"print("hello from Rust!")"#).unwrap();
 ### Async/await with event loop
 
 ```rust
-use pipa::{JSRuntime, eval, run_event_loop};
+use pipa::{JSRuntime, eval, eval_async};
 
 let mut rt = JSRuntime::new();
 let mut ctx = rt.new_context();
 
-eval(&mut ctx, r#"
+eval_async(&mut ctx, r#"
     var result = null;
-    async function main() {
-        var data = await fetch("https://httpbin.org/json");
-        result = data;
-    }
-    main();
+    (async () => {
+        result = await fetch("https://httpbin.org/json");
+    })();
 "#).unwrap();
 
-run_event_loop(&mut ctx).unwrap();
-
 let val = eval(&mut ctx, "JSON.stringify(result)").unwrap();
-let s = ctx.get_atom_str(val.get_atom());
-println!("{}", s);
+println!("{}", ctx.get_atom_str(val.get_atom()));
 ```
 
-> Requires the `fetch` feature (enabled by default).
+> Requires the `fetch` feature (enabled by default). `eval_async` is `eval` + `run_event_loop` in one call.
 
 ### Bytecode compilation
 
