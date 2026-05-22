@@ -21,15 +21,13 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 
 fn ws_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() || !args[0].is_string() {
-        eprintln!("WebSocket: url required");
         return JSValue::undefined();
     }
 
     let url_str = ctx.get_atom_str(args[0].get_atom()).to_string();
     let url = match Url::parse(&url_str) {
         Ok(u) => u,
-        Err(e) => {
-            eprintln!("WebSocket: invalid URL: {e}");
+        Err(_) => {
             return JSValue::undefined();
         }
     };
@@ -42,7 +40,10 @@ fn ws_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     ws_obj.set(ctx.intern("onerror"), JSValue::undefined());
     ws_obj.set(ctx.intern("onclose"), JSValue::undefined());
     ws_obj.set(ctx.intern("send"), create_builtin_function(ctx, "ws_send"));
-    ws_obj.set(ctx.intern("close"), create_builtin_function(ctx, "ws_close"));
+    ws_obj.set(
+        ctx.intern("close"),
+        create_builtin_function(ctx, "ws_close"),
+    );
 
     let ws_obj_ptr = Box::into_raw(Box::new(ws_obj)) as usize;
 
@@ -51,9 +52,12 @@ fn ws_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let task = match WsTask::new(url, ws_obj_ptr, promise_ptr) {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("WebSocket: {e}");
-            unsafe { drop(Box::from_raw(ws_obj_ptr as *mut crate::object::object::JSObject)); }
+        Err(_) => {
+            unsafe {
+                drop(Box::from_raw(
+                    ws_obj_ptr as *mut crate::object::object::JSObject,
+                ));
+            }
             return JSValue::undefined();
         }
     };
@@ -61,13 +65,11 @@ fn ws_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let reactor = match IoReactor::get_from_ctx(ctx) {
         Some(r) => r,
         None => {
-            eprintln!("WebSocket: no io reactor");
             return JSValue::undefined();
         }
     };
 
-    if let Err(e) = reactor.register(ReactorTask::Ws(task)) {
-        eprintln!("WebSocket: register failed: {e}");
+    if let Err(_) = reactor.register(ReactorTask::Ws(task)) {
         return JSValue::undefined();
     }
 

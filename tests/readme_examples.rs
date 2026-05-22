@@ -57,12 +57,15 @@ fn test_example_eval_async() {
     let mut rt = JSRuntime::new();
     let mut ctx = rt.new_context();
 
-    let r3 = eval_async(&mut ctx, r#"
+    let r3 = eval_async(
+        &mut ctx,
+        r#"
         var myResult = null;
         (async () => {
             myResult = await Promise.resolve(42);
         })();
-    "#);
+    "#,
+    );
     assert!(r3.is_ok(), "eval_async failed: {:?}", r3);
     let val = eval(&mut ctx, "myResult").unwrap();
     assert_eq!(val.get_int(), 42);

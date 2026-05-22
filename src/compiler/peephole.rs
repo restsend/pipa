@@ -9,17 +9,14 @@ pub fn optimize_with_level(bytecode: &mut Bytecode, opt_level: OptLevel) {
     if matches!(opt_level, OptLevel::O0) {
         return;
     }
-    let mut total_changed = 0usize;
+    let mut _total_changed = 0usize;
     for _ in 0..3 {
         let changed = run_pass(bytecode);
         if changed {
-            total_changed += 1;
+            _total_changed += 1;
         } else {
             break;
         }
-    }
-    if total_changed > 0 && std::env::var("PIPA_PEEPHOLE_DEBUG").is_ok() {
-        eprintln!("[peephole] {} optimization pass(es) applied", total_changed);
     }
 }
 

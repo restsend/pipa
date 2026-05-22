@@ -273,9 +273,7 @@ impl EventLoop {
 
     fn tick_extensions(&mut self, ctx: &mut JSContext) {
         for ext in &mut self.extensions {
-            if let Err(e) = ext.tick(ctx) {
-                eprintln!("[EventLoop] extension error: {e}");
-            }
+            if let Err(_) = ext.tick(ctx) {}
         }
     }
 

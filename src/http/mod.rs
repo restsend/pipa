@@ -1,8 +1,8 @@
 pub mod body_reader;
 pub mod chunked;
 pub mod compression;
-pub mod connect_state;
 pub mod conn;
+pub mod connect_state;
 pub mod headers;
 pub mod method;
 pub mod request;

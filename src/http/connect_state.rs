@@ -72,10 +72,7 @@ impl ConnectState {
     pub fn wants_read(&self) -> bool {
         match self.phase {
             ConnPhase::Connecting => false,
-            ConnPhase::TlsHandshaking => self
-                .conn
-                .as_ref()
-                .map_or(false, |c| c.tls_wants_read()),
+            ConnPhase::TlsHandshaking => self.conn.as_ref().map_or(false, |c| c.tls_wants_read()),
             _ => false,
         }
     }
@@ -83,10 +80,7 @@ impl ConnectState {
     pub fn wants_write(&self) -> bool {
         match self.phase {
             ConnPhase::Connecting => true,
-            ConnPhase::TlsHandshaking => self
-                .conn
-                .as_ref()
-                .map_or(false, |c| c.tls_wants_write()),
+            ConnPhase::TlsHandshaking => self.conn.as_ref().map_or(false, |c| c.tls_wants_write()),
             _ => false,
         }
     }
@@ -105,11 +99,7 @@ impl ConnectState {
                     Ok(()) => {
                         let stream = self.stream.take().unwrap();
                         if self.use_tls {
-                            match Connection::start_tls(
-                                &self.tls_host,
-                                stream,
-                                &self.extra_roots,
-                            ) {
+                            match Connection::start_tls(&self.tls_host, stream, &self.extra_roots) {
                                 Ok(conn) => {
                                     self.conn = Some(conn);
                                     self.phase = ConnPhase::TlsHandshaking;

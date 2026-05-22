@@ -2,7 +2,7 @@
 
 use pipa::http::chunked::ChunkedDecoder;
 use pipa::http::conn::Connection;
-use pipa::http::connect_state::{ConnectState, ConnEvent};
+use pipa::http::connect_state::{ConnEvent, ConnectState};
 use pipa::http::headers::Headers;
 use pipa::http::method::HttpMethod;
 use pipa::http::status::HttpStatus;
@@ -14,7 +14,6 @@ use pipa::util::iomux::Poller;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::io::AsRawFd;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -806,10 +805,7 @@ fn test_connection_tls_handshake() {
     let cert_der = load_test_cert_der();
 
     let conn = blocking_connect("localhost", port, true, vec![cert_der]);
-    assert!(
-        conn.is_tls(),
-        "expected TLS connection"
-    );
+    assert!(conn.is_tls(), "expected TLS connection");
     server.stop();
 }
 
@@ -982,13 +978,20 @@ fn test_reactor_fetch_e2e() {
         "#,
     );
     let promise_val = pipa::compiler::eval_code(&mut ctx, &code).unwrap();
-    assert!(promise_val.is_object(), "fetch should return a promise object");
+    assert!(
+        promise_val.is_object(),
+        "fetch should return a promise object"
+    );
 
     pipa::run_event_loop_with_timeout(&mut ctx, 5000).unwrap();
 
-    let check = pipa::compiler::eval_code(&mut ctx, r#"
+    let check = pipa::compiler::eval_code(
+        &mut ctx,
+        r#"
         p.__promise_state__;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let state = check.get_int();
     assert_eq!(

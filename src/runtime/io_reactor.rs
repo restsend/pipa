@@ -2,8 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::io::RawFd;
 
-use crate::http::connect_state::{ConnEvent, ConnectState};
 use crate::http::conn::Connection;
+use crate::http::connect_state::{ConnEvent, ConnectState};
 use crate::http::headers::Headers;
 use crate::http::method::HttpMethod;
 use crate::http::request::{HttpRequest, RequestEvent, RequestState};
@@ -37,7 +37,6 @@ pub struct FetchTask {
     method: HttpMethod,
     req_headers: Headers,
     body: Option<Vec<u8>>,
-    redirect_count: u32,
 }
 
 pub enum FetchPhase {
@@ -148,12 +147,20 @@ impl ReactorTask {
             },
             ReactorTask::Ws(t) => match &t.phase {
                 WsPhase::Connecting(cs) => cs.wants_write(),
-                WsPhase::Handshake { write_buf, write_pos, .. } => *write_pos < write_buf.len(),
+                WsPhase::Handshake {
+                    write_buf,
+                    write_pos,
+                    ..
+                } => *write_pos < write_buf.len(),
                 WsPhase::Open { pending_out, .. } => !pending_out.is_empty(),
             },
             ReactorTask::Sse(t) => match &t.phase {
                 SsePhase::Connecting(cs) => cs.wants_write(),
-                SsePhase::WritingRequest { write_buf, write_pos, .. } => *write_pos < write_buf.len(),
+                SsePhase::WritingRequest {
+                    write_buf,
+                    write_pos,
+                    ..
+                } => *write_pos < write_buf.len(),
                 SsePhase::ReadingHeaders { .. } => false,
                 SsePhase::Streaming { .. } => false,
             },
@@ -186,7 +193,6 @@ impl FetchTask {
             method,
             req_headers,
             body,
-            redirect_count: 0,
         })
     }
 }
@@ -257,19 +263,6 @@ impl IoReactor {
         Ok(id)
     }
 
-    fn update_registration(&mut self, id: u64) -> Result<(), String> {
-        let task = self
-            .tasks
-            .get(&id)
-            .ok_or_else(|| format!("task {id} not found"))?;
-
-        if let Some(fd) = task.fd() {
-            self.poller
-                .modify(fd, task.wants_read(), task.wants_write())?;
-        }
-        Ok(())
-    }
-
     fn unregister(&mut self, id: u64) -> Option<ReactorTask> {
         let task = self.tasks.remove(&id);
         if let Some(ref t) = task {
@@ -287,7 +280,8 @@ impl IoReactor {
 
         if let Some(fd) = new_fd {
             let _ = self.poller.unregister(fd);
-            self.poller.register(fd, task.wants_read(), task.wants_write())?;
+            self.poller
+                .register(fd, task.wants_read(), task.wants_write())?;
         } else if let Some(ofd) = old_fd {
             let _ = self.poller.unregister(ofd);
         }
@@ -345,8 +339,13 @@ impl IoReactor {
         for (_, task) in &mut self.tasks {
             if let ReactorTask::Ws(ws_task) = task {
                 if ws_task.ws_obj_ptr == ws_obj_ptr {
-                    if let WsPhase::Open { pending_out, closing, close_code, close_reason, .. } =
-                        &mut ws_task.phase
+                    if let WsPhase::Open {
+                        pending_out,
+                        closing,
+                        close_code,
+                        close_reason,
+                        ..
+                    } = &mut ws_task.phase
                     {
                         if !*closing {
                             let frame = WsFrame::new_close(code, reason);
@@ -402,7 +401,10 @@ impl IoReactor {
         };
 
         if let ReactorTask::Fetch(fetch_task) = &mut task {
-            let phase = std::mem::replace(&mut fetch_task.phase, FetchPhase::Active(HttpRequest::dummy()));
+            let phase = std::mem::replace(
+                &mut fetch_task.phase,
+                FetchPhase::Active(HttpRequest::dummy()),
+            );
             match phase {
                 FetchPhase::Connecting(mut cs) => match cs.try_advance() {
                     ConnEvent::Connected(conn) => {
@@ -423,7 +425,11 @@ impl IoReactor {
                     }
                     ConnEvent::Error(e) => {
                         let val = crate::value::JSValue::new_string(ctx.intern(&e));
-                        crate::builtins::promise::reject_promise_with_value(ctx, fetch_task.promise_ptr, val);
+                        crate::builtins::promise::reject_promise_with_value(
+                            ctx,
+                            fetch_task.promise_ptr,
+                            val,
+                        );
                         return Ok(());
                     }
                     _ => {
@@ -435,11 +441,19 @@ impl IoReactor {
                 FetchPhase::Active(mut req) => match req.try_advance() {
                     Ok(RequestEvent::Complete(resp)) => {
                         let resp_val = build_response_js_object(ctx, resp, &fetch_task.url.full);
-                        crate::builtins::promise::fulfill_promise_with_value(ctx, fetch_task.promise_ptr, resp_val);
+                        crate::builtins::promise::fulfill_promise_with_value(
+                            ctx,
+                            fetch_task.promise_ptr,
+                            resp_val,
+                        );
                     }
                     Ok(RequestEvent::Error(e)) => {
                         let val = crate::value::JSValue::new_string(ctx.intern(&e));
-                        crate::builtins::promise::reject_promise_with_value(ctx, fetch_task.promise_ptr, val);
+                        crate::builtins::promise::reject_promise_with_value(
+                            ctx,
+                            fetch_task.promise_ptr,
+                            val,
+                        );
                     }
                     Ok(_) => {
                         fetch_task.phase = FetchPhase::Active(req);
@@ -447,7 +461,11 @@ impl IoReactor {
                     }
                     Err(e) => {
                         let val = crate::value::JSValue::new_string(ctx.intern(&e));
-                        crate::builtins::promise::reject_promise_with_value(ctx, fetch_task.promise_ptr, val);
+                        crate::builtins::promise::reject_promise_with_value(
+                            ctx,
+                            fetch_task.promise_ptr,
+                            val,
+                        );
                     }
                 },
             }
@@ -463,8 +481,11 @@ impl IoReactor {
         };
 
         if let ReactorTask::Ws(ws_task) = &mut task {
-            let phase = std::mem::replace(&mut ws_task.phase, WsPhase::Connecting(ConnectState::dummy()));
-            
+            let phase = std::mem::replace(
+                &mut ws_task.phase,
+                WsPhase::Connecting(ConnectState::dummy()),
+            );
+
             match phase {
                 WsPhase::Connecting(mut cs) => match cs.try_advance() {
                     ConnEvent::Connected(conn) => {
@@ -499,7 +520,11 @@ impl IoReactor {
                     }
                     ConnEvent::Error(e) => {
                         let val = crate::value::JSValue::new_string(ctx.intern(&e));
-                        crate::builtins::promise::reject_promise_with_value(ctx, ws_task.promise_ptr, val);
+                        crate::builtins::promise::reject_promise_with_value(
+                            ctx,
+                            ws_task.promise_ptr,
+                            val,
+                        );
                         return Ok(());
                     }
                     _ => {
@@ -508,15 +533,29 @@ impl IoReactor {
                         return Ok(());
                     }
                 },
-                WsPhase::Handshake { mut conn, key, write_buf, mut write_pos, mut read_data } => {
+                WsPhase::Handshake {
+                    mut conn,
+                    key,
+                    write_buf,
+                    mut write_pos,
+                    mut read_data,
+                } => {
                     if write_pos < write_buf.len() {
                         let remaining = &write_buf[write_pos..];
                         match conn.write(remaining) {
-                            Ok(n) => { write_pos += n; }
+                            Ok(n) => {
+                                write_pos += n;
+                            }
                             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                             Err(e) => {
-                                let val = crate::value::JSValue::new_string(ctx.intern(&format!("ws write: {e}")));
-                                crate::builtins::promise::reject_promise_with_value(ctx, ws_task.promise_ptr, val);
+                                let val = crate::value::JSValue::new_string(
+                                    ctx.intern(&format!("ws write: {e}")),
+                                );
+                                crate::builtins::promise::reject_promise_with_value(
+                                    ctx,
+                                    ws_task.promise_ptr,
+                                    val,
+                                );
                                 return Ok(());
                             }
                         }
@@ -525,35 +564,68 @@ impl IoReactor {
                         let mut tmp = [0u8; 8192];
                         match conn.read(&mut tmp) {
                             Ok(0) => {
-                                let val = crate::value::JSValue::new_string(ctx.intern("ws handshake closed"));
-                                crate::builtins::promise::reject_promise_with_value(ctx, ws_task.promise_ptr, val);
+                                let val = crate::value::JSValue::new_string(
+                                    ctx.intern("ws handshake closed"),
+                                );
+                                crate::builtins::promise::reject_promise_with_value(
+                                    ctx,
+                                    ws_task.promise_ptr,
+                                    val,
+                                );
                                 return Ok(());
                             }
                             Ok(n) => {
                                 read_data.extend_from_slice(&tmp[..n]);
-                                if let Some(pos) = read_data.windows(4).position(|w| w == b"\r\n\r\n") {
-                                    let status_line_end = read_data.windows(2).position(|w| w == b"\r\n").unwrap_or(0);
+                                if let Some(pos) =
+                                    read_data.windows(4).position(|w| w == b"\r\n\r\n")
+                                {
+                                    let status_line_end = read_data
+                                        .windows(2)
+                                        .position(|w| w == b"\r\n")
+                                        .unwrap_or(0);
                                     let status_line = &read_data[..status_line_end];
                                     let code = if status_line.len() >= 12 {
-                                        String::from_utf8_lossy(&status_line[9..12]).parse::<u16>().unwrap_or(0)
-                                    } else { 0 };
+                                        String::from_utf8_lossy(&status_line[9..12])
+                                            .parse::<u16>()
+                                            .unwrap_or(0)
+                                    } else {
+                                        0
+                                    };
                                     let status = HttpStatus(code);
                                     let header_bytes = &read_data[status_line_end + 2..pos + 4];
                                     let (headers, _) = Headers::from_bytes(header_bytes)?;
                                     let accept = WsHandshake::validate_response(status, &headers)?;
                                     if !WsHandshake::verify_accept(&key, &accept) {
-                                        let val = crate::value::JSValue::new_string(ctx.intern("ws accept mismatch"));
-                                        crate::builtins::promise::reject_promise_with_value(ctx, ws_task.promise_ptr, val);
+                                        let val = crate::value::JSValue::new_string(
+                                            ctx.intern("ws accept mismatch"),
+                                        );
+                                        crate::builtins::promise::reject_promise_with_value(
+                                            ctx,
+                                            ws_task.promise_ptr,
+                                            val,
+                                        );
                                         return Ok(());
                                     }
 
-                                    let ws_obj = unsafe { &mut *(ws_task.ws_obj_ptr as *mut crate::object::object::JSObject) };
-                                    ws_obj.set(ctx.intern("readyState"), crate::value::JSValue::new_int(1));
+                                    let ws_obj = unsafe {
+                                        &mut *(ws_task.ws_obj_ptr
+                                            as *mut crate::object::object::JSObject)
+                                    };
+                                    ws_obj.set(
+                                        ctx.intern("readyState"),
+                                        crate::value::JSValue::new_int(1),
+                                    );
 
                                     let val = crate::value::JSValue::new_object(ws_task.ws_obj_ptr);
-                                    crate::builtins::promise::fulfill_promise_with_value(ctx, ws_task.promise_ptr, val);
+                                    crate::builtins::promise::fulfill_promise_with_value(
+                                        ctx,
+                                        ws_task.promise_ptr,
+                                        val,
+                                    );
 
-                                    let onopen = ws_obj.get(ctx.intern("onopen")).unwrap_or(crate::value::JSValue::undefined());
+                                    let onopen = ws_obj
+                                        .get(ctx.intern("onopen"))
+                                        .unwrap_or(crate::value::JSValue::undefined());
                                     if onopen.is_function() {
                                         ctx.event_loop_mut().schedule_macrotask(onopen, vec![]);
                                     }
@@ -573,17 +645,37 @@ impl IoReactor {
                             }
                             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                             Err(e) => {
-                                let val = crate::value::JSValue::new_string(ctx.intern(&format!("ws handshake read: {e}")));
-                                crate::builtins::promise::reject_promise_with_value(ctx, ws_task.promise_ptr, val);
+                                let val = crate::value::JSValue::new_string(
+                                    ctx.intern(&format!("ws handshake read: {e}")),
+                                );
+                                crate::builtins::promise::reject_promise_with_value(
+                                    ctx,
+                                    ws_task.promise_ptr,
+                                    val,
+                                );
                                 return Ok(());
                             }
                         }
                     }
-                    ws_task.phase = WsPhase::Handshake { conn, key, write_buf, write_pos, read_data };
+                    ws_task.phase = WsPhase::Handshake {
+                        conn,
+                        key,
+                        write_buf,
+                        write_pos,
+                        read_data,
+                    };
                     self.reregister(id, task)?;
                     return Ok(());
                 }
-                WsPhase::Open { mut conn, mut read_buf, mut read_data, mut pending_out, closing, close_code, close_reason } => {
+                WsPhase::Open {
+                    mut conn,
+                    mut read_buf,
+                    mut read_data,
+                    mut pending_out,
+                    closing,
+                    close_code,
+                    close_reason,
+                } => {
                     while let Some(frame) = pending_out.pop_front() {
                         let encoded = frame.encode();
                         match conn.write_all(&encoded) {
@@ -593,14 +685,20 @@ impl IoReactor {
                                 break;
                             }
                             Err(e) => {
-                                dispatch_ws_error(ctx, ws_task.ws_obj_ptr, &format!("ws write: {e}"));
+                                dispatch_ws_error(
+                                    ctx,
+                                    ws_task.ws_obj_ptr,
+                                    &format!("ws write: {e}"),
+                                );
                                 return Ok(());
                             }
                         }
                     }
 
                     if closing && pending_out.is_empty() {
-                        let ws_obj = unsafe { &mut *(ws_task.ws_obj_ptr as *mut crate::object::object::JSObject) };
+                        let ws_obj = unsafe {
+                            &mut *(ws_task.ws_obj_ptr as *mut crate::object::object::JSObject)
+                        };
                         ws_obj.set(ctx.intern("readyState"), crate::value::JSValue::new_int(3));
                         dispatch_ws_close(ctx, ws_task.ws_obj_ptr, close_code, close_reason);
                         return Ok(());
@@ -608,9 +706,16 @@ impl IoReactor {
 
                     match conn.read(&mut read_buf) {
                         Ok(0) => {
-                            let ws_obj = unsafe { &mut *(ws_task.ws_obj_ptr as *mut crate::object::object::JSObject) };
+                            let ws_obj = unsafe {
+                                &mut *(ws_task.ws_obj_ptr as *mut crate::object::object::JSObject)
+                            };
                             ws_obj.set(ctx.intern("readyState"), crate::value::JSValue::new_int(3));
-                            dispatch_ws_close(ctx, ws_task.ws_obj_ptr, 1006, "connection closed".into());
+                            dispatch_ws_close(
+                                ctx,
+                                ws_task.ws_obj_ptr,
+                                1006,
+                                "connection closed".into(),
+                            );
                             return Ok(());
                         }
                         Ok(n) => {
@@ -622,18 +727,29 @@ impl IoReactor {
                                     match frame.opcode {
                                         OpCode::Text => {
                                             let text = String::from_utf8_lossy(&frame.payload);
-                                            dispatch_ws_message(ctx, ws_task.ws_obj_ptr, &text, true);
+                                            dispatch_ws_message(
+                                                ctx,
+                                                ws_task.ws_obj_ptr,
+                                                &text,
+                                                true,
+                                            );
                                         }
                                         OpCode::Binary => {
                                             let text = String::from_utf8_lossy(&frame.payload);
-                                            dispatch_ws_message(ctx, ws_task.ws_obj_ptr, &text, false);
+                                            dispatch_ws_message(
+                                                ctx,
+                                                ws_task.ws_obj_ptr,
+                                                &text,
+                                                false,
+                                            );
                                         }
                                         OpCode::Ping => {
                                             let pong = WsFrame::new_pong(frame.payload);
                                             pending_out.push_back(pong);
                                         }
                                         OpCode::Close => {
-                                            let (code, reason) = parse_close_payload(&frame.payload);
+                                            let (code, reason) =
+                                                parse_close_payload(&frame.payload);
                                             let close_frame = WsFrame::new_close(code, &reason);
                                             pending_out.push_back(close_frame);
                                             ws_task.phase = WsPhase::Open {
@@ -659,7 +775,15 @@ impl IoReactor {
                             return Ok(());
                         }
                     }
-                    ws_task.phase = WsPhase::Open { conn, read_buf, read_data, pending_out, closing, close_code, close_reason };
+                    ws_task.phase = WsPhase::Open {
+                        conn,
+                        read_buf,
+                        read_data,
+                        pending_out,
+                        closing,
+                        close_code,
+                        close_reason,
+                    };
                     self.reregister(id, task)?;
                     return Ok(());
                 }
@@ -676,7 +800,10 @@ impl IoReactor {
         };
 
         if let ReactorTask::Sse(sse_task) = &mut task {
-            let phase = std::mem::replace(&mut sse_task.phase, SsePhase::Connecting(ConnectState::dummy()));
+            let phase = std::mem::replace(
+                &mut sse_task.phase,
+                SsePhase::Connecting(ConnectState::dummy()),
+            );
 
             match phase {
                 SsePhase::Connecting(mut cs) => match cs.try_advance() {
@@ -690,14 +817,22 @@ impl IoReactor {
                         write_buf.extend_from_slice(b" HTTP/1.1\r\nHost: ");
                         write_buf.extend_from_slice(host_header.as_bytes());
                         write_buf.extend_from_slice(b"\r\nAccept: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n");
-                        sse_task.phase = SsePhase::WritingRequest { conn, write_buf, write_pos: 0 };
+                        sse_task.phase = SsePhase::WritingRequest {
+                            conn,
+                            write_buf,
+                            write_pos: 0,
+                        };
                         self.reregister(id, task)?;
                         let _ = self.advance_task(ctx, id);
                         return Ok(());
                     }
                     ConnEvent::Error(e) => {
                         let val = crate::value::JSValue::new_string(ctx.intern(&e));
-                        crate::builtins::promise::reject_promise_with_value(ctx, sse_task.promise_ptr, val);
+                        crate::builtins::promise::reject_promise_with_value(
+                            ctx,
+                            sse_task.promise_ptr,
+                            val,
+                        );
                         return Ok(());
                     }
                     _ => {
@@ -706,33 +841,63 @@ impl IoReactor {
                         return Ok(());
                     }
                 },
-                SsePhase::WritingRequest { mut conn, write_buf, mut write_pos } => {
+                SsePhase::WritingRequest {
+                    mut conn,
+                    write_buf,
+                    mut write_pos,
+                } => {
                     if write_pos < write_buf.len() {
                         let remaining = &write_buf[write_pos..];
                         match conn.write(remaining) {
-                            Ok(n) => { write_pos += n; }
+                            Ok(n) => {
+                                write_pos += n;
+                            }
                             Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                             Err(e) => {
-                                let val = crate::value::JSValue::new_string(ctx.intern(&format!("sse write: {e}")));
-                                crate::builtins::promise::reject_promise_with_value(ctx, sse_task.promise_ptr, val);
+                                let val = crate::value::JSValue::new_string(
+                                    ctx.intern(&format!("sse write: {e}")),
+                                );
+                                crate::builtins::promise::reject_promise_with_value(
+                                    ctx,
+                                    sse_task.promise_ptr,
+                                    val,
+                                );
                                 return Ok(());
                             }
                         }
                     }
                     if write_pos >= write_buf.len() {
-                        sse_task.phase = SsePhase::ReadingHeaders { conn, read_buf: [0u8; 8192], read_data: Vec::new() };
+                        sse_task.phase = SsePhase::ReadingHeaders {
+                            conn,
+                            read_buf: [0u8; 8192],
+                            read_data: Vec::new(),
+                        };
                         self.reregister(id, task)?;
                         return Ok(());
                     }
-                    sse_task.phase = SsePhase::WritingRequest { conn, write_buf, write_pos };
+                    sse_task.phase = SsePhase::WritingRequest {
+                        conn,
+                        write_buf,
+                        write_pos,
+                    };
                     self.reregister(id, task)?;
                     return Ok(());
                 }
-                SsePhase::ReadingHeaders { mut conn, mut read_buf, mut read_data } => {
+                SsePhase::ReadingHeaders {
+                    mut conn,
+                    mut read_buf,
+                    mut read_data,
+                } => {
                     match conn.read(&mut read_buf) {
                         Ok(0) => {
-                            let val = crate::value::JSValue::new_string(ctx.intern("sse closed during headers"));
-                            crate::builtins::promise::reject_promise_with_value(ctx, sse_task.promise_ptr, val);
+                            let val = crate::value::JSValue::new_string(
+                                ctx.intern("sse closed during headers"),
+                            );
+                            crate::builtins::promise::reject_promise_with_value(
+                                ctx,
+                                sse_task.promise_ptr,
+                                val,
+                            );
                             return Ok(());
                         }
                         Ok(n) => {
@@ -740,46 +905,88 @@ impl IoReactor {
                             if let Some(pos) = read_data.windows(4).position(|w| w == b"\r\n\r\n") {
                                 let header_str = String::from_utf8_lossy(&read_data[..pos]);
                                 if !header_str.contains("200") && !header_str.contains("201") {
-                                    let val = crate::value::JSValue::new_string(
-                                        ctx.intern(&format!("sse bad status: {}", header_str.lines().next().unwrap_or(""))),
+                                    let val =
+                                        crate::value::JSValue::new_string(ctx.intern(&format!(
+                                            "sse bad status: {}",
+                                            header_str.lines().next().unwrap_or("")
+                                        )));
+                                    crate::builtins::promise::reject_promise_with_value(
+                                        ctx,
+                                        sse_task.promise_ptr,
+                                        val,
                                     );
-                                    crate::builtins::promise::reject_promise_with_value(ctx, sse_task.promise_ptr, val);
                                     return Ok(());
                                 }
 
                                 let val = crate::value::JSValue::new_object(sse_task.es_obj_ptr);
-                                crate::builtins::promise::fulfill_promise_with_value(ctx, sse_task.promise_ptr, val);
+                                crate::builtins::promise::fulfill_promise_with_value(
+                                    ctx,
+                                    sse_task.promise_ptr,
+                                    val,
+                                );
 
-                                let es_obj = unsafe { &mut *(sse_task.es_obj_ptr as *mut crate::object::object::JSObject) };
-                                es_obj.set(ctx.intern("readyState"), crate::value::JSValue::new_int(1));
-                                let onopen = es_obj.get(ctx.intern("onopen")).unwrap_or(crate::value::JSValue::undefined());
+                                let es_obj = unsafe {
+                                    &mut *(sse_task.es_obj_ptr
+                                        as *mut crate::object::object::JSObject)
+                                };
+                                es_obj.set(
+                                    ctx.intern("readyState"),
+                                    crate::value::JSValue::new_int(1),
+                                );
+                                let onopen = es_obj
+                                    .get(ctx.intern("onopen"))
+                                    .unwrap_or(crate::value::JSValue::undefined());
                                 if onopen.is_function() {
                                     ctx.event_loop_mut().schedule_macrotask(onopen, vec![]);
                                 }
 
                                 let remaining = read_data[pos + 4..].to_vec();
-                                sse_task.phase = SsePhase::Streaming { conn, read_buf: [0u8; 8192], read_data: Vec::new(), sse_buf: remaining };
+                                sse_task.phase = SsePhase::Streaming {
+                                    conn,
+                                    read_buf: [0u8; 8192],
+                                    read_data: Vec::new(),
+                                    sse_buf: remaining,
+                                };
                                 self.reregister(id, task)?;
                                 return Ok(());
                             }
                         }
                         Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                         Err(e) => {
-                            let val = crate::value::JSValue::new_string(ctx.intern(&format!("sse header read: {e}")));
-                            crate::builtins::promise::reject_promise_with_value(ctx, sse_task.promise_ptr, val);
+                            let val = crate::value::JSValue::new_string(
+                                ctx.intern(&format!("sse header read: {e}")),
+                            );
+                            crate::builtins::promise::reject_promise_with_value(
+                                ctx,
+                                sse_task.promise_ptr,
+                                val,
+                            );
                             return Ok(());
                         }
                     }
-                    sse_task.phase = SsePhase::ReadingHeaders { conn, read_buf, read_data };
+                    sse_task.phase = SsePhase::ReadingHeaders {
+                        conn,
+                        read_buf,
+                        read_data,
+                    };
                     self.reregister(id, task)?;
                     return Ok(());
                 }
-                SsePhase::Streaming { mut conn, mut read_buf, read_data: _, mut sse_buf } => {
+                SsePhase::Streaming {
+                    mut conn,
+                    mut read_buf,
+                    read_data: _,
+                    mut sse_buf,
+                } => {
                     match conn.read(&mut read_buf) {
                         Ok(0) => {
-                            let es_obj = unsafe { &mut *(sse_task.es_obj_ptr as *mut crate::object::object::JSObject) };
+                            let es_obj = unsafe {
+                                &mut *(sse_task.es_obj_ptr as *mut crate::object::object::JSObject)
+                            };
                             es_obj.set(ctx.intern("readyState"), crate::value::JSValue::new_int(2));
-                            let onclose = es_obj.get(ctx.intern("onclose")).unwrap_or(crate::value::JSValue::undefined());
+                            let onclose = es_obj
+                                .get(ctx.intern("onclose"))
+                                .unwrap_or(crate::value::JSValue::undefined());
                             if onclose.is_function() {
                                 ctx.event_loop_mut().schedule_macrotask(onclose, vec![]);
                             }
@@ -787,11 +994,21 @@ impl IoReactor {
                         }
                         Ok(n) => {
                             sse_buf.extend_from_slice(&read_buf[..n]);
-                            while let Some(event) = crate::builtins::eventsource::parse_sse_event(&mut sse_buf) {
+                            while let Some(event) =
+                                crate::builtins::eventsource::parse_sse_event(&mut sse_buf)
+                            {
                                 if event.is_closed {
-                                    let es_obj = unsafe { &mut *(sse_task.es_obj_ptr as *mut crate::object::object::JSObject) };
-                                    es_obj.set(ctx.intern("readyState"), crate::value::JSValue::new_int(2));
-                                    let onclose = es_obj.get(ctx.intern("onclose")).unwrap_or(crate::value::JSValue::undefined());
+                                    let es_obj = unsafe {
+                                        &mut *(sse_task.es_obj_ptr
+                                            as *mut crate::object::object::JSObject)
+                                    };
+                                    es_obj.set(
+                                        ctx.intern("readyState"),
+                                        crate::value::JSValue::new_int(2),
+                                    );
+                                    let onclose = es_obj
+                                        .get(ctx.intern("onclose"))
+                                        .unwrap_or(crate::value::JSValue::undefined());
                                     if onclose.is_function() {
                                         ctx.event_loop_mut().schedule_macrotask(onclose, vec![]);
                                     }
@@ -802,16 +1019,27 @@ impl IoReactor {
                         }
                         Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                         Err(e) => {
-                            let es_obj = unsafe { &mut *(sse_task.es_obj_ptr as *mut crate::object::object::JSObject) };
-                            let onerror = es_obj.get(ctx.intern("onerror")).unwrap_or(crate::value::JSValue::undefined());
+                            let es_obj = unsafe {
+                                &mut *(sse_task.es_obj_ptr as *mut crate::object::object::JSObject)
+                            };
+                            let onerror = es_obj
+                                .get(ctx.intern("onerror"))
+                                .unwrap_or(crate::value::JSValue::undefined());
                             if onerror.is_function() {
-                                let err_val = crate::value::JSValue::new_string(ctx.intern(&format!("{e}")));
-                                ctx.event_loop_mut().schedule_macrotask(onerror, vec![err_val]);
+                                let err_val =
+                                    crate::value::JSValue::new_string(ctx.intern(&format!("{e}")));
+                                ctx.event_loop_mut()
+                                    .schedule_macrotask(onerror, vec![err_val]);
                             }
                             return Ok(());
                         }
                     }
-                    sse_task.phase = SsePhase::Streaming { conn, read_buf, read_data: Vec::new(), sse_buf };
+                    sse_task.phase = SsePhase::Streaming {
+                        conn,
+                        read_buf,
+                        read_data: Vec::new(),
+                        sse_buf,
+                    };
                     self.reregister(id, task)?;
                     return Ok(());
                 }
@@ -890,15 +1118,14 @@ fn build_response_js_object(
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> crate::value::JSValue {
-    let mut func =
-        crate::object::function::JSFunction::new_builtin(ctx.intern(name), 1);
+    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), 1);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     crate::value::JSValue::new_function(ptr)
 }
 
-fn dispatch_ws_message(ctx: &mut JSContext, ws_obj_ptr: usize, data: &str, is_text: bool) {
+fn dispatch_ws_message(ctx: &mut JSContext, ws_obj_ptr: usize, data: &str, _is_text: bool) {
     let ws_obj = unsafe { &*(ws_obj_ptr as *const crate::object::object::JSObject) };
     let on_msg = ws_obj
         .get(ctx.intern("onmessage"))
@@ -917,7 +1144,10 @@ fn dispatch_ws_close(ctx: &mut JSContext, ws_obj_ptr: usize, code: u16, reason: 
         .unwrap_or(crate::value::JSValue::undefined());
     if on_close.is_function() {
         let mut evt = crate::object::object::JSObject::new();
-        evt.set(ctx.intern("code"), crate::value::JSValue::new_int(code as i64));
+        evt.set(
+            ctx.intern("code"),
+            crate::value::JSValue::new_int(code as i64),
+        );
         evt.set(
             ctx.intern("reason"),
             crate::value::JSValue::new_string(ctx.intern(&reason)),

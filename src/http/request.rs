@@ -111,7 +111,6 @@ impl HttpRequest {
     pub fn try_advance(&mut self) -> Result<RequestEvent, String> {
         loop {
             match self.state {
-
                 RequestState::WritingRequest => {
                     let conn = self.conn.as_mut().unwrap();
                     let remaining = &self.write_buf[self.write_pos..];
@@ -148,19 +147,22 @@ impl HttpRequest {
                             if let Some(headers_end) =
                                 self.read_data.windows(4).position(|w| w == b"\r\n\r\n")
                             {
-                                let line_end = self.read_data.windows(2).position(|w| w == b"\r\n").unwrap_or(0);
-                                let status = self.parse_status_from_bytes(&self.read_data[..line_end])?;
+                                let line_end = self
+                                    .read_data
+                                    .windows(2)
+                                    .position(|w| w == b"\r\n")
+                                    .unwrap_or(0);
+                                let status =
+                                    self.parse_status_from_bytes(&self.read_data[..line_end])?;
                                 self.resp_status = Some(status);
                                 let header_bytes = &self.read_data[line_end + 2..headers_end + 4];
                                 let (headers, _) = Headers::from_bytes(header_bytes)?;
                                 let body_mode = self.determine_body_mode(&headers);
                                 self.resp_headers = Some(headers.clone());
-                                let enc =
-                                    headers.get("content-encoding").map(|s| s.to_string());
+                                let enc = headers.get("content-encoding").map(|s| s.to_string());
                                 self.decompressor = Some(Decompressor::new(enc.as_deref()));
                                 self.body_reader = Some(BodyReader::new(body_mode));
-                                self.parse_buf = self.read_data[headers_end + 4..]
-                                    .to_vec();
+                                self.parse_buf = self.read_data[headers_end + 4..].to_vec();
                                 self.state = RequestState::ReadingBody;
                                 continue;
                             }

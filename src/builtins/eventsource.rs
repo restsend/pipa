@@ -20,15 +20,13 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 
 fn es_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() || !args[0].is_string() {
-        eprintln!("EventSource: url required");
         return JSValue::undefined();
     }
 
     let url_str = ctx.get_atom_str(args[0].get_atom()).to_string();
     let url = match Url::parse(&url_str) {
         Ok(u) => u,
-        Err(e) => {
-            eprintln!("EventSource: invalid URL: {e}");
+        Err(_) => {
             return JSValue::undefined();
         }
     };
@@ -51,9 +49,12 @@ fn es_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let task = match SseTask::new(url, es_obj_ptr, promise_ptr) {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("EventSource: {e}");
-            unsafe { drop(Box::from_raw(es_obj_ptr as *mut crate::object::object::JSObject)); }
+        Err(_) => {
+            unsafe {
+                drop(Box::from_raw(
+                    es_obj_ptr as *mut crate::object::object::JSObject,
+                ));
+            }
             return JSValue::undefined();
         }
     };
@@ -61,13 +62,11 @@ fn es_ctor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let reactor = match IoReactor::get_from_ctx(ctx) {
         Some(r) => r,
         None => {
-            eprintln!("EventSource: no io reactor");
             return JSValue::undefined();
         }
     };
 
-    if let Err(e) = reactor.register(ReactorTask::Sse(task)) {
-        eprintln!("EventSource: register failed: {e}");
+    if let Err(_) = reactor.register(ReactorTask::Sse(task)) {
         return JSValue::undefined();
     }
 

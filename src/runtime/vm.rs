@@ -3812,27 +3812,15 @@ impl VM {
                     } else {
                         JSValue::undefined()
                     };
-                    #[cfg(test)]
-                    eprintln!("GETUPVALUE slot={} result={:?}", slot, result);
                     self.set_reg(dst, result);
                 }
                 Opcode::SetUpvalue => {
                     let slot = self.read_u16_pc() as usize;
                     let src = self.read_u16_pc();
                     let val = self.get_reg(src);
-                    #[cfg(test)]
-                    eprintln!("SETUPVALUE slot={} val={:?}", slot, val);
                     if !self.cached_upvalue_slot_ptr.is_null() && slot < self.cached_upvalues_len {
                         let rc = unsafe { &*self.cached_upvalue_slot_ptr.add(slot) };
                         unsafe { (*std::rc::Rc::as_ptr(rc)).as_ptr().write(val) };
-                        #[cfg(test)]
-                        eprintln!("  -> wrote to upvalue slot {}", slot);
-                    } else {
-                        #[cfg(test)]
-                        eprintln!(
-                            "  -> slot {} out of bounds or null (len={})",
-                            slot, self.cached_upvalues_len
-                        );
                     }
                 }
 
@@ -4144,11 +4132,7 @@ impl VM {
                     let key_reg = self.read_u16_pc();
                     let obj_val = self.get_reg(obj_reg);
                     let key_val = self.get_reg(key_reg);
-                    #[cfg(test)]
-                    eprintln!(
-                        "GETPROP obj_reg={} obj={:?} key={:?}",
-                        obj_reg, obj_val, key_val
-                    );
+
                     if !obj_val.is_object_like()
                         && !obj_val.is_function()
                         && (obj_val.is_int()
@@ -4293,18 +4277,7 @@ impl VM {
                     let obj_val = self.get_reg(obj_reg);
                     let key_val = self.get_reg(key_reg);
                     let value = self.get_reg(val_reg);
-                    #[cfg(test)]
-                    eprintln!(
-                        "SETPROP obj_reg={} obj_ptr={} key={:?} val_is_func={}",
-                        obj_reg,
-                        if obj_val.is_object() {
-                            obj_val.get_ptr()
-                        } else {
-                            0
-                        },
-                        key_val,
-                        value.is_function()
-                    );
+
                     if key_val.is_string() {
                         self.set_named_prop(ctx, obj_val, value, key_val.get_atom(), usize::MAX);
                     } else if key_val.is_symbol() && obj_val.is_object_like() {
@@ -6156,15 +6129,7 @@ impl VM {
                                 } else {
                                     JSValue::undefined()
                                 };
-                            #[cfg(test)]
-                            eprintln!(
-                                "NEWFUNC capture atom={:?}({}) local_idx={} base={} reg={:?}",
-                                atom,
-                                ctx.get_atom_str(atom),
-                                local_idx,
-                                current_frame_base,
-                                initial_value
-                            );
+
                             let current_frame = &mut self.frames[self.frame_index];
                             let local_idx_u16 = local_idx as u16;
                             if let Some(existing) = current_frame
@@ -6192,14 +6157,7 @@ impl VM {
                             let parent_func = unsafe {
                                 &*(parent_ptr as *const crate::object::function::JSFunction)
                             };
-                            #[cfg(test)]
-                            eprintln!(
-                                "NEWFUNC inherit atom={:?} parent_has={}",
-                                atom,
-                                parent_func
-                                    .upvalues_ref()
-                                    .map_or(false, |u| u.upvalue_cells.contains_key(&atom))
-                            );
+
                             if let Some(parent_cell) = parent_func
                                 .upvalues_ref()
                                 .and_then(|u| u.upvalue_cells.get(&atom))

@@ -28,7 +28,11 @@ impl Connection {
             .collect();
 
         for addr in addrs {
-            let domain = if addr.is_ipv6() { libc::AF_INET6 } else { libc::AF_INET };
+            let domain = if addr.is_ipv6() {
+                libc::AF_INET6
+            } else {
+                libc::AF_INET
+            };
             let sock = unsafe {
                 libc::socket(
                     domain,
@@ -212,34 +216,30 @@ impl Read for Connection {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self {
             Connection::Plain(stream) => stream.read(buf),
-            Connection::Tls { tls, stream } => {
-                loop {
-                    match tls.read_tls(stream) {
-                        Ok(0) => {
-                            tls.process_new_packets()
-                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                            return tls.reader().read(buf);
-                        }
-                        Ok(_) => {
-                            tls.process_new_packets()
-                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                            match tls.reader().read(buf) {
-                                Ok(n) => return Ok(n),
-                                Err(e) if e.kind() == ErrorKind::WouldBlock => continue,
-                                Err(e) => return Err(e),
-                            }
-                        }
-                        Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                            match tls.reader().read(buf) {
-                                Ok(n) => return Ok(n),
-                                Err(e2) if e2.kind() == ErrorKind::WouldBlock => return Err(e),
-                                Err(e2) => return Err(e2),
-                            }
-                        }
-                        Err(e) => return Err(e),
+            Connection::Tls { tls, stream } => loop {
+                match tls.read_tls(stream) {
+                    Ok(0) => {
+                        tls.process_new_packets()
+                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                        return tls.reader().read(buf);
                     }
+                    Ok(_) => {
+                        tls.process_new_packets()
+                            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                        match tls.reader().read(buf) {
+                            Ok(n) => return Ok(n),
+                            Err(e) if e.kind() == ErrorKind::WouldBlock => continue,
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => match tls.reader().read(buf) {
+                        Ok(n) => return Ok(n),
+                        Err(e2) if e2.kind() == ErrorKind::WouldBlock => return Err(e),
+                        Err(e2) => return Err(e2),
+                    },
+                    Err(e) => return Err(e),
                 }
-            }
+            },
         }
     }
 }
