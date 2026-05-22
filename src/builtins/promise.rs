@@ -764,7 +764,7 @@ pub fn create_rejected_promise(ctx: &mut JSContext, reason: JSValue) -> JSValue 
     JSValue::new_object(ptr)
 }
 
-#[cfg(feature = "process")]
+#[cfg(any(feature = "process", feature = "fetch"))]
 pub(crate) fn fulfill_promise_with_value(
     ctx: &mut JSContext,
     promise_obj_ptr: usize,
@@ -774,7 +774,7 @@ pub(crate) fn fulfill_promise_with_value(
     fulfill_promise(ctx, promise, value);
 }
 
-#[cfg(feature = "process")]
+#[cfg(any(feature = "process", feature = "fetch"))]
 pub(crate) fn reject_promise_with_value(
     ctx: &mut JSContext,
     promise_obj_ptr: usize,
@@ -782,6 +782,13 @@ pub(crate) fn reject_promise_with_value(
 ) {
     let promise = unsafe { &mut *(promise_obj_ptr as *mut JSObject) };
     reject_promise(ctx, promise, reason);
+}
+
+#[cfg(feature = "fetch")]
+pub fn create_pending_promise(ctx: &mut JSContext) -> JSValue {
+    let promise = create_promise(ctx);
+    let ptr = Box::into_raw(Box::new(promise)) as usize;
+    JSValue::new_object(ptr)
 }
 
 pub fn run_microtasks_with_vm(ctx: &mut JSContext, vm: &mut crate::runtime::vm::VM) {

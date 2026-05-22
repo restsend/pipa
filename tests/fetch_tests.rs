@@ -2,6 +2,7 @@
 
 use pipa::http::chunked::ChunkedDecoder;
 use pipa::http::conn::Connection;
+use pipa::http::connect_state::{ConnectState, ConnEvent};
 use pipa::http::headers::Headers;
 use pipa::http::method::HttpMethod;
 use pipa::http::status::HttpStatus;
@@ -13,6 +14,7 @@ use pipa::util::iomux::Poller;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::os::unix::io::AsRawFd;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -241,6 +243,45 @@ fn build_chunked_response() -> Vec<u8> {
     let mut body = Vec::new();
     body.extend_from_slice(b"5\r\nHello\r\n1\r\n \r\n6\r\nWorld!\r\n0\r\n\r\n");
     body
+}
+
+fn blocking_connect(host: &str, port: u16, use_tls: bool, extra_roots: Vec<Vec<u8>>) -> Connection {
+    let mut cs = ConnectState::new(host, port, use_tls, extra_roots).unwrap();
+    let mut poller = Poller::new().unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+
+    loop {
+        match cs.try_advance() {
+            ConnEvent::Connected(conn) => {
+                conn.set_nonblocking(false).unwrap();
+                return conn;
+            }
+            ConnEvent::Error(e) => panic!("connect failed: {e}"),
+            ConnEvent::NeedRead => {
+                if let Some(fd) = cs.fd() {
+                    let _ = poller.register(fd, true, false);
+                    let _ = poller.wait(1000);
+                }
+            }
+            ConnEvent::NeedWrite => {
+                if let Some(fd) = cs.fd() {
+                    let _ = poller.unregister(fd);
+                    let _ = poller.register(fd, false, true);
+                    let _ = poller.wait(1000);
+                }
+            }
+            ConnEvent::NeedReadWrite => {
+                if let Some(fd) = cs.fd() {
+                    let _ = poller.unregister(fd);
+                    let _ = poller.register(fd, true, true);
+                    let _ = poller.wait(1000);
+                }
+            }
+        }
+        if std::time::Instant::now() > deadline {
+            panic!("connect timeout");
+        }
+    }
 }
 
 #[test]
@@ -613,11 +654,7 @@ fn test_e2e_https_get() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
-        .unwrap();
-
-    let mut conn = rx.recv().unwrap().unwrap();
-    conn.set_nonblocking(false).unwrap();
+    let mut conn = blocking_connect("localhost", port, true, vec![cert_der.clone()]);
 
     let request =
         format!("GET /echo HTTP/1.1\r\nHost: localhost:{port}\r\nConnection: close\r\n\r\n");
@@ -646,11 +683,7 @@ fn test_e2e_https_post() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
-        .unwrap();
-
-    let mut conn = rx.recv().unwrap().unwrap();
-    conn.set_nonblocking(false).unwrap();
+    let mut conn = blocking_connect("localhost", port, true, vec![cert_der.clone()]);
 
     let body = "{\"key\":\"value\"}";
     let request = format!(
@@ -680,11 +713,7 @@ fn test_e2e_wss_handshake() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
-        .unwrap();
-
-    let mut conn = rx.recv().unwrap().unwrap();
-    conn.set_nonblocking(false).unwrap();
+    let mut conn = blocking_connect("localhost", port, true, vec![cert_der.clone()]);
 
     let key = WsHandshake::generate_key();
     let expected_accept = WsHandshake::compute_accept(&key);
@@ -722,11 +751,7 @@ fn test_e2e_wss_frame_echo() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
-        .unwrap();
-
-    let mut conn = rx.recv().unwrap().unwrap();
-    conn.set_nonblocking(false).unwrap();
+    let mut conn = blocking_connect("localhost", port, true, vec![cert_der.clone()]);
 
     let key = WsHandshake::generate_key();
     let request = format!(
@@ -780,16 +805,11 @@ fn test_connection_tls_handshake() {
     let port = server.port;
     let cert_der = load_test_cert_der();
 
-    let rx = Connection::connect_async_with_roots("localhost".into(), port, true, vec![cert_der])
-        .unwrap();
-
-    let conn = rx.recv().expect("TLS connection failed");
+    let conn = blocking_connect("localhost", port, true, vec![cert_der]);
     assert!(
-        conn.is_ok(),
-        "TLS connection error: {:?}",
-        conn.as_ref().err()
+        conn.is_tls(),
+        "expected TLS connection"
     );
-    let _conn = conn.unwrap();
     server.stop();
 }
 
@@ -798,9 +818,7 @@ fn test_connection_plain_connect() {
     let server = TestServer::start_http();
     let port = server.port;
 
-    let rx = Connection::connect_async("127.0.0.1".into(), port, false).unwrap();
-    let mut conn = rx.recv().unwrap().unwrap();
-    conn.set_nonblocking(false).unwrap();
+    let mut conn = blocking_connect("127.0.0.1", port, false, Vec::new());
 
     let request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
     conn.write_all(request.as_bytes()).unwrap();
@@ -941,6 +959,108 @@ fn test_sse_e2e() {
     assert_eq!(events[2].event_type, "custom");
     assert_eq!(events[3].data, "line1\nline2");
     assert_eq!(events[4].data, "goodbye");
+
+    server.stop();
+}
+
+#[test]
+fn test_reactor_fetch_e2e() {
+    let server = TestServer::start_http();
+    let port = server.port;
+
+    use pipa::builtins::global::init_globals;
+    use pipa::runtime::runtime::JSRuntime;
+
+    let mut runtime = JSRuntime::new();
+    let mut ctx = runtime.new_context();
+    init_globals(&mut ctx);
+
+    let code = format!(
+        r#"
+        var p = fetch("http://127.0.0.1:{port}/");
+        p;
+        "#,
+    );
+    let promise_val = pipa::compiler::eval_code(&mut ctx, &code).unwrap();
+    assert!(promise_val.is_object(), "fetch should return a promise object");
+
+    pipa::run_event_loop_with_timeout(&mut ctx, 5000).unwrap();
+
+    let check = pipa::compiler::eval_code(&mut ctx, r#"
+        p.__promise_state__;
+    "#).unwrap();
+
+    let state = check.get_int();
+    assert_eq!(
+        state, 1,
+        "expected promise state to be fulfilled (1), got: {state}"
+    );
+
+    server.stop();
+}
+
+#[test]
+fn test_reactor_ws_e2e() {
+    let server = TestServer::start_ws_echo();
+    let port = server.port;
+
+    use pipa::builtins::global::init_globals;
+    use pipa::runtime::runtime::JSRuntime;
+
+    let mut runtime = JSRuntime::new();
+    let mut ctx = runtime.new_context();
+    init_globals(&mut ctx);
+
+    let code = format!(
+        r#"
+        var ws = new WebSocket("ws://127.0.0.1:{port}/chat");
+        ws;
+        "#,
+    );
+    let ws_val = pipa::compiler::eval_code(&mut ctx, &code).unwrap();
+    assert!(ws_val.is_object(), "WebSocket ctor should return object");
+
+    pipa::run_event_loop_with_timeout(&mut ctx, 5000).unwrap();
+
+    let state_val = pipa::compiler::eval_code(&mut ctx, "ws.readyState;").unwrap();
+    let state = state_val.get_int();
+    assert!(
+        state == 1,
+        "expected WebSocket readyState to be OPEN (1), got: {state}"
+    );
+
+    server.stop();
+}
+
+#[test]
+fn test_reactor_sse_e2e() {
+    let server = TestServer::start_sse();
+    let port = server.port;
+
+    use pipa::builtins::global::init_globals;
+    use pipa::runtime::runtime::JSRuntime;
+
+    let mut runtime = JSRuntime::new();
+    let mut ctx = runtime.new_context();
+    init_globals(&mut ctx);
+
+    let code = format!(
+        r#"
+        var es = new EventSource("http://127.0.0.1:{port}/sse");
+        es;
+        "#,
+    );
+    let es_val = pipa::compiler::eval_code(&mut ctx, &code).unwrap();
+    assert!(es_val.is_object(), "EventSource ctor should return object");
+
+    pipa::run_event_loop_with_timeout(&mut ctx, 5000).unwrap();
+
+    let state_val = pipa::compiler::eval_code(&mut ctx, "es.readyState;").unwrap();
+    let state = state_val.get_int();
+    assert!(
+        state == 1 || state == 2,
+        "expected EventSource readyState to be OPEN (1) or CLOSED (2), got: {state}"
+    );
 
     server.stop();
 }

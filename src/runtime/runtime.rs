@@ -2,8 +2,6 @@ use super::atom::AtomTable;
 use super::context::JSContext;
 use super::gc::GcHeap;
 use super::module::ModuleRegistry;
-#[cfg(feature = "fetch")]
-use crate::http::conn::Connection;
 use crate::value::JSValue;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,9 +14,6 @@ pub struct JSRuntime {
     next_symbol_id: u32,
 
     pub argv: Vec<String>,
-
-    #[cfg(feature = "fetch")]
-    pub connections: Vec<Option<Box<Connection>>>,
 }
 
 impl JSRuntime {
@@ -31,8 +26,6 @@ impl JSRuntime {
             module_registry: ModuleRegistry::new(),
             next_symbol_id: 1,
             argv: Vec::new(),
-            #[cfg(feature = "fetch")]
-            connections: Vec::new(),
         }
     }
 
@@ -97,27 +90,6 @@ impl JSRuntime {
 
     pub fn set_argv(&mut self, args: Vec<String>) {
         self.argv = args;
-    }
-
-    #[cfg(feature = "fetch")]
-    pub fn add_connection(&mut self, conn: Connection) -> usize {
-        let idx = self.connections.len();
-        self.connections.push(Some(Box::new(conn)));
-        idx
-    }
-
-    #[cfg(feature = "fetch")]
-    pub fn release_connection(&mut self, idx: usize) {
-        if let Some(slot) = self.connections.get_mut(idx) {
-            *slot = None;
-        }
-    }
-
-    #[cfg(feature = "fetch")]
-    pub fn get_connection(&mut self, idx: usize) -> Option<&mut Connection> {
-        self.connections
-            .get_mut(idx)
-            .and_then(|slot| slot.as_mut().map(|b| b.as_mut()))
     }
 }
 

@@ -28,6 +28,10 @@ impl MacroTaskExtension for ProcessExtension {
     fn has_pending(&self) -> bool {
         false
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 pub fn run_command_sync(command: &str, args: &[String]) -> ProcessResult {

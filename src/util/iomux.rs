@@ -105,6 +105,7 @@ mod platform {
             if writable {
                 events |= EPOLLOUT;
             }
+            events |= EPOLLERR | EPOLLHUP;
             let ev = EpollEvent {
                 events,
                 data: fd as u64,
