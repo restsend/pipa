@@ -13,3 +13,4 @@ test262.tar.bz2
 perf.data*
 .boa_history
 perf*.data
+book/
