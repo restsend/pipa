@@ -24,6 +24,7 @@ struct InlineCacheWrite {
     shape_id: u32,
     offset: u32,
     new_shape: usize,
+    no_accessor: u8,
 }
 
 impl InlineCacheWrite {
@@ -33,6 +34,7 @@ impl InlineCacheWrite {
             shape_id: u32::MAX,
             offset: 0,
             new_shape: 0,
+            no_accessor: 0,
         }
     }
 }
@@ -80,17 +82,27 @@ impl InlineCache {
     #[inline(always)]
     pub fn get(&self, shape_id: ShapeId) -> Option<(u32, Option<usize>)> {
         let sid = shape_id.0 as u32;
-        for r in &self.reads {
-            if r.shape_id == sid {
-                return Some((
-                    r.offset,
-                    if r.proto_ptr == 0 {
-                        None
-                    } else {
-                        Some(r.proto_ptr)
-                    },
-                ));
-            }
+        let r0 = &self.reads[0];
+        if r0.shape_id == sid {
+            return Some((
+                r0.offset,
+                if r0.proto_ptr == 0 {
+                    None
+                } else {
+                    Some(r0.proto_ptr)
+                },
+            ));
+        }
+        let r1 = &self.reads[1];
+        if r1.shape_id == sid {
+            return Some((
+                r1.offset,
+                if r1.proto_ptr == 0 {
+                    None
+                } else {
+                    Some(r1.proto_ptr)
+                },
+            ));
         }
         None
     }
@@ -119,6 +131,7 @@ impl InlineCache {
             shape_id: shape_id.0 as u32,
             offset,
             new_shape: 0,
+            no_accessor: 0,
         };
     }
 
@@ -132,6 +145,7 @@ impl InlineCache {
             shape_id: pre_shape_id.0 as u32,
             offset,
             new_shape: new_shape.as_ptr() as usize,
+            no_accessor: 0,
         };
     }
 }
@@ -230,6 +244,24 @@ impl InlineCacheTable {
             }
         }
         None
+    }
+
+    #[inline(always)]
+    pub fn get_write_no_accessor(&self, pc: usize, shape_id: ShapeId) -> bool {
+        if let Some(ic) = self.caches.get(pc) {
+            let w = &ic.write;
+            if w.shape_id == shape_id.0 as u32 && w.no_accessor != 0 {
+                return true;
+            }
+        }
+        false
+    }
+
+    #[inline(always)]
+    pub fn set_write_no_accessor(&mut self, pc: usize) {
+        if let Some(ic) = self.caches.get_mut(pc) {
+            ic.write.no_accessor = 1;
+        }
     }
 
     #[inline(always)]

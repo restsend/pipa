@@ -2480,7 +2480,7 @@ impl VM {
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
                         Self::create_bigint(a_int * b_int)
                     } else if a.is_float() && b.is_float() {
-                        JSValue::new_float(a.get_float() * b.get_float())
+                        JSValue::new_float_raw(a.get_float() * b.get_float())
                     } else if a.is_int() && b.is_float() {
                         JSValue::new_float(a.get_int() as f64 * b.get_float())
                     } else if a.is_float() && b.is_int() {
@@ -2517,7 +2517,7 @@ impl VM {
                             JSValue::new_float(f64::NAN)
                         }
                     } else if a.is_float() && b.is_float() {
-                        JSValue::new_float(a.get_float() / b.get_float())
+                        JSValue::new_float_raw(a.get_float() / b.get_float())
                     } else if a.is_int() && b.is_float() {
                         JSValue::new_float(a.get_int() as f64 / b.get_float())
                     } else if a.is_float() && b.is_int() {
@@ -2571,8 +2571,28 @@ impl VM {
                     let a = self.get_reg(a_reg);
                     let b_reg = self.read_u16_pc();
                     let b = self.get_reg(b_reg);
-                    let result = JSValue::new_float(a.to_number().powf(b.to_number()));
-                    self.set_reg(dst, result);
+                    let bv = a.to_number();
+                    let ev = b.to_number();
+                    let result = if ev == 2.0 {
+                        bv * bv
+                    } else if ev == 0.5 {
+                        bv.sqrt()
+                    } else if ev >= 2.0 && ev <= 8.0 && ev == ev.floor() {
+                        let mut r = bv;
+                        let mut n = ev as i32 - 1;
+                        while n > 0 {
+                            r *= bv;
+                            n -= 1;
+                        }
+                        r
+                    } else if ev == -1.0 {
+                        1.0 / bv
+                    } else if ev == 1.0 {
+                        bv
+                    } else {
+                        bv.powf(ev)
+                    };
+                    self.set_reg(dst, JSValue::new_float(result));
                 }
                 Opcode::BitAnd => {
                     let dst = self.read_u16_pc();
@@ -2806,9 +2826,9 @@ impl VM {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         Self::create_bigint(-a_int)
                     } else if a.is_float() {
-                        JSValue::new_float(-a.get_float())
+                        JSValue::new_float_raw(-a.get_float())
                     } else {
-                        JSValue::new_float(f64::NAN)
+                        JSValue::new_float_raw(f64::NAN)
                     };
                     self.set_reg(dst, result);
                 }
@@ -3091,7 +3111,26 @@ impl VM {
                     } else {
                         Self::js_to_number(&exp, ctx)
                     };
-                    self.set_reg(dst, JSValue::new_float(b.powf(e)));
+                    let result = if e == 2.0 {
+                        b * b
+                    } else if e == 0.5 {
+                        b.sqrt()
+                    } else if e >= 2.0 && e <= 8.0 && e == e.floor() {
+                        let mut r = b;
+                        let mut n = e as i32 - 1;
+                        while n > 0 {
+                            r *= b;
+                            n -= 1;
+                        }
+                        r
+                    } else if e == -1.0 {
+                        1.0 / b
+                    } else if e == 1.0 {
+                        b
+                    } else {
+                        b.powf(e)
+                    };
+                    self.set_reg(dst, JSValue::new_float(result));
                 }
                 Opcode::MathMin | Opcode::MathMax => {
                     let dst = self.read_u16_pc();
@@ -7532,7 +7571,24 @@ impl VM {
                 return;
             }
 
-            let (has_accessor, setter) = self.proto_chain_has_accessors(obj_val, atom);
+            let (has_accessor, setter) = if !ic_table_ptr.is_null() {
+                let ic_table = unsafe { &*ic_table_ptr };
+                if let Some(shape_id) = js_obj.get_shape_id() {
+                    if ic_table.get_write_no_accessor(ic_pc, shape_id) {
+                        (false, None)
+                    } else {
+                        let r = self.proto_chain_has_accessors(obj_val, atom);
+                        if !r.0 {
+                            unsafe { (*ic_table_ptr).set_write_no_accessor(ic_pc); }
+                        }
+                        r
+                    }
+                } else {
+                    self.proto_chain_has_accessors(obj_val, atom)
+                }
+            } else {
+                self.proto_chain_has_accessors(obj_val, atom)
+            };
             if has_accessor {
                 if let Some(setter_fn) = setter {
                     let _ = self.call_function_with_this(ctx, setter_fn, obj_val, &[value]);

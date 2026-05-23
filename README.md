@@ -16,23 +16,53 @@
 
 No external C libraries or system dependencies for the above — everything is implemented from scratch in Rust.
 
-## Benchmarks (2026-05-20)
+## Benchmarks (2026-05-23)
 
 V8 benchmark suite comparison (higher is better):
 
-| Benchmark              |   qjs |   node |   boa |  pipa |
-|------------------------|-------|--------|-------|-------|
-| Richards               |   980 |  46634 |   139 |   977 |
-| DeltaBlue              |   937 |  91283 |   143 |  1041 |
-| Crypto                 |  1087 |  60024 |   123 |  1117 |
-| RayTrace               |  1479 |  80881 |   315 |   994 |
-| EarleyBoyer            |  2157 |  97221 |   373 |  1426 |
-| RegExp                 |   338 |  13274 |  62.6 |  1014 |
-| Splay                  |  2461 |  52843 |   554 |  2002 |
-| NavierStokes           |  1837 |  56392 |   292 |  1901 |
-| **SCORE (total)**      | **1219** | **54642** | **203** | **1256** |
+| Benchmark              |   qjs |   node |   boa |  pipa | vs qjs |
+|------------------------|-------|--------|-------|-------|--------|
+| Richards               |   978 |  46846 |   133 |  1005 |  +2.8% |
+| DeltaBlue              |   946 |  94979 |   140 |  1034 |  +9.3% |
+| Crypto                 |  1067 |  60072 |   125 |  1120 |  +5.0% |
+| RayTrace               |  1507 |  79697 |   315 |  1052 | -30.2% |
+| EarleyBoyer            |  2153 |  95129 |   281 |  1441 | -33.1% |
+| RegExp                 |   334 |  12703 |  41.6 |  1046 | +213.2% |
+| Splay                  |  2432 |  48609 |   536 |  1999 | -17.8% |
+| NavierStokes           |  1882 |  56392 |   288 |  1941 |  +3.1% |
+| **SCORE (total)**      | **1220** | **53836** | **184** | **1279** | **+4.8%** |
 
-Ranking: **#1 node** (54642) · **#2 pipa** (1256) · **#3 qjs** (1219) · **#4 boa** (203)
+Ranking: **#1 node** (53836) · **#2 pipa** (1279) · **#3 qjs** (1220) · **#4 boa** (184)
+
+## test262 Compatibility (2026-05-23)
+
+Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl402` and `annexB`).
+
+| Category | Pass Rate | Notes |
+|----------|-----------|-------|
+| **Core Operators** | | |
+| Addition, Coalesce, Comma, Grouping, Logical-And/Or, Strict-Equals/Not-Equals, Void, Bitwise-Not, Relational | **100%** | Fully compliant |
+| Subtraction, Division, Multiplication, Modulus, Exponentiation | **64–82%** | Mostly compliant |
+| **Control Flow** | | |
+| `if` | **94%** | |
+| `for` | **81%** | |
+| `while` | **74%** | |
+| `switch` | **78%** | |
+| `try/catch/finally` | **74%** | |
+| `const`/`let` | **73–74%** | |
+| **Functions** | | |
+| Function declarations/expressions | **66–73%** | |
+| Arrow functions | **80%** | |
+| Generators | **65–67%** | |
+| **Builtins** | | |
+| Math | **49%** | |
+| JSON | **23%** | |
+| Boolean | **59%** | |
+| Promise | **7%** | Limited async support |
+| Proxy/Reflect | **0–19%** | Not yet implemented |
+| Set/Map/WeakMap/WeakSet | **6–23%** | Partial implementation |
+
+**Overall sampled pass rate: ~52%** (5327 tests sampled across all categories above)
 
 ## Usage
 
