@@ -1538,6 +1538,8 @@ impl CodeGenerator {
                 if let ASTNode::ExpressionStatement(es) = stmt {
                     last_expr_reg = Some(self.gen_expression(&es.expression, ctx)?);
                 } else if matches!(stmt, ASTNode::FunctionDeclaration(_)) {
+                } else if let Some(reg) = self.gen_statement_as_expression(stmt, ctx)? {
+                    last_expr_reg = Some(reg);
                 } else {
                     self.gen_statement(stmt, ctx)?;
                 }
@@ -2567,6 +2569,434 @@ impl CodeGenerator {
         Ok(())
     }
 
+    fn emit_load_undefined(&mut self) -> u16 {
+        let r = self.alloc_register();
+        self.emit(Opcode::LoadUndefined);
+        self.emit_u16(r);
+        r
+    }
+
+    fn unwrap_completion(&mut self, val: Option<u16>) -> u16 {
+        match val {
+            Some(r) => r,
+            None => self.emit_load_undefined(),
+        }
+    }
+
+    fn gen_statement_as_expression(
+        &mut self,
+        stmt: &ASTNode,
+        ctx: &mut JSContext,
+    ) -> Result<Option<u16>, String> {
+        match stmt {
+            ASTNode::ExpressionStatement(es) => {
+                Ok(Some(self.gen_expression(&es.expression, ctx)?))
+            }
+            ASTNode::IfStatement(if_stmt) => {
+                Ok(Some(self.gen_if_statement_as_expression(if_stmt, ctx)?))
+            }
+            ASTNode::BlockStatement(block) => {
+                Ok(Some(self.gen_block_statement_as_expression(block, ctx)?))
+            }
+            ASTNode::TryStatement(try_stmt) => {
+                Ok(Some(self.gen_try_statement_as_expression(try_stmt, ctx)?))
+            }
+            ASTNode::SwitchStatement(switch_stmt) => {
+                Ok(Some(self.gen_switch_statement_as_expression(switch_stmt, ctx)?))
+            }
+            ASTNode::VariableDeclaration(_)
+            | ASTNode::FunctionDeclaration(_)
+            | ASTNode::ClassDeclaration(_) => {
+                self.gen_statement(stmt, ctx)?;
+                Ok(None)
+            }
+            ASTNode::ForStatement(_)
+            | ASTNode::ForInStatement(_)
+            | ASTNode::ForOfStatement(_) => {
+                let reg = self.alloc_register();
+                self.gen_statement(stmt, ctx)?;
+                self.emit(Opcode::LoadUndefined);
+                self.emit_u16(reg);
+                Ok(Some(reg))
+            }
+            ASTNode::WhileStatement(w_stmt) => {
+                let reg = self.alloc_register();
+                self.emit(Opcode::LoadUndefined);
+                self.emit_u16(reg);
+                self.gen_while_statement_with_result(w_stmt, ctx, Some(reg))?;
+                Ok(Some(reg))
+            }
+            ASTNode::DoWhileStatement(dw_stmt) => {
+                let reg = self.alloc_register();
+                self.emit(Opcode::LoadUndefined);
+                self.emit_u16(reg);
+                self.gen_do_while_statement_with_result(dw_stmt, ctx, Some(reg))?;
+                Ok(Some(reg))
+            }
+            ASTNode::ReturnStatement(_) | ASTNode::ThrowStatement(_) | ASTNode::BreakStatement(_) | ASTNode::ContinueStatement(_) => {
+                self.gen_statement(stmt, ctx)?;
+                Ok(None)
+            }
+            ASTNode::LabelledStatement(labeled) => {
+                self.pending_label = Some(labeled.label.clone());
+                self.breakable_frames.push(BreakableFrame {
+                    label: Some(labeled.label.clone()),
+                    break_patches: Vec::new(),
+                    continue_patches: Vec::new(),
+                    continue_target: None,
+                });
+                let result = self.gen_statement_as_expression(&labeled.body, ctx);
+                let frame = self.breakable_frames.pop().unwrap();
+                let end_pos = self.code.len();
+                for patch in frame.break_patches {
+                    self.patch_jump(patch, end_pos);
+                }
+                for patch in frame.continue_patches {
+                    if let Some(ct) = frame.continue_target {
+                        self.patch_jump(patch, ct);
+                    }
+                }
+                self.pending_label = None;
+                result
+            }
+            ASTNode::WithStatement(_) | ASTNode::EmptyStatement | ASTNode::DebuggerStatement => Ok(None),
+            _ => Ok(None),
+        }
+    }
+
+    fn gen_block_statement_as_expression(
+        &mut self,
+        block: &BlockStatement,
+        ctx: &mut JSContext,
+    ) -> Result<u16, String> {
+        let result_reg = self.alloc_register();
+        self.emit(Opcode::LoadUndefined);
+        self.emit_u16(result_reg);
+        self.gen_block_with_target(block, ctx, result_reg)?;
+        Ok(result_reg)
+    }
+
+    fn gen_block_with_target(
+        &mut self,
+        block: &BlockStatement,
+        ctx: &mut JSContext,
+        target_reg: u16,
+    ) -> Result<(), String> {
+        self.push_scope();
+        self.pre_scan_let_const(&block.body)?;
+        self.emit_tdz_for_block(&block.body)?;
+
+        for (i, s) in block.body.iter().enumerate() {
+            if let Some(&line) = block.lines.get(i) {
+                self.emit_line(line);
+            }
+            self.gen_statement_with_target(s, ctx, target_reg)?;
+        }
+        self.pop_scope();
+        Ok(())
+    }
+
+    fn gen_statement_with_target(
+        &mut self,
+        stmt: &ASTNode,
+        ctx: &mut JSContext,
+        target_reg: u16,
+    ) -> Result<(), String> {
+        match stmt {
+            ASTNode::BlockStatement(block) => {
+                self.push_scope();
+                self.pre_scan_let_const(&block.body)?;
+                self.emit_tdz_for_block(&block.body)?;
+                for (i, s) in block.body.iter().enumerate() {
+                    if let Some(&line) = block.lines.get(i) {
+                        self.emit_line(line);
+                    }
+                    self.gen_statement_with_target(s, ctx, target_reg)?;
+                }
+                self.pop_scope();
+            }
+            ASTNode::ExpressionStatement(es) => {
+                let reg = self.gen_expression(&es.expression, ctx)?;
+                if reg != target_reg {
+                    self.emit(Opcode::Move);
+                    self.emit_u16(target_reg);
+                    self.emit_u16(reg);
+                }
+                self.free_register(reg);
+            }
+            ASTNode::IfStatement(if_stmt) => {
+                self.gen_if_statement_with_target(if_stmt, ctx, target_reg)?;
+            }
+            ASTNode::BreakStatement(_) | ASTNode::ContinueStatement(_) => {
+                self.gen_statement(stmt, ctx)?;
+            }
+            ASTNode::ReturnStatement(ret) => {
+                if let Some(ref arg) = ret.argument {
+                    let reg = self.gen_expression(arg, ctx)?;
+                    self.emit(Opcode::Return);
+                    self.emit_u16(reg);
+                } else {
+                    self.emit(Opcode::LoadUndefined);
+                    self.emit_u16(0);
+                    self.emit(Opcode::Return);
+                    self.emit_u16(0);
+                }
+            }
+            ASTNode::ThrowStatement(throw) => {
+                let reg = self.gen_expression(&throw.argument, ctx)?;
+                self.emit(Opcode::Throw);
+                self.emit_u16(reg);
+            }
+            ASTNode::WhileStatement(w_stmt) => {
+                self.gen_while_statement_with_result(w_stmt, ctx, Some(target_reg))?;
+            }
+            ASTNode::DoWhileStatement(dw_stmt) => {
+                self.gen_do_while_statement_with_result(dw_stmt, ctx, Some(target_reg))?;
+            }
+            ASTNode::SwitchStatement(sw_stmt) => {
+                self.emit(Opcode::LoadUndefined);
+                self.emit_u16(target_reg);
+                self.gen_switch_statement_with_result(sw_stmt, ctx, Some(target_reg))?;
+            }
+            _ => {
+                // Variable declarations, function declarations, etc.
+                if let Some(reg) = self.gen_statement_as_expression(stmt, ctx)? {
+                    if reg != target_reg {
+                        self.emit(Opcode::Move);
+                        self.emit_u16(target_reg);
+                        self.emit_u16(reg);
+                        self.free_register(reg);
+                    }
+                } else {
+                    self.gen_statement(stmt, ctx)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn gen_if_statement_as_expression(
+        &mut self,
+        stmt: &IfStatement,
+        ctx: &mut JSContext,
+    ) -> Result<u16, String> {
+        if self.p2_fold_profile.allow_if_bool() {
+            if let Expression::Literal(Literal::Boolean(test_bool)) = &stmt.test {
+                if *test_bool {
+                    return self.gen_statement_as_expression(&stmt.consequent, ctx).map(|r| self.unwrap_completion(r));
+                } else if let Some(alt) = &stmt.alternate {
+                    return self.gen_statement_as_expression(alt, ctx).map(|r| self.unwrap_completion(r));
+                } else {
+                    return Ok(self.emit_load_undefined());
+                }
+            }
+        }
+
+        let test_reg = self.gen_expression(&stmt.test, ctx)?;
+
+        if self.opt_branch_result_prealloc {
+            let result = if self.reserved_slots.contains(&test_reg) {
+                let r = self.alloc_register();
+                self.emit(Opcode::Move);
+                self.emit_u16(r);
+                self.emit_u16(test_reg);
+                r
+            } else {
+                test_reg
+            };
+
+            self.emit(Opcode::JumpIfNot);
+            self.emit_u16(test_reg);
+            let else_jump = self.code.len();
+            self.emit_i32(0);
+
+            let cons_opt = self.gen_statement_as_expression(&stmt.consequent, ctx)?;
+            let cons = self.unwrap_completion(cons_opt);
+            if cons != result {
+                self.emit(Opcode::Move);
+                self.emit_u16(result);
+                self.emit_u16(cons);
+                self.free_register(cons);
+            }
+
+            self.emit(Opcode::Jump);
+            let end_jump = self.code.len();
+            self.emit_i32(0);
+
+            let else_pos = self.code.len();
+            self.patch_jump(else_jump, else_pos);
+
+            let alt = if let Some(alt_stmt) = &stmt.alternate {
+                let alt_opt = self.gen_statement_as_expression(alt_stmt, ctx)?;
+                self.unwrap_completion(alt_opt)
+            } else {
+                self.emit_load_undefined()
+            };
+            if alt != result {
+                self.emit(Opcode::Move);
+                self.emit_u16(result);
+                self.emit_u16(alt);
+                self.free_register(alt);
+            }
+
+            let end_pos = self.code.len();
+            self.patch_jump(end_jump, end_pos);
+            return Ok(result);
+        }
+
+        self.emit(Opcode::JumpIfNot);
+        self.emit_u16(test_reg);
+        let else_jump = self.code.len();
+        self.emit_i32(0);
+
+        let cons_opt = self.gen_statement_as_expression(&stmt.consequent, ctx)?;
+        let cons = self.unwrap_completion(cons_opt);
+
+        let result = if self.reserved_slots.contains(&test_reg) && cons != test_reg {
+            let r = self.alloc_register();
+            self.emit(Opcode::Move);
+            self.emit_u16(r);
+            self.emit_u16(cons);
+            self.free_register(cons);
+            r
+        } else if cons != test_reg {
+            self.emit(Opcode::Move);
+            self.emit_u16(test_reg);
+            self.emit_u16(cons);
+            self.free_register(cons);
+            test_reg
+        } else {
+            test_reg
+        };
+
+        self.emit(Opcode::Jump);
+        let end_jump = self.code.len();
+        self.emit_i32(0);
+
+        let else_pos = self.code.len();
+        self.patch_jump(else_jump, else_pos);
+
+        let alt = if let Some(alt_stmt) = &stmt.alternate {
+            let alt_opt = self.gen_statement_as_expression(alt_stmt, ctx)?;
+            self.unwrap_completion(alt_opt)
+        } else {
+            self.emit_load_undefined()
+        };
+        if self.reserved_slots.contains(&test_reg) && alt != result && alt != test_reg {
+            self.emit(Opcode::Move);
+            self.emit_u16(result);
+            self.emit_u16(alt);
+            self.free_register(alt);
+        } else if alt != result && alt != test_reg {
+            self.emit(Opcode::Move);
+            self.emit_u16(result);
+            self.emit_u16(alt);
+            self.free_register(alt);
+        }
+
+        let end_pos = self.code.len();
+        self.patch_jump(end_jump, end_pos);
+
+        Ok(result)
+    }
+
+    fn gen_if_statement_with_target(
+        &mut self,
+        stmt: &IfStatement,
+        ctx: &mut JSContext,
+        target_reg: u16,
+    ) -> Result<(), String> {
+        if self.p2_fold_profile.allow_if_bool() {
+            if let Expression::Literal(Literal::Boolean(test_bool)) = &stmt.test {
+                if *test_bool {
+                    self.emit(Opcode::LoadUndefined);
+                    self.emit_u16(target_reg);
+                    self.gen_statement_with_target(&stmt.consequent, ctx, target_reg)?;
+                } else if let Some(alt) = &stmt.alternate {
+                    self.emit(Opcode::LoadUndefined);
+                    self.emit_u16(target_reg);
+                    self.gen_statement_with_target(alt, ctx, target_reg)?;
+                }
+                return Ok(());
+            }
+        }
+        if self.p2_fold_profile.allow_aggressive_truthy() {
+            if let Expression::Literal(lit) = &stmt.test {
+                if let Some(truthy) = Self::literal_truthiness(lit) {
+                    if truthy {
+                        self.emit(Opcode::LoadUndefined);
+                        self.emit_u16(target_reg);
+                        self.gen_statement_with_target(&stmt.consequent, ctx, target_reg)?;
+                    } else if let Some(alt) = &stmt.alternate {
+                        self.emit(Opcode::LoadUndefined);
+                        self.emit_u16(target_reg);
+                        self.gen_statement_with_target(alt, ctx, target_reg)?;
+                    }
+                    return Ok(());
+                }
+            }
+        }
+        let test_reg = self.gen_expression(&stmt.test, ctx)?;
+        self.emit(Opcode::JumpIfNot);
+        self.emit_u16(test_reg);
+        self.free_register(test_reg);
+        let else_jump = self.code.len();
+        self.emit_i32(0);
+
+        self.emit(Opcode::LoadUndefined);
+        self.emit_u16(target_reg);
+        self.gen_statement_with_target(&stmt.consequent, ctx, target_reg)?;
+
+        let has_else = stmt.alternate.is_some();
+        let end_jump = if has_else {
+            self.emit(Opcode::Jump);
+            let pos = self.code.len();
+            self.emit_i32(0);
+            Some(pos)
+        } else {
+            None
+        };
+
+        let else_pos = self.code.len();
+        self.patch_jump(else_jump, else_pos);
+
+        if let Some(alt) = &stmt.alternate {
+            self.emit(Opcode::LoadUndefined);
+            self.emit_u16(target_reg);
+            self.gen_statement_with_target(alt, ctx, target_reg)?;
+        }
+
+        if let Some(end_jump_pos) = end_jump {
+            let end_pos = self.code.len();
+            self.patch_jump(end_jump_pos, end_pos);
+        }
+        Ok(())
+    }
+
+    fn gen_try_statement_as_expression(
+        &mut self,
+        stmt: &TryStatement,
+        ctx: &mut JSContext,
+    ) -> Result<u16, String> {
+        self.gen_try_statement(stmt, ctx)?;
+        let reg = self.alloc_register();
+        self.emit(Opcode::LoadUndefined);
+        self.emit_u16(reg);
+        Ok(reg)
+    }
+
+    fn gen_switch_statement_as_expression(
+        &mut self,
+        stmt: &SwitchStatement,
+        ctx: &mut JSContext,
+    ) -> Result<u16, String> {
+        let reg = self.alloc_register();
+        self.emit(Opcode::LoadUndefined);
+        self.emit_u16(reg);
+        self.gen_switch_statement_with_result(stmt, ctx, Some(reg))?;
+        Ok(reg)
+    }
+
     fn gen_if_statement(&mut self, stmt: &IfStatement, ctx: &mut JSContext) -> Result<(), String> {
         if self.p2_fold_profile.allow_if_bool() {
             if let Expression::Literal(Literal::Boolean(test_bool)) = &stmt.test {
@@ -2631,6 +3061,15 @@ impl CodeGenerator {
         stmt: &WhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
+        self.gen_while_statement_with_result(stmt, ctx, None)
+    }
+
+    fn gen_while_statement_with_result(
+        &mut self,
+        stmt: &WhileStatement,
+        ctx: &mut JSContext,
+        result_reg: Option<u16>,
+    ) -> Result<(), String> {
         let loop_start = self.code.len();
 
         let break_jump = if self.opt_fused_cmp_jump {
@@ -2675,13 +3114,17 @@ impl CodeGenerator {
         };
 
         self.breakable_frames.push(BreakableFrame {
-            label: self.pending_label.take(),
+            label: None,
             break_patches: vec![break_jump],
             continue_patches: Vec::new(),
             continue_target: Some(loop_start),
         });
 
-        self.gen_statement(&stmt.body, ctx)?;
+        if let Some(v_reg) = result_reg {
+            self.gen_statement_with_target(&stmt.body, ctx, v_reg)?;
+        } else {
+            self.gen_statement(&stmt.body, ctx)?;
+        }
 
         let frame = self.breakable_frames.pop().unwrap();
 
@@ -3112,6 +3555,15 @@ impl CodeGenerator {
         stmt: &DoWhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
+        self.gen_do_while_statement_with_result(stmt, ctx, None)
+    }
+
+    fn gen_do_while_statement_with_result(
+        &mut self,
+        stmt: &DoWhileStatement,
+        ctx: &mut JSContext,
+        result_reg: Option<u16>,
+    ) -> Result<(), String> {
         let loop_start = self.code.len();
 
         self.breakable_frames.push(BreakableFrame {
@@ -3121,7 +3573,11 @@ impl CodeGenerator {
             continue_target: Some(0),
         });
 
-        self.gen_statement(&stmt.body, ctx)?;
+        if let Some(v_reg) = result_reg {
+            self.gen_statement_with_target(&stmt.body, ctx, v_reg)?;
+        } else {
+            self.gen_statement(&stmt.body, ctx)?;
+        }
 
         let continue_target = self.code.len();
         if let Some(frame) = self.breakable_frames.last_mut() {
@@ -3150,23 +3606,32 @@ impl CodeGenerator {
         stmt: &SwitchStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
+        self.gen_switch_statement_with_result(stmt, ctx, None)
+    }
+
+    fn gen_switch_statement_with_result(
+        &mut self,
+        stmt: &SwitchStatement,
+        ctx: &mut JSContext,
+        result_reg: Option<u16>,
+    ) -> Result<(), String> {
         let disc = self.gen_expression(&stmt.discriminant, ctx)?;
 
         let mut test_jumps: Vec<(usize, usize)> = Vec::new();
         for (case_idx, case) in stmt.cases.iter().enumerate() {
             if let Some(test_expr) = &case.test {
                 let test_reg = self.gen_expression(test_expr, ctx)?;
-                let result_reg = self.alloc_register();
+                let eq_reg = self.alloc_register();
                 self.emit(Opcode::StrictEq);
-                self.emit_u16(result_reg);
+                self.emit_u16(eq_reg);
                 self.emit_u16(disc);
                 self.emit_u16(test_reg);
                 self.free_register(test_reg);
                 self.emit(Opcode::JumpIf);
-                self.emit_u16(result_reg);
+                self.emit_u16(eq_reg);
                 test_jumps.push((self.code.len(), case_idx));
                 self.emit_i32(0);
-                self.free_register(result_reg);
+                self.free_register(eq_reg);
             }
         }
 
@@ -3181,13 +3646,26 @@ impl CodeGenerator {
             continue_target: None,
         });
 
+        self.push_scope();
+        for case in &stmt.cases {
+            self.pre_scan_let_const(&case.consequent)?;
+            self.emit_tdz_for_block(&case.consequent)?;
+        }
+
         let mut body_starts = vec![0usize; stmt.cases.len()];
         for (case_idx, case) in stmt.cases.iter().enumerate() {
             body_starts[case_idx] = self.code.len();
-            for s in &case.consequent {
-                self.gen_statement(s, ctx)?;
+            if let Some(v_reg) = result_reg {
+                for s in &case.consequent {
+                    self.gen_statement_with_target(s, ctx, v_reg)?;
+                }
+            } else {
+                for s in &case.consequent {
+                    self.gen_statement(s, ctx)?;
+                }
             }
         }
+        self.pop_scope();
 
         let frame = self.breakable_frames.pop().unwrap();
         let end_pos = self.code.len();
@@ -3475,7 +3953,7 @@ impl CodeGenerator {
                         self.emit(Opcode::GetGlobal);
                         self.emit_u16(r);
                         self.emit_u32(idx);
-                        if !self.suppress_ref_error {
+                        if !self.suppress_ref_error && self.is_strict {
                             self.emit(Opcode::CheckRef);
                             self.emit_u16(r);
                             self.emit_u32(idx);
