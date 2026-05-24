@@ -4110,31 +4110,47 @@ impl VM {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(ptr) };
                         if js_obj.is_dense_array() {
                             let idx = key_val.get_int() as usize;
-                            let arr = unsafe {
-                                &mut *(ptr as *mut crate::object::array_obj::JSArrayObject)
-                            };
-                            if idx < arr.elements.len() {
-                                arr.elements[idx] = value;
-                            } else {
-                                while arr.elements.len() < idx {
-                                    arr.elements.push(JSValue::undefined());
+                            // Check prototype chain for a setter before directly storing
+                            let mut proto = js_obj.prototype;
+                            let mut setter_found = None;
+                            while let Some(p) = proto {
+                                let pobj = unsafe { &*p };
+                                let key_atom = self.int_atom(idx, ctx);
+                                if let Some(entry) = pobj.get_own_accessor_entry(key_atom) {
+                                    setter_found = entry.set;
+                                    break;
                                 }
-                                arr.elements.push(value);
-                                let len_atom = ctx.common_atoms.length;
+                                proto = pobj.prototype;
+                            }
+                            if let Some(setter) = setter_found {
+                                let _ = self.call_function_with_this(ctx, setter, obj_val, &[value]);
+                            } else {
+                                let arr = unsafe {
+                                    &mut *(ptr as *mut crate::object::array_obj::JSArrayObject)
+                                };
+                                if idx < arr.elements.len() {
+                                    arr.elements[idx] = value;
+                                } else {
+                                    while arr.elements.len() < idx {
+                                        arr.elements.push(JSValue::undefined());
+                                    }
+                                    arr.elements.push(value);
+                                    let len_atom = ctx.common_atoms.length;
 
-                                let new_elements_len = arr.elements.len();
-                                let old_len = arr
-                                    .header
-                                    .get(len_atom)
-                                    .map(|v| if v.is_int() { v.get_int() as usize } else { 0 })
-                                    .unwrap_or(0);
-                                let new_len = new_elements_len.max(old_len);
-                                if new_len != old_len {
-                                    arr.header.set_length_ic(
-                                        len_atom,
-                                        JSValue::new_int(new_len as i64),
-                                        ctx.shape_cache_mut(),
-                                    );
+                                    let new_elements_len = arr.elements.len();
+                                    let old_len = arr
+                                        .header
+                                        .get(len_atom)
+                                        .map(|v| if v.is_int() { v.get_int() as usize } else { 0 })
+                                        .unwrap_or(0);
+                                    let new_len = new_elements_len.max(old_len);
+                                    if new_len != old_len {
+                                        arr.header.set_length_ic(
+                                            len_atom,
+                                            JSValue::new_int(new_len as i64),
+                                            ctx.shape_cache_mut(),
+                                        );
+                                    }
                                 }
                             }
                         } else {

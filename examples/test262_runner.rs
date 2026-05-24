@@ -257,6 +257,7 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta) -> TestOutco
         "Intl.ListFormat",
         "Intl.Collator",
         "Intl.Locale",
+        "resizable-arraybuffer",
     ];
 
     for feature in &unsupported_features {
