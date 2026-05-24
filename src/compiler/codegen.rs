@@ -3068,7 +3068,7 @@ impl CodeGenerator {
         stmt: &WhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_while_statement_with_result(stmt, ctx, Some(0))
+        self.gen_while_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_while_statement_with_result(
@@ -3128,8 +3128,6 @@ impl CodeGenerator {
         });
 
         if let Some(v_reg) = result_reg {
-            self.emit(Opcode::LoadUndefined);
-            self.emit_u16(v_reg);
             self.gen_statement_with_target(&stmt.body, ctx, v_reg)?;
         } else {
             self.gen_statement(&stmt.body, ctx)?;
@@ -3155,7 +3153,7 @@ impl CodeGenerator {
         stmt: &ForStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_statement_with_result(stmt, ctx, Some(0))
+        self.gen_for_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_for_statement_with_result(
@@ -3292,7 +3290,7 @@ impl CodeGenerator {
         stmt: &ForInStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_in_statement_with_result(stmt, ctx, Some(0))
+        self.gen_for_in_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_for_in_statement_with_result(
@@ -3333,7 +3331,11 @@ impl CodeGenerator {
                 ForInOfLeft::VariableDeclaration(decl) => {
                     if let Some(first) = decl.declarations.first() {
                         if let BindingPattern::Identifier(name) = &first.id {
-                            self.lookup_var_slot(name).unwrap_or(u16::MAX)
+                            if decl.kind == VariableKind::Var {
+                                self.declare_var(name, VariableKind::Var)
+                            } else {
+                                self.lookup_var_slot(name).unwrap_or(u16::MAX)
+                            }
                         } else {
                             u16::MAX
                         }
@@ -3399,11 +3401,6 @@ impl CodeGenerator {
             continue_patches: Vec::new(),
             continue_target: Some(0),
         });
-
-        if let Some(v_reg) = result_reg {
-            self.emit(Opcode::LoadUndefined);
-            self.emit_u16(v_reg);
-        }
 
         let key_val_reg = self.alloc_register();
         self.emit(Opcode::GetField);
@@ -3502,7 +3499,7 @@ impl CodeGenerator {
         stmt: &ForOfStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_of_statement_with_result(stmt, ctx, Some(0))
+        self.gen_for_of_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_for_of_statement_with_result(
@@ -3554,11 +3551,6 @@ impl CodeGenerator {
             continue_patches: Vec::new(),
             continue_target: Some(0),
         });
-
-        if let Some(v_reg) = result_reg {
-            self.emit(Opcode::LoadUndefined);
-            self.emit_u16(v_reg);
-        }
 
         match &stmt.left {
             ForInOfLeft::VariableDeclaration(decl) => {
@@ -3613,7 +3605,7 @@ impl CodeGenerator {
         stmt: &DoWhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_do_while_statement_with_result(stmt, ctx, Some(0))
+        self.gen_do_while_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_do_while_statement_with_result(
