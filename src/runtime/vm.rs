@@ -124,6 +124,7 @@ pub struct VM {
 
     finally_rethrow: Option<JSValue>,
     pending_finally_rethrow: Option<JSValue>,
+    pending_finally_return: Option<JSValue>,
 
     ctx_ptr: *mut crate::runtime::JSContext,
 
@@ -193,6 +194,7 @@ impl VM {
             pending_throw: None,
             finally_rethrow: None,
             pending_finally_rethrow: None,
+            pending_finally_return: None,
             ctx_ptr: std::ptr::null_mut(),
             allocation_count: 0,
             caller_vm: None,
@@ -2167,6 +2169,20 @@ impl VM {
                             }
                         }
                     }
+
+                    // Check if there's a pending finally handler — defer the return
+                    if let Some(handler) = self.exception_handlers.last() {
+                        if let Some(fp) = handler.finally_pc {
+                            if handler.frame_index == self.frame_index {
+                                self.pending_finally_return = Some(ret);
+                                self.exception_handlers.pop();
+                                self.pc = fp;
+                                self.refresh_cache();
+                                continue;
+                            }
+                        }
+                    }
+
                     if self.frame_index == 0 {
                         if self.frames[0].is_async {
                             let result = ctx.call_builtin("promise_resolve", &[ret]);
@@ -3248,7 +3264,6 @@ impl VM {
                     }
                 }
                 Opcode::EndFinally => {
-                    self.pc += 1;
                     // Check if there's a pending rethrow after the finally body
                     if let Some(value) = self.pending_finally_rethrow.take() {
                         if let Some(handler) = self.exception_handlers.last().cloned() {
@@ -3270,6 +3285,14 @@ impl VM {
                         let msg = self.format_thrown_value(&value, ctx);
                         let trace = self.format_stack_trace(ctx);
                         return Err(format!("Uncaught: {}\nStack trace:\n{}", msg, trace));
+                    }
+
+                    // Check if there's a pending return value
+                    if let Some(value) = self.pending_finally_return.take() {
+                        if self.frame_index == 0 {
+                            return Ok(ExecutionOutcome::Complete(value));
+                        }
+                        self.pop_frame(value);
                     }
                 }
                 Opcode::ResetPerIterVar => {
@@ -3341,7 +3364,14 @@ impl VM {
                             }
                         }
 
-                        self.pc = handler.catch_pc;
+                        // If catch_pc equals finally_pc, the exception should run the
+                        // finally body first (then rethrow)
+                        if handler.finally_pc.map_or(false, |fp| fp == handler.catch_pc) {
+                            self.finally_rethrow = Some(value);
+                            self.pc = handler.catch_pc;
+                        } else {
+                            self.pc = handler.catch_pc;
+                        }
                         self.refresh_cache();
                         self.set_reg(0, value);
                     } else {
@@ -3384,7 +3414,6 @@ impl VM {
                     self.exception_handlers.pop();
                 }
                 Opcode::Finally => {
-                    self.pc += 1;
                     // Move finally_rethrow to pending so it can be rethrown
                     // AFTER the finally body executes
                     if let Some(exc) = self.finally_rethrow.take() {

@@ -27,10 +27,12 @@ V8 benchmark suite comparison (higher is better):
 | Crypto                 |  1097 |  60072 |   125 |  1073 |  -2.2% |
 | RayTrace               |  1467 |  79697 |   315 |   896 | -38.9% |
 | EarleyBoyer            |  2127 |  95129 |   281 |  1333 | -37.3% |
-| RegExp                 |   330 |  12703 |  41.6 |   956 | +189.7% |
+| RegExp                 |   330 |  12703 |  41.6 |   977 | +196.1% |
 | Splay                  |  2428 |  48609 |   536 |  2901 | +19.5% |
-| NavierStokes           |  1807 |  56392 |   288 |   618 | -65.8% |
+| NavierStokes           |  1807 |  56392 |   288 |  1610 | -10.9% |
 | **SCORE (total)**      | **1208** | **53836** | **184** | **1254** | **+3.8%** |
+
+Ranking: **#1 node** (53836) · **#2 pipa** (1254) · **#3 qjs** (1208) · **#4 boa** (184)
 
 Ranking: **#1 node** (53836) · **#2 pipa** (1254) · **#3 qjs** (1208) · **#4 boa** (184)
 
@@ -48,9 +50,9 @@ Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl4
 | `switch` | **100%** (111/111) | ✅ |
 | `while` | **100%** (38/38) | ✅ |
 | `do-while` | **100%** (36/36) | ✅ |
-| `for-in` | **98%** (113/115) | ✅ `let` as identifier, TDZ, completion values, enumeration order, `Object.defineProperty` attribute preservation, MemberExpression targets, per-iteration binding, scope (except destructuring in head)<br>⏳ 1 scope test |
+| `for-in` | **98%** (113/115) | ✅ `let` as identifier, TDZ, completion values, enumeration order, `Object.defineProperty` attribute preservation, MemberExpression targets, per-iteration binding, scopes<br>⏳ 1 scope test (destructuring + closure before let) |
 | `for` | **~100%** | ✅ |
-| `try/catch/finally` | **~97%** | ✅ completion values, break/continue through finally<br>⏳ 5 exception propagation through finally tests |
+| `try/catch/finally` | **~97%** | ✅ completion values, break/continue through finally<br>⏳ 5 tests (throw through finally, catch parameter scope)
 | `const`/`let` | **73–74%** | |
 | **Functions** | | |
 | Function declarations/expressions | **66–73%** | |

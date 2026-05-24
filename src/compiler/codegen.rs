@@ -3852,12 +3852,22 @@ impl CodeGenerator {
         let has_catch = stmt.handler.is_some();
         let mut after_catch_jump_pos: Option<usize> = None;
         let has_finally = stmt.finalizer.is_some();
+        let mut catch_inner_finally_placeholder: Option<usize> = None;
 
         if let Some(handler) = &stmt.handler {
             let catch_start = self.code.len();
 
             let catch_bytes = (catch_start as i32).to_le_bytes();
             self.code[catch_pc_pos..catch_pc_pos + 4].copy_from_slice(&catch_bytes);
+
+            // Wrap catch body in Try-Finally so exceptions inside catch run finally
+            if has_finally {
+                self.emit(Opcode::Try);
+                let catch_inner_catch_pc = self.code.len();
+                self.emit_i32(0); // placeholder for catch_pc (set to finally_start)
+                catch_inner_finally_placeholder = Some(self.code.len());
+                self.emit_i32(0); // placeholder for finally_pc (set to finally_start)
+            }
 
             self.push_scope();
             if let Some(param) = &handler.param {
@@ -3906,6 +3916,10 @@ impl CodeGenerator {
             }
             self.pop_scope();
 
+            if has_finally {
+                self.emit(Opcode::Catch);
+            }
+
             self.emit(Opcode::Jump);
             after_catch_jump_pos = Some(self.code.len());
             self.emit_i32(0);
@@ -3913,6 +3927,13 @@ impl CodeGenerator {
 
         let finally_start = if let Some(finalizer) = &stmt.finalizer {
             let fs = self.code.len();
+
+            // Patch the catch-inner handler's placeholders
+            if let Some(fp_placeholder) = catch_inner_finally_placeholder {
+                let finally_bytes = (fs as i32).to_le_bytes();
+                self.code[fp_placeholder - 4..fp_placeholder].copy_from_slice(&finally_bytes);
+                self.code[fp_placeholder..fp_placeholder + 4].copy_from_slice(&finally_bytes);
+            }
 
             let finally_bytes = (fs as i32).to_le_bytes();
             self.code[finally_pc_pos..finally_pc_pos + 4].copy_from_slice(&finally_bytes);
