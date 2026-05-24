@@ -25,6 +25,7 @@ struct ParentVar {
     kind: VariableKind,
     initialized: bool,
     is_inherited: bool,
+    closed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -733,6 +734,17 @@ impl CodeGenerator {
     }
 
     fn pop_scope(&mut self) {
+        // Mark variables in the popped scope as closed in parent_vars so
+        // that closures created after this scope see them as inaccessible.
+        if let Some(scope) = self.scope_stack.last() {
+            for (name, entry) in scope.iter() {
+                if entry.kind != VariableKind::Var {
+                    if let Some(pv) = self.parent_vars.get_mut(name) {
+                        pv.closed = true;
+                    }
+                }
+            }
+        }
         self.scope_stack.pop();
         self.scope_is_global.pop();
         self.depth = self.depth.saturating_sub(1);
@@ -756,11 +768,22 @@ impl CodeGenerator {
             VariableKind::Var => {
                 self.scope_stack[0].insert(name.to_string(), entry);
             }
-            VariableKind::Let | VariableKind::Const => {
-                self.scope_stack
-                    .last_mut()
-                    .unwrap()
-                    .insert(name.to_string(), entry);
+            _ => {
+                self.scope_stack[self.depth as usize].insert(name.to_string(), entry);
+                // Add to parent_vars for nested scopes so closures created
+                // after the scope exits can detect them as inaccessible.
+                if self.depth > 1 {
+                    self.parent_vars.insert(
+                        name.to_string(),
+                        ParentVar {
+                            local_idx: slot,
+                            kind,
+                            initialized: false,
+                            is_inherited: false,
+                            closed: false,
+                        },
+                    );
+                }
             }
         }
         slot
@@ -832,6 +855,11 @@ impl CodeGenerator {
             return Some(VarLocation::Local(entry.slot));
         }
         if let Some(parent_var) = self.parent_vars.get(name) {
+            // If the variable's scope has been closed (popped), don't resolve
+            // it as an upvalue — closures after the scope should not see it.
+            if parent_var.closed {
+                return None;
+            }
             if let Some(&upvalue_slot) = self.upvalue_slots.get(name) {
                 return Some(VarLocation::Upvalue(upvalue_slot));
             }
@@ -1698,18 +1726,93 @@ impl CodeGenerator {
 
     fn pre_scan_let_const(&mut self, body: &[ASTNode]) -> Result<(), String> {
         for node in body {
-            if let ASTNode::VariableDeclaration(decl) = node {
-                if decl.kind != VariableKind::Var {
+            match node {
+                ASTNode::VariableDeclaration(decl) if decl.kind != VariableKind::Var => {
                     for d in &decl.declarations {
                         self.pre_scan_binding(&d.id, decl.kind);
                     }
                 }
-            } else if let ASTNode::ClassDeclaration(class) = node {
-                if let Some(last) = self.scope_stack.last() {
-                    if !last.contains_key(&class.name) {
-                        self.declare_var(&class.name, VariableKind::Let);
+                ASTNode::ClassDeclaration(class) => {
+                    if let Some(last) = self.scope_stack.last() {
+                        if !last.contains_key(&class.name) {
+                            self.declare_var(&class.name, VariableKind::Let);
+                        }
                     }
                 }
+                ASTNode::BlockStatement(block) => {
+                    self.push_scope();
+                    self.pre_scan_let_const(&block.body)?;
+                    self.pop_scope();
+                }
+                ASTNode::TryStatement(stmt) => {
+                    self.push_scope();
+                    self.pre_scan_let_const(&stmt.block.body)?;
+                    self.pop_scope();
+                    if let Some(handler) = &stmt.handler {
+                        self.push_scope();
+                        if let Some(param) = &handler.param {
+                            self.pre_scan_binding(param, VariableKind::Let);
+                        }
+                        self.pre_scan_let_const(&handler.body.body)?;
+                        self.pop_scope();
+                    }
+                    if let Some(finalizer) = &stmt.finalizer {
+                        self.push_scope();
+                        self.pre_scan_let_const(&finalizer.body)?;
+                        self.pop_scope();
+                    }
+                }
+                ASTNode::ForStatement(stmt) => {
+                    if let Some(init) = &stmt.init {
+                        if let ForInit::VariableDeclaration(vd) = init {
+                            if vd.kind != VariableKind::Var {
+                                for d in &vd.declarations {
+                                    self.pre_scan_binding(&d.id, vd.kind);
+                                }
+                            }
+                        }
+                    }
+                    self.push_scope();
+                    if let ASTNode::BlockStatement(block) = stmt.body.as_ref() {
+                        self.pre_scan_let_const(&block.body)?;
+                    } else {
+                        self.pre_scan_let_const(&[stmt.body.as_ref().clone()])?;
+                    }
+                    self.pop_scope();
+                }
+                ASTNode::ForInStatement(stmt) => {
+                    if let ForInOfLeft::VariableDeclaration(vd) = &stmt.left {
+                        if vd.kind != VariableKind::Var {
+                            for d in &vd.declarations {
+                                self.pre_scan_binding(&d.id, vd.kind);
+                            }
+                        }
+                    }
+                    self.push_scope();
+                    if let ASTNode::BlockStatement(block) = stmt.body.as_ref() {
+                        self.pre_scan_let_const(&block.body)?;
+                    } else {
+                        self.pre_scan_let_const(&[stmt.body.as_ref().clone()])?;
+                    }
+                    self.pop_scope();
+                }
+                ASTNode::ForOfStatement(stmt) => {
+                    if let ForInOfLeft::VariableDeclaration(vd) = &stmt.left {
+                        if vd.kind != VariableKind::Var {
+                            for d in &vd.declarations {
+                                self.pre_scan_binding(&d.id, vd.kind);
+                            }
+                        }
+                    }
+                    self.push_scope();
+                    if let ASTNode::BlockStatement(block) = stmt.body.as_ref() {
+                        self.pre_scan_let_const(&block.body)?;
+                    } else {
+                        self.pre_scan_let_const(&[stmt.body.as_ref().clone()])?;
+                    }
+                    self.pop_scope();
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -4187,7 +4290,11 @@ impl CodeGenerator {
                         self.emit(Opcode::GetGlobal);
                         self.emit_u16(r);
                         self.emit_u32(idx);
-                        if !self.suppress_ref_error && self.is_strict {
+                        // Emit CheckRef for closed lexical variables (out of
+                        // scope let/const) — throws ReferenceError even in
+                        // sloppy mode per spec.
+                        let is_closed = self.parent_vars.get(&id.name).map_or(false, |pv| pv.closed);
+                        if is_closed || (!self.suppress_ref_error && self.is_strict) {
                             self.emit(Opcode::CheckRef);
                             self.emit_u16(r);
                             self.emit_u32(idx);
@@ -6788,6 +6895,7 @@ impl CodeGenerator {
                         kind: entry.kind,
                         initialized: entry.initialized,
                         is_inherited: false,
+                        closed: false,
                     },
                 );
             }
@@ -6801,7 +6909,19 @@ impl CodeGenerator {
                         kind: VariableKind::Let,
                         initialized: true,
                         is_inherited: true,
+                        closed: false,
                     },
+                );
+            }
+        }
+        // Include variables from closed scopes (popped from scope_stack but
+        // still in parent_vars with the closed flag). These are out-of-scope
+        // let/const variables that closures should NOT access.
+        for (name, pv) in &self.parent_vars {
+            if pv.closed && !parent_vars.contains_key(name) {
+                parent_vars.insert(
+                    name.clone(),
+                    *pv,
                 );
             }
         }
@@ -6936,6 +7056,7 @@ impl CodeGenerator {
                         kind: entry.kind,
                         initialized: entry.initialized,
                         is_inherited: false,
+                        closed: false,
                     },
                 );
             }
@@ -6950,6 +7071,7 @@ impl CodeGenerator {
                         kind: VariableKind::Let,
                         initialized: true,
                         is_inherited: true,
+                        closed: false,
                     },
                 );
             }
@@ -6963,6 +7085,7 @@ impl CodeGenerator {
                     kind: VariableKind::Let,
                     initialized: true,
                     is_inherited: false,
+                    closed: false,
                 },
             );
         }
