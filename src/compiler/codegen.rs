@@ -2765,6 +2765,12 @@ impl CodeGenerator {
                 self.emit_u16(target_reg);
                 self.gen_switch_statement_with_result(sw_stmt, ctx, Some(target_reg))?;
             }
+            ASTNode::ForInStatement(fi_stmt) => {
+                self.gen_for_in_statement_with_result(fi_stmt, ctx, Some(target_reg))?;
+            }
+            ASTNode::ForOfStatement(fo_stmt) => {
+                self.gen_for_of_statement_with_result(fo_stmt, ctx, Some(target_reg))?;
+            }
             _ => {
                 // Variable declarations, function declarations, etc.
                 if let Some(reg) = self.gen_statement_as_expression(stmt, ctx)? {
@@ -3068,7 +3074,7 @@ impl CodeGenerator {
         stmt: &WhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_while_statement_with_result(stmt, ctx, None)
+        self.gen_while_statement_with_result(stmt, ctx, Some(0))
     }
 
     fn gen_while_statement_with_result(
@@ -3153,7 +3159,7 @@ impl CodeGenerator {
         stmt: &ForStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_statement_with_result(stmt, ctx, None)
+        self.gen_for_statement_with_result(stmt, ctx, Some(0))
     }
 
     fn gen_for_statement_with_result(
@@ -3290,7 +3296,7 @@ impl CodeGenerator {
         stmt: &ForInStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_in_statement_with_result(stmt, ctx, None)
+        self.gen_for_in_statement_with_result(stmt, ctx, Some(0))
     }
 
     fn gen_for_in_statement_with_result(
@@ -3499,7 +3505,7 @@ impl CodeGenerator {
         stmt: &ForOfStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_of_statement_with_result(stmt, ctx, None)
+        self.gen_for_of_statement_with_result(stmt, ctx, Some(0))
     }
 
     fn gen_for_of_statement_with_result(
@@ -3605,7 +3611,7 @@ impl CodeGenerator {
         stmt: &DoWhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_do_while_statement_with_result(stmt, ctx, None)
+        self.gen_do_while_statement_with_result(stmt, ctx, Some(0))
     }
 
     fn gen_do_while_statement_with_result(
