@@ -22,6 +22,8 @@ enum VarLocation {
 #[derive(Debug, Clone, Copy)]
 struct ParentVar {
     local_idx: u16,
+    kind: VariableKind,
+    initialized: bool,
     is_inherited: bool,
 }
 
@@ -3489,6 +3491,17 @@ impl CodeGenerator {
                 self.emit_u16(key_val_reg);
             }
 
+            // Mark the variable as initialized so closures in the body don't
+            // incorrectly emit CheckTdz
+            if let Some(ref name) = loop_var_name {
+                for scope in self.scope_stack.iter_mut().rev() {
+                    if let Some(entry) = scope.get_mut(name) {
+                        entry.initialized = true;
+                        break;
+                    }
+                }
+            }
+
             if let Some(ref name) = loop_var_name {
                 if self.is_global_var(name) {
                     let atom = ctx.intern(name);
@@ -4062,11 +4075,17 @@ impl CodeGenerator {
                         self.emit_u16(r);
                         self.emit_u16(slot);
 
+                        // Check TDZ for upvalues: check parent_vars since the variable
+                        // is not in the nested function's own scope
+                        let mut needs_tdz = false;
                         if let Some(entry) = self.lookup_var(&id.name) {
-                            if entry.kind != VariableKind::Var && !entry.initialized {
-                                self.emit(Opcode::CheckTdz);
-                                self.emit_u16(r);
-                            }
+                            needs_tdz = entry.kind != VariableKind::Var && !entry.initialized;
+                        } else if let Some(parent_var) = self.parent_vars.get(&id.name) {
+                            needs_tdz = parent_var.kind != VariableKind::Var && !parent_var.initialized;
+                        }
+                        if needs_tdz {
+                            self.emit(Opcode::CheckTdz);
+                            self.emit_u16(r);
                         }
                         Ok(r)
                     }
@@ -6639,6 +6658,8 @@ impl CodeGenerator {
                     name.clone(),
                     ParentVar {
                         local_idx: entry.slot,
+                        kind: entry.kind,
+                        initialized: entry.initialized,
                         is_inherited: false,
                     },
                 );
@@ -6650,6 +6671,8 @@ impl CodeGenerator {
                     name.clone(),
                     ParentVar {
                         local_idx: slot,
+                        kind: VariableKind::Let,
+                        initialized: true,
                         is_inherited: true,
                     },
                 );
@@ -6779,6 +6802,8 @@ impl CodeGenerator {
                     var_name.clone(),
                     ParentVar {
                         local_idx: entry.slot,
+                        kind: entry.kind,
+                        initialized: entry.initialized,
                         is_inherited: false,
                     },
                 );
@@ -6791,6 +6816,8 @@ impl CodeGenerator {
                     var_name.clone(),
                     ParentVar {
                         local_idx: slot,
+                        kind: VariableKind::Let,
+                        initialized: true,
                         is_inherited: true,
                     },
                 );
@@ -6802,6 +6829,8 @@ impl CodeGenerator {
                 class_name.to_string(),
                 ParentVar {
                     local_idx: class_slot,
+                    kind: VariableKind::Let,
+                    initialized: true,
                     is_inherited: false,
                 },
             );

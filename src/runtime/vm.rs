@@ -6279,7 +6279,6 @@ impl VM {
                                 } else {
                                     JSValue::undefined()
                                 };
-
                             let current_frame = &mut self.frames[self.frame_index];
                             let local_idx_u16 = local_idx as u16;
                             if let Some(existing) = current_frame
@@ -6288,20 +6287,24 @@ impl VM {
                                 .and_then(|m| m.get(&local_idx_u16))
                             {
                                 existing.clone()
-                            } else {
-                                let new_cell =
-                                    std::rc::Rc::new(std::cell::Cell::new(initial_value));
-                                current_frame
-                                    .upvalue_sync_map
-                                    .get_or_insert_with(|| Box::new(FxHashMap::default()))
-                                    .insert(local_idx_u16, new_cell.clone());
-                                if local_idx_u16 < 64 {
-                                    current_frame.upvalue_sync_bitset |= 1u64 << local_idx_u16;
-                                    self.cached_upvalue_sync_bitset |= 1u64 << local_idx_u16;
-                                }
-                                self.cached_has_upvalue_sync = true;
-                                new_cell
-                            }
+                             } else {
+                                 let new_cell =
+                                     std::rc::Rc::new(std::cell::Cell::new(initial_value));
+                                 // Don't create sync map entry for TDZ variables,
+                                 // so the closure retains the TDZ marker
+                                 if !initial_value.is_tdz() {
+                                     current_frame
+                                         .upvalue_sync_map
+                                         .get_or_insert_with(|| Box::new(FxHashMap::default()))
+                                         .insert(local_idx_u16, new_cell.clone());
+                                     if local_idx_u16 < 64 {
+                                         current_frame.upvalue_sync_bitset |= 1u64 << local_idx_u16;
+                                         self.cached_upvalue_sync_bitset |= 1u64 << local_idx_u16;
+                                     }
+                                     self.cached_has_upvalue_sync = true;
+                                 }
+                                 new_cell
+                             }
                         } else if let Some(parent_ptr) = self.frames[self.frame_index].function_ptr
                         {
                             let parent_func = unsafe {
