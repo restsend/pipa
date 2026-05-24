@@ -3198,6 +3198,21 @@ impl CodeGenerator {
             }
         }
 
+        // Emit ResetPerIterVar for per-iteration bindings (let variables)
+        // BEFORE the first test, as per spec CreatePerIterationEnvironment step
+        if needs_block_scope {
+            if let Some(ForInit::VariableDeclaration(decl)) = &stmt.init {
+                for d in &decl.declarations {
+                    if let BindingPattern::Identifier(name) = &d.id {
+                        if let Some(slot) = self.lookup_var_slot(name) {
+                            self.emit(Opcode::ResetPerIterVar);
+                            self.emit_u16(slot);
+                        }
+                    }
+                }
+            }
+        }
+
         let loop_start = self.code.len();
 
         let break_jump = if let Some(test) = &stmt.test {
@@ -3261,6 +3276,21 @@ impl CodeGenerator {
             self.gen_statement_with_target(&stmt.body, ctx, v_reg)?;
         } else {
             self.gen_statement(&stmt.body, ctx)?;
+        }
+
+        // Emit ResetPerIterVar for per-iteration bindings (let variables)
+        // This must happen BEFORE the update expression per the spec
+        if needs_block_scope {
+            if let Some(ForInit::VariableDeclaration(decl)) = &stmt.init {
+                for d in &decl.declarations {
+                    if let BindingPattern::Identifier(name) = &d.id {
+                        if let Some(slot) = self.lookup_var_slot(name) {
+                            self.emit(Opcode::ResetPerIterVar);
+                            self.emit_u16(slot);
+                        }
+                    }
+                }
+            }
         }
 
         let update_pos = self.code.len();
@@ -3438,6 +3468,21 @@ impl CodeGenerator {
                 ForInOfLeft::AssignmentTarget(AssignmentTarget::Identifier(n)) => Some(n.clone()),
                 _ => None,
             };
+            // Emit ResetPerIterVar BEFORE assigning the new key to the variable
+            // so that the sync map entry is cleared and SetLocal/Move won't
+            // update the old iteration's closure cell
+            if needs_block_scope {
+                if let ForInOfLeft::VariableDeclaration(decl) = &stmt.left {
+                    if let Some(first) = decl.declarations.first() {
+                        if let BindingPattern::Identifier(name) = &first.id {
+                            if let Some(slot) = self.lookup_var_slot(name) {
+                                self.emit(Opcode::ResetPerIterVar);
+                                self.emit_u16(slot);
+                            }
+                        }
+                    }
+                }
+            }
             if var_slot != key_val_reg {
                 self.emit(Opcode::Move);
                 self.emit_u16(var_slot);

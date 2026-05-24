@@ -58,6 +58,7 @@ pub enum Opcode {
     JumpIfNot = 82,
     JumpBreak = 199,
     EndFinally = 200,
+    ResetPerIterVar = 201,
     JumpIfNullish = 176,
     Throw = 83,
     Try = 84,
@@ -220,6 +221,7 @@ impl Opcode {
             82 => Some(Opcode::JumpIfNot),
             199 => Some(Opcode::JumpBreak),
             200 => Some(Opcode::EndFinally),
+            201 => Some(Opcode::ResetPerIterVar),
             176 => Some(Opcode::JumpIfNullish),
             83 => Some(Opcode::Throw),
             84 => Some(Opcode::Try),
@@ -327,6 +329,7 @@ impl Opcode {
     pub fn instruction_size(op: Opcode) -> usize {
         match op {
             Opcode::Nop | Opcode::End | Opcode::Catch | Opcode::Finally | Opcode::EndFinally => 1,
+            Opcode::ResetPerIterVar => 3,
             Opcode::Return => 3,
             Opcode::LoadTrue
             | Opcode::LoadFalse
@@ -631,6 +634,10 @@ impl Bytecode {
             let mut operands = String::new();
             match op {
                 Opcode::Nop | Opcode::End | Opcode::Catch | Opcode::Finally | Opcode::EndFinally => {}
+                Opcode::ResetPerIterVar => {
+                    let a = read_u16(1);
+                    write!(operands, " r{}", a).unwrap();
+                }
                 Opcode::Return
                 | Opcode::LoadTrue
                 | Opcode::LoadFalse

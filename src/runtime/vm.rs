@@ -3229,6 +3229,19 @@ impl VM {
                 Opcode::EndFinally => {
                     // EndFinally is a no-op marker for the end of finally blocks
                 }
+                Opcode::ResetPerIterVar => {
+                    let slot = self.read_u16_pc();
+                    if self.frame_index < self.frames.len() {
+                        let frame = &mut self.frames[self.frame_index];
+                        if let Some(ref mut map) = frame.upvalue_sync_map {
+                            map.remove(&slot);
+                            if slot < 64 {
+                                frame.upvalue_sync_bitset &= !(1u64 << slot);
+                            }
+                        }
+                        self.refresh_cache();
+                    }
+                }
                 Opcode::JumpBreak => {
                     let offset = self.read_i32();
                     self.pc = (self.pc as i32 + offset) as usize;
