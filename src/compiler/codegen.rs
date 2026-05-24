@@ -1531,6 +1531,11 @@ impl CodeGenerator {
             last_nonempty_stmt_idx -= 1;
         }
 
+        let already_returns = body
+            .body
+            .last()
+            .map_or(false, |s| matches!(s, ASTNode::ReturnStatement(_)));
+
         for (i, stmt) in body.body.iter().enumerate() {
             if let Some(&line) = body.lines.get(i) {
                 self.emit_line(line);
@@ -1546,6 +1551,25 @@ impl CodeGenerator {
                     self.gen_statement(stmt, ctx)?;
                 }
             } else if matches!(stmt, ASTNode::FunctionDeclaration(_)) {
+            } else if return_last_expr {
+                // Track expression statement values for the UpdateEmpty chain.
+                // Declaration/control-flow statements produce empty completions
+                // and should preserve the previous value.
+                if let ASTNode::ExpressionStatement(es) = stmt {
+                    let reg = self.gen_expression(&es.expression, ctx)?;
+                    if let Some(prev) = last_expr_reg {
+                        if prev != reg {
+                            self.emit(Opcode::Move);
+                            self.emit_u16(prev);
+                            self.emit_u16(reg);
+                        }
+                        self.free_register(reg);
+                    } else {
+                        last_expr_reg = Some(reg);
+                    }
+                } else {
+                    self.gen_statement(stmt, ctx)?;
+                }
             } else {
                 self.gen_statement(stmt, ctx)?;
             }
@@ -1553,10 +1577,6 @@ impl CodeGenerator {
 
         self.pop_scope();
 
-        let already_returns = body
-            .body
-            .last()
-            .map_or(false, |s| matches!(s, ASTNode::ReturnStatement(_)));
         if !already_returns {
             let return_reg = if let Some(reg) = last_expr_reg {
                 reg
@@ -3946,12 +3966,28 @@ impl CodeGenerator {
 
             self.emit(Opcode::Finally);
 
+            // Save the prior completion value before running finally body.
+            // Per spec: if finally completes normally, the prior completion
+            // (from try or catch) wins — not the finally body's value.
+            let saved_prior = result_reg.map(|_| self.alloc_register());
+            if let Some(sr) = saved_prior {
+                self.emit(Opcode::Move);
+                self.emit_u16(sr);
+                self.emit_u16(result_reg.unwrap());
+            }
+
+            // Set result to undefined before the finally body so that
+            // abrupt completions (break/continue/return/throw) inside
+            // the finally result in an empty completion value.
+            if let Some(v_reg) = result_reg {
+                self.emit(Opcode::LoadUndefined);
+                self.emit_u16(v_reg);
+            }
+
             self.push_scope();
             self.pre_scan_let_const(&finalizer.body)?;
             self.emit_tdz_for_block(&finalizer.body)?;
             if let Some(v_reg) = result_reg {
-                self.emit(Opcode::LoadUndefined);
-                self.emit_u16(v_reg);
                 for s in &finalizer.body {
                     self.gen_statement_with_target(s, ctx, v_reg)?;
                 }
@@ -3962,6 +3998,16 @@ impl CodeGenerator {
             }
             self.pop_scope();
             self.emit(Opcode::EndFinally);
+
+            // Restore the prior completion — any non-abrupt writes to v_reg
+            // by the finally body are discarded per spec.
+            if let Some(sr) = saved_prior {
+                self.emit(Opcode::Move);
+                self.emit_u16(result_reg.unwrap());
+                self.emit_u16(sr);
+                self.free_register(sr);
+            }
+
             fs
         } else {
             0
@@ -5404,6 +5450,13 @@ impl CodeGenerator {
                 let val = self.gen_expression_with_assign_name(&assign.right, name, ctx)?;
                 match self.resolve_var(name, ctx) {
                     Some(VarLocation::Local(slot)) => {
+                        // Check TDZ for let/const variables on assignment
+                        if let Some(entry) = self.lookup_var(name) {
+                            if entry.kind != VariableKind::Var && !entry.initialized {
+                                self.emit(Opcode::CheckTdz);
+                                self.emit_u16(slot);
+                            }
+                        }
                         if let Some(opcode) = is_compound {
                             self.emit(opcode);
                             self.emit_u16(slot);
@@ -5429,11 +5482,25 @@ impl CodeGenerator {
                         Ok(slot)
                     }
                     Some(VarLocation::Upvalue(slot)) => {
+                        // Check TDZ for upvalue let/const variables
+                        let mut needs_tdz = false;
+                        if let Some(entry) = self.lookup_var(name) {
+                            needs_tdz = entry.kind != VariableKind::Var && !entry.initialized;
+                        } else if let Some(parent_var) = self.parent_vars.get(name) {
+                            if !parent_var.is_inherited {
+                                needs_tdz = parent_var.kind != VariableKind::Var
+                                    && !parent_var.initialized;
+                            }
+                        }
                         if let Some(opcode) = is_compound {
                             let tmp = self.alloc_register();
                             self.emit(Opcode::GetUpvalue);
                             self.emit_u16(tmp);
                             self.emit_u16(slot);
+                            if needs_tdz {
+                                self.emit(Opcode::CheckTdz);
+                                self.emit_u16(tmp);
+                            }
                             self.emit(opcode);
                             self.emit_u16(tmp);
                             self.emit_u16(tmp);
@@ -5443,6 +5510,15 @@ impl CodeGenerator {
                             self.emit_u16(tmp);
                             self.free_register(tmp);
                         } else {
+                            if needs_tdz {
+                                let tmp = self.alloc_register();
+                                self.emit(Opcode::GetUpvalue);
+                                self.emit_u16(tmp);
+                                self.emit_u16(slot);
+                                self.emit(Opcode::CheckTdz);
+                                self.emit_u16(tmp);
+                                self.free_register(tmp);
+                            }
                             self.emit(Opcode::SetUpvalue);
                             self.emit_u16(slot);
                             self.emit_u16(val);
