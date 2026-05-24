@@ -4081,7 +4081,18 @@ impl CodeGenerator {
                         if let Some(entry) = self.lookup_var(&id.name) {
                             needs_tdz = entry.kind != VariableKind::Var && !entry.initialized;
                         } else if let Some(parent_var) = self.parent_vars.get(&id.name) {
-                            needs_tdz = parent_var.kind != VariableKind::Var && !parent_var.initialized;
+                            // Only check TDZ for direct scope variables (not inherited upvalues).
+                            // Inherited upvalues may come from pre-declared let bindings
+                            // that are initialized after the closure is created.
+                            if !parent_var.is_inherited {
+                                // Check if this variable is in an explicitly pushed scope
+                                // (like for-in/for-of heads) vs the root function scope.
+                                // Variables in the root scope that are pre-declared by
+                                // pre_scan_let_const should not trigger TDZ for closures
+                                // created before the let statement.
+                                needs_tdz = parent_var.kind != VariableKind::Var
+                                    && !parent_var.initialized;
+                            }
                         }
                         if needs_tdz {
                             self.emit(Opcode::CheckTdz);
@@ -6654,6 +6665,12 @@ impl CodeGenerator {
                 continue;
             }
             for (name, entry) in scope {
+                // Skip pre-declared uninitialized variables from the root scope.
+                // These are created by pre_scan_let_const before the actual let
+                // statement, causing closures to incorrectly emit CheckTdz.
+                if scope_idx == 0 && !entry.initialized {
+                    continue;
+                }
                 parent_vars.insert(
                     name.clone(),
                     ParentVar {
@@ -6798,6 +6815,10 @@ impl CodeGenerator {
                 continue;
             }
             for (var_name, entry) in scope {
+                // Skip pre-declared uninitialized variables from the root scope
+                if scope_idx == 0 && !entry.initialized {
+                    continue;
+                }
                 class_parent_vars.insert(
                     var_name.clone(),
                     ParentVar {
