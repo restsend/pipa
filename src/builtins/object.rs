@@ -535,22 +535,52 @@ fn object_create(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if !args.is_empty() && args[0].is_object() {
         let proto_ptr = args[0].get_ptr();
         new_obj.prototype = Some(proto_ptr as *mut JSObject);
-
-        let proto = args[0].as_object_mut();
-        if proto.prototype.is_none() {
-            if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
-                if proto_ptr != obj_proto_ptr as usize {
-                    proto.prototype = Some(obj_proto_ptr);
-                }
-            }
-        }
     } else if !args.is_empty() && args[0].is_null() {
     }
+
+    // Handle property descriptors (second argument)
+    if args.len() > 1 && args[1].is_object() {
+        let props_obj = args[1].as_object();
+        for (atom, desc_val) in props_obj.own_properties() {
+            if !desc_val.is_object() {
+                continue;
+            }
+            let desc_obj = desc_val.as_object();
+            let value = desc_obj.get(ctx.intern("value"));
+            let getter = desc_obj.get(ctx.intern("get"));
+            let setter = desc_obj.get(ctx.intern("set"));
+            let writable = desc_obj.get(ctx.intern("writable")).map(|v| v.is_truthy()).unwrap_or(false);
+            let enumerable = desc_obj.get(ctx.intern("enumerable")).map(|v| v.is_truthy()).unwrap_or(false);
+            let configurable = desc_obj.get(ctx.intern("configurable")).map(|v| v.is_truthy()).unwrap_or(false);
+
+            let desc = if getter.is_some() || setter.is_some() {
+                crate::object::object::PropertyDescriptor {
+                    value: None,
+                    writable,
+                    enumerable,
+                    configurable,
+                    get: getter,
+                    set: setter,
+                }
+            } else {
+                crate::object::object::PropertyDescriptor {
+                    value,
+                    writable,
+                    enumerable,
+                    configurable,
+                    get: None,
+                    set: None,
+                }
+            };
+            new_obj.define_property_ext(atom, desc, true, true, true);
+        }
+    }
+
     let ptr = Box::into_raw(Box::new(new_obj)) as usize;
     JSValue::new_object(ptr)
 }
 
-fn object_get_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    fn object_get_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() || !is_object_like(&args[0]) {
         return JSValue::null();
     }

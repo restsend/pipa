@@ -5183,22 +5183,23 @@ impl VM {
                     // Collect all enumerable properties from the object and its prototype chain
                     let mut seen = Vec::new();
                     let obj_proto_ptr = ctx.get_object_prototype().map(|p| p as usize);
+                    let arr_proto_ptr = ctx.get_array_prototype().map(|p| p as usize);
+                    let str_proto_ptr = ctx.get_string_prototype().map(|p| p as usize);
                     let mut current_ptr = if obj_val.is_object() || obj_val.is_function() {
                         Some(obj_val.get_ptr() as usize)
                     } else {
                         None
                     };
                     while let Some(ptr) = current_ptr {
-                        // Stop at Object.prototype
+                        // Stop at built-in prototypes (their methods should be non-enumerable)
                         if let Some(obj_proto) = obj_proto_ptr {
-                            if ptr == obj_proto {
-                                break;
-                            }
+                            if ptr == obj_proto { break; }
                         }
-                        // Check if this prototype is Array.prototype or String.prototype etc.
-                        if js_obj.prototype == obj_proto_ptr && ptr != obj_val.get_ptr() as usize {
-                            // This is a built-in prototype (not Object.prototype itself)
-                            // Only include if the object IS a direct instance of this prototype
+                        if let Some(arr_proto) = arr_proto_ptr {
+                            if ptr == arr_proto { break; }
+                        }
+                        if let Some(str_proto) = str_proto_ptr {
+                            if ptr == str_proto { break; }
                         }
                         let js_obj = unsafe { &*(ptr as *const crate::object::object::JSObject) };
                         let mut int_keys: Vec<i64> = Vec::new();
@@ -5217,6 +5218,7 @@ impl VM {
                             }
                         }
                         for (atom, _value) in js_obj.own_properties() {
+                            // Track ALL own properties (including non-enumerable) for shadowing
                             if seen.contains(&atom.0) {
                                 continue;
                             }
@@ -5229,6 +5231,12 @@ impl VM {
                                 }
                             }
                             str_keys.push(atom);
+                        }
+                        // Also track non-enumerable own properties for shadowing
+                        for atom in js_obj.non_enumerable_property_atoms() {
+                            if !seen.contains(&atom.0) {
+                                seen.push(atom.0);
+                            }
                         }
                         int_keys.sort();
                         for k in &int_keys {

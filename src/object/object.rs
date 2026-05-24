@@ -423,6 +423,7 @@ pub struct ObjectExtra {
 
     pub property_map: Option<Box<FxHashMap<Atom, u32>>>,
     pub accessors: Option<Box<FxHashMap<Atom, AccessorEntry>>>,
+    pub property_order: Option<Box<Vec<Atom>>>,
 
     pub compiled_regex: Option<Box<crate::regexp::Regex>>,
 
@@ -477,6 +478,7 @@ impl JSObject {
                 private_accessors: None,
                 property_map: None,
                 accessors: None,
+                property_order: None,
                 compiled_regex: None,
                 array_buffer_data: None,
                 typed_array_kind: None,
@@ -1139,7 +1141,7 @@ impl JSObject {
         }
 
         self.props.push(PropSlot::new(prop, value, ATTR_DEFAULT));
-
+        self.track_property_order(prop);
         self.update_property_map(prop);
     }
 
@@ -1317,7 +1319,7 @@ impl JSObject {
             self.shape_id_cache = unsafe { (*new_shape.as_ptr()).id.0 };
         }
         self.props.push(PropSlot::new(prop, value, ATTR_DEFAULT));
-
+        self.track_property_order(prop);
         self.update_property_map(prop);
     }
 
@@ -1444,6 +1446,17 @@ impl JSObject {
         self.maybe_build_property_map();
     }
 
+    fn track_property_order(&mut self, prop: Atom) {
+        if let Some(ref mut extra) = self.extra {
+            let order = extra
+                .property_order
+                .get_or_insert_with(|| Box::new(Vec::new()));
+            if !order.contains(&prop) {
+                order.push(prop);
+            }
+        }
+    }
+
     pub fn get_own(&self, prop: Atom) -> Option<JSValue> {
         if let Some(offset) = self.find_offset(prop) {
             if offset < self.props.len() {
@@ -1462,6 +1475,38 @@ impl JSObject {
 
     pub fn own_properties(&self) -> Vec<(Atom, JSValue)> {
         let mut result = Vec::new();
+        // Use the property order vector if available, otherwise fall back to props order
+        if let Some(ref extra) = self.extra {
+            if let Some(ref order) = extra.property_order {
+                for atom in order.iter() {
+                    // Check if it's a data property
+                    if let Some(offset) = self.find_offset(*atom) {
+                        if offset < self.props.len() {
+                            let slot = &self.props[offset];
+                            if slot.attrs == ATTR_DELETED {
+                                continue;
+                            }
+                            if slot.attrs & ATTR_ENUMERABLE != 0 {
+                                result.push((slot.atom, slot.value));
+                            }
+                            continue;
+                        }
+                    }
+                    // Check if it's an accessor property
+                    if let Some(ref accs) = extra.accessors {
+                        if let Some(entry) = accs.get(atom) {
+                            if entry.enumerable {
+                                if let Some(getter) = entry.get {
+                                    result.push((*atom, getter));
+                                }
+                            }
+                        }
+                    }
+                }
+                return result;
+            }
+        }
+        // Fallback: iterate props then accessors (for objects without property_order)
         for slot in &self.props {
             if slot.attrs == ATTR_DELETED {
                 continue;
@@ -1477,6 +1522,28 @@ impl JSObject {
                         if let Some(getter) = entry.get {
                             result.push((*atom, getter));
                         }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    pub fn non_enumerable_property_atoms(&self) -> Vec<Atom> {
+        let mut result = Vec::new();
+        for slot in &self.props {
+            if slot.attrs == ATTR_DELETED {
+                continue;
+            }
+            if slot.attrs & ATTR_ENUMERABLE == 0 {
+                result.push(slot.atom);
+            }
+        }
+        if let Some(ref extra) = self.extra {
+            if let Some(ref accs) = extra.accessors {
+                for (atom, entry) in accs.iter() {
+                    if !entry.enumerable {
+                        result.push(*atom);
                     }
                 }
             }
@@ -1566,18 +1633,26 @@ impl JSObject {
             }
             // Update the existing property in-place to preserve creation order
             if desc.is_accessor() {
-                self.ensure_extra()
+                let extra = self.ensure_extra();
+                let accs = extra
                     .accessors
-                    .get_or_insert_with(|| Box::new(FxHashMap::default()))
-                    .insert(
-                        prop,
-                        AccessorEntry {
-                            get: desc.get,
-                            set: desc.set,
-                            enumerable: desc.enumerable,
-                            configurable: desc.configurable,
-                        },
-                    );
+                    .get_or_insert_with(|| Box::new(FxHashMap::default()));
+                let is_new = !accs.contains_key(&prop);
+                accs.insert(
+                    prop,
+                    AccessorEntry {
+                        get: desc.get,
+                        set: desc.set,
+                        enumerable: desc.enumerable,
+                        configurable: desc.configurable,
+                    },
+                );
+                if is_new {
+                    let order = extra
+                        .property_order
+                        .get_or_insert_with(|| Box::new(Vec::new()));
+                    order.push(prop);
+                }
             } else if let Some(value) = desc.value {
                 if let Some(offset) = self.find_offset(prop) {
                     if offset < self.props.len() {
@@ -1597,24 +1672,30 @@ impl JSObject {
             return true;
         }
         if desc.is_accessor() {
-            self.ensure_extra()
+            let extra = self.ensure_extra();
+            let accs = extra
                 .accessors
-                .get_or_insert_with(|| Box::new(FxHashMap::default()))
-                .insert(
-                    prop,
-                    AccessorEntry {
-                        get: desc.get,
-                        set: desc.set,
-                        enumerable: desc.enumerable,
-                        configurable: desc.configurable,
-                    },
-                );
+                .get_or_insert_with(|| Box::new(FxHashMap::default()));
+            accs.insert(
+                prop,
+                AccessorEntry {
+                    get: desc.get,
+                    set: desc.set,
+                    enumerable: desc.enumerable,
+                    configurable: desc.configurable,
+                },
+            );
+            let order = extra
+                .property_order
+                .get_or_insert_with(|| Box::new(Vec::new()));
+            order.push(prop);
         } else if let Some(value) = desc.value {
             self.props.push(PropSlot::new(
                 prop,
                 value,
                 attrs_from_bools(desc.writable, desc.enumerable, desc.configurable),
             ));
+            self.track_property_order(prop);
         }
         true
     }
