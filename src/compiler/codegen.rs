@@ -3855,7 +3855,19 @@ impl CodeGenerator {
         ctx: &mut JSContext,
         result_reg: Option<u16>,
     ) -> Result<(), String> {
+        // Evaluate the switch expression in the enclosing scope (BEFORE the
+        // CaseBlock lexical environment is created).
         let disc = self.gen_expression(&stmt.discriminant, ctx)?;
+
+        // Create the lexical scope for the entire CaseBlock. Per spec, this
+        // is done BEFORE case selector evaluation so that `let`/`const`
+        // declarations inside cases are visible (as TDZ) during selector
+        // evaluation.
+        self.push_scope();
+        for case in &stmt.cases {
+            self.pre_scan_let_const(&case.consequent)?;
+            self.emit_tdz_for_block(&case.consequent)?;
+        }
 
         let mut test_jumps: Vec<(usize, usize)> = Vec::new();
         for (case_idx, case) in stmt.cases.iter().enumerate() {
@@ -3885,12 +3897,6 @@ impl CodeGenerator {
             continue_patches: Vec::new(),
             continue_target: None,
         });
-
-        self.push_scope();
-        for case in &stmt.cases {
-            self.pre_scan_let_const(&case.consequent)?;
-            self.emit_tdz_for_block(&case.consequent)?;
-        }
 
         let mut body_starts = vec![0usize; stmt.cases.len()];
         for (case_idx, case) in stmt.cases.iter().enumerate() {
