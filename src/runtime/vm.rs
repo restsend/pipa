@@ -4129,26 +4129,26 @@ impl VM {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(ptr) };
                         if js_obj.is_dense_array() {
                             let idx = key_val.get_int() as usize;
-                            // Check prototype chain for a setter before directly storing
-                            let mut proto = js_obj.prototype;
-                            let mut setter_found = None;
-                            while let Some(p) = proto {
-                                let pobj = unsafe { &*p };
-                                let key_atom = self.int_atom(idx, ctx);
-                                if let Some(entry) = pobj.get_own_accessor_entry(key_atom) {
-                                    setter_found = entry.set;
-                                    break;
-                                }
-                                proto = pobj.prototype;
-                            }
-                            if let Some(setter) = setter_found {
-                                let _ = self.call_function_with_this(ctx, setter, obj_val, &[value]);
+                            let arr = unsafe {
+                                &mut *(ptr as *mut crate::object::array_obj::JSArrayObject)
+                            };
+                            if idx < arr.elements.len() {
+                                arr.elements[idx] = value;
                             } else {
-                                let arr = unsafe {
-                                    &mut *(ptr as *mut crate::object::array_obj::JSArrayObject)
-                                };
-                                if idx < arr.elements.len() {
-                                    arr.elements[idx] = value;
+                                // Check prototype chain for setters when EXTENDING the array
+                                let mut proto = js_obj.prototype;
+                                let mut setter_found = None;
+                                while let Some(p) = proto {
+                                    let pobj = unsafe { &*p };
+                                    let key_atom = self.int_atom(idx, ctx);
+                                    if let Some(entry) = pobj.get_own_accessor_entry(key_atom) {
+                                        setter_found = entry.set;
+                                        break;
+                                    }
+                                    proto = pobj.prototype;
+                                }
+                                if let Some(setter) = setter_found {
+                                    let _ = self.call_function_with_this(ctx, setter, obj_val, &[value]);
                                 } else {
                                     while arr.elements.len() < idx {
                                         arr.elements.push(JSValue::undefined());
