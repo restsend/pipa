@@ -3325,22 +3325,20 @@ impl CodeGenerator {
         };
 
         let var_slot = if has_complex_left {
-            u16::MAX
+            let tmp_slot = self.alloc_register();
+            self.free_register(tmp_slot);
+            tmp_slot
         } else {
             match &stmt.left {
                 ForInOfLeft::VariableDeclaration(decl) => {
                     if let Some(first) = decl.declarations.first() {
                         if let BindingPattern::Identifier(name) = &first.id {
-                            if decl.kind == VariableKind::Var {
-                                self.declare_var(name, VariableKind::Var)
-                            } else {
-                                self.lookup_var_slot(name).unwrap_or(u16::MAX)
-                            }
+                            self.lookup_var_slot(name).unwrap_or(u16::MAX)
                         } else {
-                            255
+                            u16::MAX
                         }
                     } else {
-                        return Err("for-in without variable".to_string());
+                        u16::MAX
                     }
                 }
                 ForInOfLeft::AssignmentTarget(AssignmentTarget::Identifier(name)) => {

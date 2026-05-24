@@ -1208,6 +1208,24 @@ impl VM {
     }
 
     #[cold]
+    fn set_pending_reference_error(&mut self, ctx: &mut JSContext, msg: &str) {
+        use crate::object::object::JSObject;
+        let mut err = JSObject::new();
+        let name_atom = ctx.intern("name");
+        let msg_atom = ctx.intern("message");
+        let ref_error_atom = ctx.intern("ReferenceError");
+        let msg_str_atom = ctx.intern(msg);
+        err.set(name_atom, JSValue::new_string(ref_error_atom));
+        err.set(msg_atom, JSValue::new_string(msg_str_atom));
+        if let Some(proto) = ctx.get_reference_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        self.pending_throw = Some(JSValue::new_object(ptr));
+    }
+
+    #[cold]
     fn dispatch_throw_value(&mut self, ctx: &mut JSContext, value: JSValue) -> ThrowDispatch {
         let find_async_frame = |frames: &[CallFrame], frame_index: usize| {
             for i in (0..=frame_index).rev() {
@@ -6268,10 +6286,14 @@ impl VM {
                 Opcode::CheckTdz => {
                     let reg = self.read_u16_pc();
                     if self.get_reg(reg).is_tdz() {
-                        return Err(
-                            "ReferenceError: Cannot access variable before initialization"
-                                .to_string(),
-                        );
+                        self.set_pending_reference_error(ctx, "Cannot access variable before initialization");
+                        if let Some(exc) = self.pending_throw.take() {
+                            match self.dispatch_throw_value(ctx, exc) {
+                                ThrowDispatch::Caught => continue,
+                                ThrowDispatch::Uncaught(e) => return Err(e),
+                                ThrowDispatch::AsyncComplete(_) => continue,
+                            }
+                        }
                     }
                 }
                 Opcode::CheckRef => {
