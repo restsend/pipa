@@ -123,6 +123,7 @@ pub struct VM {
     pending_throw: Option<JSValue>,
 
     finally_rethrow: Option<JSValue>,
+    pending_finally_rethrow: Option<JSValue>,
 
     ctx_ptr: *mut crate::runtime::JSContext,
 
@@ -191,6 +192,7 @@ impl VM {
             exception_handlers: Vec::new(),
             pending_throw: None,
             finally_rethrow: None,
+            pending_finally_rethrow: None,
             ctx_ptr: std::ptr::null_mut(),
             allocation_count: 0,
             caller_vm: None,
@@ -3227,7 +3229,28 @@ impl VM {
                     }
                 }
                 Opcode::EndFinally => {
-                    // EndFinally is a no-op marker for the end of finally blocks
+                    // Check if there's a pending rethrow after the finally body
+                    if let Some(value) = self.pending_finally_rethrow.take() {
+                        if let Some(handler) = self.exception_handlers.last().cloned() {
+                            self.exception_handlers.pop();
+                            if self.frame_index != handler.frame_index {
+                                while self.frame_index > handler.frame_index {
+                                    if self.frame_index == 0 {
+                                        break;
+                                    }
+                                    self.frame_index -= 1;
+                                }
+                            }
+                            self.pc = handler.catch_pc;
+                            self.refresh_cache();
+                            self.set_reg(0, value);
+                            continue;
+                        }
+                        self.pending_throw = Some(value);
+                        let msg = self.format_thrown_value(&value, ctx);
+                        let trace = self.format_stack_trace(ctx);
+                        return Err(format!("Uncaught: {}\nStack trace:\n{}", msg, trace));
+                    }
                 }
                 Opcode::ResetPerIterVar => {
                     let slot = self.read_u16_pc();
@@ -3341,27 +3364,10 @@ impl VM {
                     self.exception_handlers.pop();
                 }
                 Opcode::Finally => {
+                    // Move finally_rethrow to pending so it can be rethrown
+                    // AFTER the finally body executes
                     if let Some(exc) = self.finally_rethrow.take() {
-                        let value = exc;
-                        if let Some(handler) = self.exception_handlers.last().cloned() {
-                            self.exception_handlers.pop();
-                            if self.frame_index != handler.frame_index {
-                                while self.frame_index > handler.frame_index {
-                                    if self.frame_index == 0 {
-                                        break;
-                                    }
-                                    self.frame_index -= 1;
-                                }
-                            }
-                            self.pc = handler.catch_pc;
-                            self.refresh_cache();
-                            self.set_reg(0, value);
-                            continue;
-                        }
-                        self.pending_throw = Some(value);
-                        let msg = self.format_thrown_value(&value, ctx);
-                        let trace = self.format_stack_trace(ctx);
-                        return Err(format!("Uncaught: {}\nStack trace:\n{}", msg, trace));
+                        self.pending_finally_rethrow = Some(exc);
                     }
                 }
 
