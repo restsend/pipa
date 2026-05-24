@@ -3852,26 +3852,12 @@ impl CodeGenerator {
         let has_catch = stmt.handler.is_some();
         let mut after_catch_jump_pos: Option<usize> = None;
         let has_finally = stmt.finalizer.is_some();
-        let mut finally_start = 0usize;
-
-        // Compute finally_start early so catch body can reference it
-        // We'll compute the actual position when the finally body is emitted
-        let mut catch_inner_finally_placeholder: Option<usize> = None;
 
         if let Some(handler) = &stmt.handler {
             let catch_start = self.code.len();
 
             let catch_bytes = (catch_start as i32).to_le_bytes();
             self.code[catch_pc_pos..catch_pc_pos + 4].copy_from_slice(&catch_bytes);
-
-            // Wrap catch body in Try-Finally so exceptions inside catch run finally
-            if has_finally {
-                self.emit(Opcode::Try);
-                let catch_inner_catch_pc = self.code.len();
-                self.emit_i32(0); // placeholder for catch_pc (set to finally_start later)
-                catch_inner_finally_placeholder = Some(self.code.len());
-                self.emit_i32(0); // placeholder for finally_pc (set to finally_start later)
-            }
 
             self.push_scope();
             if let Some(param) = &handler.param {
@@ -3920,35 +3906,22 @@ impl CodeGenerator {
             }
             self.pop_scope();
 
-            if has_finally {
-                self.emit(Opcode::Catch);
-            }
-
             self.emit(Opcode::Jump);
             after_catch_jump_pos = Some(self.code.len());
             self.emit_i32(0);
         }
 
-        if let Some(finalizer) = &stmt.finalizer {
-            finally_start = self.code.len();
+        let finally_start = if let Some(finalizer) = &stmt.finalizer {
+            let fs = self.code.len();
 
-            // Patch the catch-inner handler's placeholders now that we know finally_start
-            if let Some(fp_placeholder) = catch_inner_finally_placeholder {
-                let finally_bytes = (finally_start as i32).to_le_bytes();
-                // Patch catch_pc = finally_start (redirect exceptions to finally)
-                self.code[fp_placeholder - 4..fp_placeholder].copy_from_slice(&finally_bytes);
-                // Patch finally_pc = finally_start
-                self.code[fp_placeholder..fp_placeholder + 4].copy_from_slice(&finally_bytes);
-            }
-
-            let finally_bytes = (finally_start as i32).to_le_bytes();
+            let finally_bytes = (fs as i32).to_le_bytes();
             self.code[finally_pc_pos..finally_pc_pos + 4].copy_from_slice(&finally_bytes);
 
             if !has_catch {
                 self.code[catch_pc_pos..catch_pc_pos + 4].copy_from_slice(&finally_bytes);
             }
 
-            self.patch_jump(end_jump_pos, finally_start);
+            self.patch_jump(end_jump_pos, fs);
 
             self.emit(Opcode::Finally);
 
@@ -3968,7 +3941,10 @@ impl CodeGenerator {
             }
             self.pop_scope();
             self.emit(Opcode::EndFinally);
-        }
+            fs
+        } else {
+            0
+        };
 
         let end_pos = self.code.len();
 
