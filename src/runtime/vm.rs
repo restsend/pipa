@@ -1300,6 +1300,7 @@ impl VM {
                 self.set_reg(dst_reg, rejected);
                 return ThrowDispatch::Caught;
             }
+            self.pending_throw = Some(value);
             let msg = self.format_thrown_value(&value, ctx);
             let trace = self.format_stack_trace(ctx);
             ThrowDispatch::Uncaught(format!("Uncaught: {}\nStack trace:\n{}", msg, trace))
@@ -1717,12 +1718,30 @@ impl VM {
             let result = self.execute_inner(ctx, rb, false, 0, false);
             let return_value = self.get_reg(0);
 
+            // If the function threw and there's a pending exception value,
+            // save it so we can redispatch after restoring the frame
+            let pending_exc = result.as_ref().err().and_then(|_| self.pending_throw.take());
+
             while self.frame_index > saved_frame_index {
                 self.pop_frame(JSValue::undefined());
             }
             self.pc = saved_pc;
             self.refresh_cache();
             self.set_reg(0, saved_r0);
+
+            // If the call threw, redispatch the exception with the restored handlers
+            if let Some(exc) = pending_exc {
+                self.pending_throw = Some(exc);
+                let exc_val = self.pending_throw.take().unwrap();
+                match self.dispatch_throw_value(ctx, exc_val) {
+                    ThrowDispatch::Caught => return Ok(JSValue::undefined()),
+                    ThrowDispatch::Uncaught(e) => return Err(e),
+                    ThrowDispatch::AsyncComplete(o) => match o {
+                        ExecutionOutcome::Complete(v) => return Ok(v),
+                        ExecutionOutcome::Yield(v) => return Ok(v),
+                    },
+                }
+            }
 
             return match result {
                 Ok(_) => Ok(return_value),
@@ -3229,6 +3248,7 @@ impl VM {
                     }
                 }
                 Opcode::EndFinally => {
+                    self.pc += 1;
                     // Check if there's a pending rethrow after the finally body
                     if let Some(value) = self.pending_finally_rethrow.take() {
                         if let Some(handler) = self.exception_handlers.last().cloned() {
@@ -3364,6 +3384,7 @@ impl VM {
                     self.exception_handlers.pop();
                 }
                 Opcode::Finally => {
+                    self.pc += 1;
                     // Move finally_rethrow to pending so it can be rethrown
                     // AFTER the finally body executes
                     if let Some(exc) = self.finally_rethrow.take() {
