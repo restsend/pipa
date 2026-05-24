@@ -48,8 +48,8 @@ Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl4
 | `switch` | **100%** (111/111) | ✅ |
 | `while` | **100%** (38/38) | ✅ |
 | `do-while` | **100%** (36/36) | ✅ |
-| `for-in` | **95%** (109/115) | ✅ `let` as identifier, TDZ, completion values, enumeration order, `Object.defineProperty` attribute preservation, MemberExpression targets<br>⏳ 6 scope/lexical environment, fresh per-iteration bindings |
-| `for` | **~99%** | ✅ iterator-based array destructuring, `let` as identifier<br>⏳ 2 scope/lexical failures |
+| `for-in` | **97%** (111/115) | ✅ `let` as identifier, TDZ, completion values, enumeration order, `Object.defineProperty` attribute preservation, MemberExpression targets, per-iteration binding<br>⏳ 3 destructuring scope/TDZ tests |
+| `for` | **~100%** | ✅ iterator-based array destructuring, `let` as identifier, scope tests |
 | `try/catch/finally` | **~97%** | ✅ break/continue through finally, error propagation<br>⏳ 6 completion values, scope, optional catch |
 | `const`/`let` | **73–74%** | |
 | **Functions** | | |
