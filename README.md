@@ -16,25 +16,25 @@
 
 No external C libraries or system dependencies for the above — everything is implemented from scratch in Rust.
 
-## Benchmarks (2026-05-23)
+## Benchmarks (2026-05-24)
 
 V8 benchmark suite comparison (higher is better):
 
 | Benchmark              |   qjs |   node |   boa |  pipa | vs qjs |
 |------------------------|-------|--------|-------|-------|--------|
-| Richards               |   966 |  46846 |   133 |   991 |  +2.6% |
-| DeltaBlue              |   948 |  94979 |   140 |  1038 |  +9.5% |
-| Crypto                 |  1097 |  60072 |   125 |  1058 |  -3.6% |
-| RayTrace               |  1467 |  79697 |   315 |   996 | -32.1% |
-| EarleyBoyer            |  2127 |  95129 |   281 |  1397 | -34.3% |
-| RegExp                 |   330 |  12703 |  41.6 |  1038 | +214.5% |
-| Splay                  |  2428 |  48609 |   536 |  1985 | -18.2% |
-| NavierStokes           |  1807 |  56392 |   288 |  1961 |  +8.5% |
+| Richards               |   966 |  46846 |   133 |   967 |  +0.1% |
+| DeltaBlue              |   948 |  94979 |   140 |   975 |  +2.8% |
+| Crypto                 |  1097 |  60072 |   125 |  1073 |  -2.2% |
+| RayTrace               |  1467 |  79697 |   315 |   896 | -38.9% |
+| EarleyBoyer            |  2127 |  95129 |   281 |  1333 | -37.3% |
+| RegExp                 |   330 |  12703 |  41.6 |   934 | +183.0% |
+| Splay                  |  2428 |  48609 |   536 |  2901 | +19.5% |
+| NavierStokes           |  1807 |  56392 |   288 |  1866 |  +3.3% |
 | **SCORE (total)**      | **1208** | **53836** | **184** | **1254** | **+3.8%** |
 
 Ranking: **#1 node** (53836) · **#2 pipa** (1254) · **#3 qjs** (1208) · **#4 boa** (184)
 
-## test262 Compatibility (2026-05-23)
+## test262 Compatibility (2026-05-24)
 
 Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl402` and `annexB`).
 
@@ -44,10 +44,13 @@ Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl4
 | Addition, Coalesce, Comma, Grouping, Logical-And/Or, Strict-Equals/Not-Equals, Void, Bitwise-Not, Relational | **100%** | Fully compliant |
 | Subtraction, Division, Multiplication, Modulus, Exponentiation | **64–82%** | Mostly compliant |
 | **Control Flow** | | |
-| `if` | **100%** | ✅ |
-| `for` | **TBD** | ✅ iterator-based array destructuring, `let` as identifier |
-| `for-in` | **87%** | ✅ iterator-based array destructuring, `let` identifier, completion values |
-| `try/catch/finally` | **TBD** | ✅ break/continue through finally, error propagation<br>⏳ dstr/ tests hang (generators lack `Symbol.iterator`)
+| `if` | **100%** (69/69) | ✅ |
+| `switch` | **100%** (111/111) | ✅ |
+| `while` | **100%** (38/38) | ✅ |
+| `do-while` | **100%** (36/36) | ✅ |
+| `for-in` | **94%** (108/115) | ✅ `let` as identifier, TDZ, completion values, enumeration order, `Object.defineProperty` attribute preservation<br>⏳ scope/lexical environment, fresh per-iteration bindings |
+| `for` | **~99%** | ✅ iterator-based array destructuring, `let` as identifier<br>⏳ 2 scope/lexical failures |
+| `try/catch/finally` | **~97%** | ✅ break/continue through finally, error propagation<br>⏳ completion values, scope, optional catch |
 | `const`/`let` | **73–74%** | |
 | **Functions** | | |
 | Function declarations/expressions | **66–73%** | |
