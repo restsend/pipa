@@ -27,6 +27,20 @@ pub fn init_generator(ctx: &mut JSContext) {
     let return_atom = ctx.intern("return");
     gen_proto.set(return_atom, return_func);
 
+    // Generator.prototype[Symbol.iterator] = function() { return this; }
+    ctx.register_builtin(
+        "generator_symbol_iterator",
+        HostFunction::new("[Symbol.iterator]", 0, generator_symbol_iterator),
+    );
+    let sym_iter_func = create_builtin_function(ctx, "generator_symbol_iterator");
+    let sym_iter_val = crate::builtins::symbol::get_symbol_iterator(ctx);
+    if sym_iter_val.is_symbol() {
+        let sym_atom = crate::runtime::atom::Atom(
+            0x40000000 | sym_iter_val.get_symbol_id(),
+        );
+        gen_proto.set(sym_atom, sym_iter_func);
+    }
+
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         gen_proto.prototype = Some(obj_proto_ptr);
     }
@@ -152,6 +166,10 @@ fn generator_return(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let value = args.get(1).copied().unwrap_or(JSValue::undefined());
     create_iterator_result(ctx, value, true)
+}
+
+fn generator_symbol_iterator(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    args.get(0).copied().unwrap_or(JSValue::undefined())
 }
 
 fn async_generator_next(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {

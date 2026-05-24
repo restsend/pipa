@@ -161,6 +161,10 @@ impl VM {
                 | "intl_numberformat_resolved_options"
                 | "intl_datetimeformat_resolved_options"
                 | "date_toPrimitive"
+                | "generator_symbol_iterator"
+                | "generator_next"
+                | "generator_return"
+                | "async_generator_next"
         )
     }
 
