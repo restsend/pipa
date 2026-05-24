@@ -3204,6 +3204,14 @@ impl VM {
                         self.pc = (self.pc as i64 + offset as i64) as usize;
                     }
                 }
+                Opcode::EndFinally => {
+                    // EndFinally is a no-op marker for the end of finally blocks
+                }
+                Opcode::JumpBreak => {
+                    let offset = self.read_i32();
+                    self.pc = (self.pc as i32 + offset) as usize;
+                    self.refresh_cache();
+                }
                 Opcode::Throw => {
                     let src = self.read_u16_pc();
                     let value = self.get_reg(src);
@@ -6361,12 +6369,11 @@ impl VM {
                     let dst = self.read_u16_pc();
                     let src = self.read_u16_pc();
                     let iterable = self.get_reg(src);
-                    let result = if iterable.is_object() || iterable.is_function() {
-                        let arr_ptr = iterable.get_ptr();
+                    let result = if iterable.is_string() {
+                        self.create_iter_object(ctx, iterable)
+                    } else if iterable.is_object() || iterable.is_function() {
                         let is_array = iterable.as_object().is_dense_array();
                         if is_array {
-                            self.create_iter_object(ctx, iterable)
-                        } else if iterable.is_string() {
                             self.create_iter_object(ctx, iterable)
                         } else {
                             let obj: &crate::object::object::JSObject = if iterable.is_function() {
@@ -6376,142 +6383,70 @@ impl VM {
                                 iterable.as_object()
                             };
 
-                            let mut sym_iter_atom = None;
-                            let global = ctx.global();
-                            if global.is_object() {
-                                if let Some(sym_val) =
-                                    global.as_object().get(ctx.intern("Symbol.iterator"))
-                                {
-                                    if sym_val.is_symbol() {
-                                        sym_iter_atom = Some(crate::runtime::atom::Atom(
-                                            0x40000000 | sym_val.get_symbol_id(),
-                                        ));
+                            let mut iter_fn = None;
+                            // Try to find Symbol.iterator via the well-known symbol
+                            let sym_iter = crate::builtins::symbol::get_symbol_iterator(ctx);
+                            if sym_iter.is_symbol() {
+                                let sym_atom = crate::runtime::atom::Atom(
+                                    0x40000000 | sym_iter.get_symbol_id(),
+                                );
+                                iter_fn = obj.get(sym_atom);
+                                if iter_fn.is_none() {
+                                    let mut current = obj.prototype;
+                                    while let Some(p) = current {
+                                        let pobj = unsafe { &*p };
+                                        iter_fn = pobj.get(sym_atom);
+                                        if iter_fn.is_some() {
+                                            break;
+                                        }
+                                        current = pobj.prototype;
                                     }
                                 }
                             }
-                            let iter_fn = sym_iter_atom.and_then(|a| obj.get(a)).or_else(|| {
-                                let mut current = obj.prototype;
-                                while let Some(p) = current {
-                                    let pobj = unsafe { &*p };
-                                    if let Some(v) = sym_iter_atom.and_then(|a| pobj.get(a)) {
-                                        return Some(v);
-                                    }
-                                    current = pobj.prototype;
-                                }
-                                None
-                            });
-                            if let Some(iter_fn) = iter_fn.or_else(|| {
-                                let str_atom = ctx.intern("Symbol.iterator");
-                                obj.get(str_atom).or_else(|| {
-                                    let mut proto = obj.prototype;
-                                    while let Some(p) = proto {
-                                        let pobj = unsafe { &*p };
-                                        if let Some(v) = pobj.get(str_atom) {
-                                            return Some(v);
-                                        }
-                                        proto = pobj.prototype;
-                                    }
-                                    None
-                                })
-                            }) {
-                                if iter_fn.is_function() {
-                                    let func_ptr = iter_fn.get_ptr();
-                                    let js_func = unsafe {
-                                        &*(func_ptr as *const crate::object::function::JSFunction)
-                                    };
-                                    if js_func.is_builtin() {
-                                        if let Some(builtin_fn) = js_func.builtin_func {
-                                            ctx.call_builtin_direct(builtin_fn, &[iterable])
-                                        } else {
-                                            JSValue::undefined()
-                                        }
-                                    } else {
-                                        let obj2 = iterable.as_object();
-                                        let len_atom = ctx.common_atoms.length;
-                                        if obj2.get(len_atom).is_some() {
-                                            let mut iter_obj =
-                                                crate::object::object::JSObject::new();
-                                            let arr_atom = ctx.common_atoms.__iter_arr__;
-                                            let idx_atom = ctx.common_atoms.__iter_idx__;
-                                            iter_obj.set_cached(
-                                                arr_atom,
-                                                iterable,
-                                                ctx.shape_cache_mut(),
-                                            );
-                                            iter_obj.set_cached(
-                                                idx_atom,
-                                                JSValue::new_int(0),
-                                                ctx.shape_cache_mut(),
-                                            );
-                                            let iter_ptr =
-                                                Box::into_raw(Box::new(iter_obj)) as usize;
-                                            ctx.runtime_mut().gc_heap_mut().track(iter_ptr);
-                                            self.allocation_count += 1;
 
-                                            JSValue::new_object(iter_ptr)
-                                        } else {
-                                            JSValue::undefined()
+                            if let Some(fn_val) = iter_fn {
+                                if fn_val.is_function() {
+                                    match self.call_function_with_this(ctx, fn_val, iterable, &[])
+                                    {
+                                        Ok(iterator) => {
+                                            if iterator.is_object() {
+                                                iterator
+                                            } else {
+                                                JSValue::undefined()
+                                            }
                                         }
+                                        Err(e) => return Err(e),
                                     }
-                                } else {
-                                    let obj2: &crate::object::object::JSObject = unsafe {
-                                        &*(arr_ptr as *const crate::object::object::JSObject)
-                                    };
-                                    let len_atom = ctx.common_atoms.length;
-                                    if obj2.get(len_atom).is_some() {
-                                        let mut iter_obj = crate::object::object::JSObject::new();
-                                        let arr_atom = ctx.common_atoms.__iter_arr__;
-                                        let idx_atom = ctx.common_atoms.__iter_idx__;
-                                        iter_obj.set_cached(
-                                            arr_atom,
-                                            iterable,
-                                            ctx.shape_cache_mut(),
-                                        );
-                                        iter_obj.set_cached(
-                                            idx_atom,
-                                            JSValue::new_int(0),
-                                            ctx.shape_cache_mut(),
-                                        );
-                                        let iter_ptr = Box::into_raw(Box::new(iter_obj)) as usize;
-                                        ctx.runtime_mut().gc_heap_mut().track(iter_ptr);
-                                        self.allocation_count += 1;
-
-                                        JSValue::new_object(iter_ptr)
-                                    } else {
-                                        JSValue::undefined()
-                                    }
-                                }
-                            } else {
-                                let obj2: &crate::object::object::JSObject = unsafe {
-                                    &*(arr_ptr as *const crate::object::object::JSObject)
-                                };
-                                let len_atom = ctx.common_atoms.length;
-                                if obj2.get(len_atom).is_some() {
-                                    let mut iter_obj = crate::object::object::JSObject::new();
-                                    let arr_atom = ctx.common_atoms.__iter_arr__;
-                                    let idx_atom = ctx.common_atoms.__iter_idx__;
-                                    iter_obj.set_cached(arr_atom, iterable, ctx.shape_cache_mut());
-                                    iter_obj.set_cached(
-                                        idx_atom,
-                                        JSValue::new_int(0),
-                                        ctx.shape_cache_mut(),
-                                    );
-                                    let iter_ptr = Box::into_raw(Box::new(iter_obj)) as usize;
-                                    ctx.runtime_mut().gc_heap_mut().track(iter_ptr);
-                                    self.allocation_count += 1;
-
-                                    JSValue::new_object(iter_ptr)
                                 } else {
                                     JSValue::undefined()
                                 }
+                            } else {
+                                JSValue::undefined()
                             }
                         }
-                    } else if iterable.is_string() {
-                        self.create_iter_object(ctx, iterable)
                     } else {
                         JSValue::undefined()
                     };
-                    self.set_reg(dst, result);
+                    if result.is_undefined() {
+                        let msg = format!(
+                            "{} is not iterable",
+                            self.format_thrown_value(&iterable, ctx)
+                        );
+                        self.set_pending_type_error(ctx, &msg);
+                        if let Some(exc) = self.pending_throw.take() {
+                            let disp = self.dispatch_throw_value(ctx, exc);
+                            match disp {
+                                ThrowDispatch::Caught => {},
+                                ThrowDispatch::Uncaught(e) => return Err(e),
+                                ThrowDispatch::AsyncComplete(o) => match o {
+                                    ExecutionOutcome::Complete(_) => {},
+                                    _ => return Err("get_iterator error".to_string()),
+                                },
+                            }
+                        }
+                    } else {
+                        self.set_reg(dst, result);
+                    }
                 }
                 Opcode::IteratorNext => {
                     let dst_val = self.read_u16_pc();
@@ -6601,8 +6536,54 @@ impl VM {
                             self.set_reg(dst_done, JSValue::bool(true));
                         }
                     } else {
-                        self.set_reg(dst_val, JSValue::undefined());
-                        self.set_reg(dst_done, JSValue::bool(true));
+                        let next_atom = ctx.intern("next");
+                        let next_fn = iter_obj.get(next_atom).or_else(|| {
+                            let mut proto = iter_obj.prototype;
+                            while let Some(p) = proto {
+                                let pobj = unsafe { &*p };
+                                if let Some(v) = pobj.get(next_atom) {
+                                    return Some(v);
+                                }
+                                proto = pobj.prototype;
+                            }
+                            None
+                        });
+
+                        if let Some(next_fn_val) = next_fn {
+                            if next_fn_val.is_function() {
+                                match self.call_function_with_this(
+                                    ctx, next_fn_val, iter_val, &[],
+                                ) {
+                                    Ok(result) => {
+                                        if result.is_object() {
+                                            let result_obj = result.as_object();
+                                            let value = result_obj
+                                                .get(ctx.intern("value"))
+                                                .unwrap_or(JSValue::undefined());
+                                            let done = result_obj
+                                                .get(ctx.intern("done"))
+                                                .unwrap_or(JSValue::bool(false));
+                                            self.set_reg(dst_val, value);
+                                            self.set_reg(dst_done, done);
+                                        } else {
+                                            self.set_reg(dst_val, JSValue::undefined());
+                                            self.set_reg(dst_done, JSValue::bool(true));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        self.set_reg(dst_val, JSValue::undefined());
+                                        self.set_reg(dst_done, JSValue::bool(true));
+                                        return Err(e);
+                                    }
+                                }
+                            } else {
+                                self.set_reg(dst_val, JSValue::undefined());
+                                self.set_reg(dst_done, JSValue::bool(true));
+                            }
+                        } else {
+                            self.set_reg(dst_val, JSValue::undefined());
+                            self.set_reg(dst_done, JSValue::bool(true));
+                        }
                     }
                 }
                 Opcode::GetArguments => {

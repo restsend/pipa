@@ -56,6 +56,8 @@ pub enum Opcode {
     Jump = 80,
     JumpIf = 81,
     JumpIfNot = 82,
+    JumpBreak = 199,
+    EndFinally = 200,
     JumpIfNullish = 176,
     Throw = 83,
     Try = 84,
@@ -216,6 +218,8 @@ impl Opcode {
             80 => Some(Opcode::Jump),
             81 => Some(Opcode::JumpIf),
             82 => Some(Opcode::JumpIfNot),
+            199 => Some(Opcode::JumpBreak),
+            200 => Some(Opcode::EndFinally),
             176 => Some(Opcode::JumpIfNullish),
             83 => Some(Opcode::Throw),
             84 => Some(Opcode::Try),
@@ -322,7 +326,7 @@ impl Opcode {
 
     pub fn instruction_size(op: Opcode) -> usize {
         match op {
-            Opcode::Nop | Opcode::End | Opcode::Catch | Opcode::Finally => 1,
+            Opcode::Nop | Opcode::End | Opcode::Catch | Opcode::Finally | Opcode::EndFinally => 1,
             Opcode::Return => 3,
             Opcode::LoadTrue
             | Opcode::LoadFalse
@@ -370,7 +374,7 @@ impl Opcode {
             Opcode::NewRegExp => 11,
             Opcode::LoadConst | Opcode::LoadInt => 7,
             Opcode::LoadInt8 => 4,
-            Opcode::Jump => 5,
+            Opcode::Jump | Opcode::JumpBreak => 5,
             Opcode::JumpIf | Opcode::JumpIfNot | Opcode::JumpIfNullish => 7,
             Opcode::Jump8 => 2,
             Opcode::JumpIf8 | Opcode::JumpIfNot8 => 4,
@@ -626,7 +630,7 @@ impl Bytecode {
 
             let mut operands = String::new();
             match op {
-                Opcode::Nop | Opcode::End | Opcode::Catch | Opcode::Finally => {}
+                Opcode::Nop | Opcode::End | Opcode::Catch | Opcode::Finally | Opcode::EndFinally => {}
                 Opcode::Return
                 | Opcode::LoadTrue
                 | Opcode::LoadFalse
@@ -718,7 +722,7 @@ impl Bytecode {
                     let imm = read_i8(5);
                     write!(operands, " r{}, r{}, {}", dst, src, imm).unwrap();
                 }
-                Opcode::Jump => {
+                Opcode::Jump | Opcode::JumpBreak => {
                     let off = read_i32(1);
                     let size = Opcode::instruction_size(Opcode::Jump) as i32;
                     write!(operands, " {} (pc {})", off, pc as i32 + size + off).unwrap();
@@ -1152,6 +1156,7 @@ mod tests {
             Opcode::Mul,
             Opcode::Div,
             Opcode::Jump,
+            Opcode::JumpBreak,
             Opcode::JumpIf,
             Opcode::JumpIfNot,
             Opcode::GetLocal,

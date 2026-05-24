@@ -172,9 +172,16 @@ impl Parser {
                 self.advance();
                 Ok(ASTNode::EmptyStatement)
             }
-            Some((TokenType::Keyword, "var"))
-            | Some((TokenType::Keyword, "let"))
-            | Some((TokenType::Keyword, "const")) => self.parse_variable_declaration(),
+            Some((TokenType::Keyword, "var")) => self.parse_variable_declaration(),
+            Some((TokenType::Keyword, "let")) => {
+                let is_decl = self.peek_at("[") || self.peek_at("{") || self.peek_token.as_ref().map_or(false, |t| matches!(t.token_type, TokenType::Identifier) || (matches!(t.token_type, TokenType::Keyword) && t.value != "in"));
+                if is_decl {
+                    self.parse_variable_declaration()
+                } else {
+                    self.parse_expression_statement_or_labelled()
+                }
+            }
+            Some((TokenType::Keyword, "const")) => self.parse_variable_declaration(),
             Some((TokenType::Keyword, "function")) => {
                 self.advance();
                 let generator = self.at_punct("*");
@@ -709,9 +716,39 @@ impl Parser {
         if is_var {
             let kind = match self.cur_value() {
                 "var" => VariableKind::Var,
-                "let" => VariableKind::Let,
+                "let" if self.peek_at("[") || self.peek_at("{") || self.peek_token.as_ref().map_or(false, |t| matches!(t.token_type, TokenType::Identifier) || (matches!(t.token_type, TokenType::Keyword) && t.value != "in")) => VariableKind::Let,
                 "const" => VariableKind::Const,
-                _ => unreachable!(),
+                _ => {
+                    if self.cur_value() == "let" {
+                        let expr = self.parse_expression_no_in()?;
+                        if self.at_keyword("in") {
+                            self.advance();
+                            let right = self.parse_expression()?;
+                            self.expect(")")?;
+                            let body = self.parse_statement()?;
+                            return Ok(ASTNode::ForInStatement(ForInStatement {
+                                left: ForInOfLeft::AssignmentTarget(expr_to_target(expr)?),
+                                right,
+                                body: Box::new(body),
+                            }));
+                        }
+                        if self.at_keyword("of") {
+                            self.advance();
+                            let right = self.parse_expression()?;
+                            self.expect(")")?;
+                            let body = self.parse_statement()?;
+                            return Ok(ASTNode::ForOfStatement(ForOfStatement {
+                                left: ForInOfLeft::AssignmentTarget(expr_to_target(expr)?),
+                                right,
+                                body: Box::new(body),
+                                is_await,
+                            }));
+                        }
+                        self.expect(";")?;
+                        return self.parse_for_rest(Some(ForInit::Expression(expr)));
+                    }
+                    unreachable!()
+                }
             };
             self.advance();
             let mut declarations = Vec::new();

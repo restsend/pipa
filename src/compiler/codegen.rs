@@ -2053,7 +2053,7 @@ impl CodeGenerator {
                 self.gen_throw_statement(stmt, ctx)?;
             }
             ASTNode::TryStatement(stmt) => {
-                self.gen_try_statement(stmt, ctx)?;
+                self.gen_try_statement(stmt, ctx, None)?;
             }
             ASTNode::WithStatement(_) => {
                 if self.is_strict {
@@ -2139,8 +2139,11 @@ impl CodeGenerator {
             BindingPattern::ArrayPattern(arr) => {
                 self.emit(Opcode::CheckObjectCoercible);
                 self.emit_u16(value_reg);
-                let idx_reg = self.alloc_register();
-                self.emit_int_const(idx_reg, 0);
+
+                let iter_reg = self.alloc_register();
+                self.emit(Opcode::GetIterator);
+                self.emit_u16(iter_reg);
+                self.emit_u16(value_reg);
 
                 let len = arr.elements.len();
                 for (i, elem) in arr.elements.iter().enumerate() {
@@ -2151,40 +2154,21 @@ impl CodeGenerator {
                             self.emit_u16(rest_reg);
                             self.emit_u16(0);
                             let loop_start = self.code.len();
-                            let len_key = self.alloc_register();
-                            let len_atom = ctx.common_atoms.length;
-                            let len_const = self.add_constant(JSValue::new_string(len_atom));
-                            self.emit(Opcode::LoadConst);
-                            self.emit_u16(len_key);
-                            self.emit_u32(len_const);
-                            let arr_len = self.alloc_register();
-                            self.emit(Opcode::GetProp);
-                            self.emit_u16(arr_len);
-                            self.emit_u16(value_reg);
-                            self.emit_u16(len_key);
-                            self.free_register(len_key);
-                            let cmp = self.alloc_register();
-                            self.emit(Opcode::Lt);
-                            self.emit_u16(cmp);
-                            self.emit_u16(idx_reg);
-                            self.emit_u16(arr_len);
-                            self.free_register(arr_len);
-                            self.emit(Opcode::JumpIfNot);
-                            self.emit_u16(cmp);
+                            let val_for_rest = self.alloc_register();
+                            let done_for_rest = self.alloc_register();
+                            self.emit(Opcode::IteratorNext);
+                            self.emit_u16(val_for_rest);
+                            self.emit_u16(done_for_rest);
+                            self.emit_u16(iter_reg);
+                            self.emit(Opcode::JumpIf);
+                            self.emit_u16(done_for_rest);
                             let exit_patch = self.code.len();
                             self.emit_i32(0);
-                            self.free_register(cmp);
-                            let item = self.alloc_register();
-                            self.emit(Opcode::GetField);
-                            self.emit_u16(item);
-                            self.emit_u16(value_reg);
-                            self.emit_u16(idx_reg);
+                            self.free_register(done_for_rest);
                             self.emit(Opcode::ArrayPush);
                             self.emit_u16(rest_reg);
-                            self.emit_u16(item);
-                            self.free_register(item);
-                            self.emit(Opcode::IncLocal);
-                            self.emit_u16(idx_reg);
+                            self.emit_u16(val_for_rest);
+                            self.free_register(val_for_rest);
                             self.emit_backward_jump(loop_start);
                             let end_pos = self.code.len();
                             self.patch_jump(exit_patch, end_pos);
@@ -2195,50 +2179,61 @@ impl CodeGenerator {
                                 ctx,
                             )?;
                             self.free_register(rest_reg);
-                            self.free_register(idx_reg);
+                            self.free_register(iter_reg);
                             return Ok(());
                         }
                     }
 
+                    let val_reg = self.alloc_register();
+                    let done_reg = self.alloc_register();
+                    self.emit(Opcode::IteratorNext);
+                    self.emit_u16(val_reg);
+                    self.emit_u16(done_reg);
+                    self.emit_u16(iter_reg);
+
+                    self.emit(Opcode::JumpIfNot);
+                    self.emit_u16(done_reg);
+                    let not_done_skip = self.code.len();
+                    self.emit_i32(0);
+
+                    let undef_reg = self.alloc_register();
+                    self.emit(Opcode::LoadUndefined);
+                    self.emit_u16(undef_reg);
+                    self.emit(Opcode::Move);
+                    self.emit_u16(val_reg);
+                    self.emit_u16(undef_reg);
+                    self.free_register(undef_reg);
+
+                    let after_undef = self.code.len();
+                    self.patch_jump(not_done_skip, after_undef);
+                    self.free_register(done_reg);
+
                     if let Some(elem) = elem {
                         match elem {
                             PatternElement::Pattern(target) => {
-                                let elem_reg = self.alloc_register();
-                                self.emit(Opcode::GetField);
-                                self.emit_u16(elem_reg);
-                                self.emit_u16(value_reg);
-                                self.emit_u16(idx_reg);
-                                self.gen_assignment_target_binding(target, elem_reg, kind, ctx)?;
-                                self.free_register(elem_reg);
+                                self.gen_assignment_target_binding(target, val_reg, kind, ctx)?;
                             }
                             PatternElement::RestElement(_) => {
-                                return Err("rest element position not yet supported".to_string());
+                                return Err("rest element not at end".to_string());
                             }
                             PatternElement::AssignmentPattern(ap) => {
-                                let elem_reg = self.alloc_register();
-                                self.emit(Opcode::GetField);
-                                self.emit_u16(elem_reg);
-                                self.emit_u16(value_reg);
-                                self.emit_u16(idx_reg);
                                 let binding_name = match &*ap.left {
                                     AssignmentTarget::Identifier(name) => Some(name.as_str()),
                                     _ => None,
                                 };
                                 self.gen_default_value_binding(
                                     &ap.right,
-                                    elem_reg,
+                                    val_reg,
                                     binding_name,
                                     ctx,
                                 )?;
-                                self.gen_assignment_target_binding(&ap.left, elem_reg, kind, ctx)?;
-                                self.free_register(elem_reg);
+                                self.gen_assignment_target_binding(&ap.left, val_reg, kind, ctx)?;
                             }
                         }
                     }
-                    self.emit(Opcode::IncLocal);
-                    self.emit_u16(idx_reg);
+                    self.free_register(val_reg);
                 }
-                self.free_register(idx_reg);
+                self.free_register(iter_reg);
                 Ok(())
             }
             BindingPattern::ObjectPattern(obj) => {
@@ -2610,13 +2605,25 @@ impl CodeGenerator {
                 self.gen_statement(stmt, ctx)?;
                 Ok(None)
             }
-            ASTNode::ForStatement(_)
-            | ASTNode::ForInStatement(_)
-            | ASTNode::ForOfStatement(_) => {
+            ASTNode::ForStatement(f_stmt) => {
                 let reg = self.alloc_register();
-                self.gen_statement(stmt, ctx)?;
                 self.emit(Opcode::LoadUndefined);
                 self.emit_u16(reg);
+                self.gen_for_statement_with_result(f_stmt, ctx, Some(reg))?;
+                Ok(Some(reg))
+            }
+            ASTNode::ForInStatement(fi_stmt) => {
+                let reg = self.alloc_register();
+                self.emit(Opcode::LoadUndefined);
+                self.emit_u16(reg);
+                self.gen_for_in_statement_with_result(fi_stmt, ctx, Some(reg))?;
+                Ok(Some(reg))
+            }
+            ASTNode::ForOfStatement(fo_stmt) => {
+                let reg = self.alloc_register();
+                self.emit(Opcode::LoadUndefined);
+                self.emit_u16(reg);
+                self.gen_for_of_statement_with_result(fo_stmt, ctx, Some(reg))?;
                 Ok(Some(reg))
             }
             ASTNode::WhileStatement(w_stmt) => {
@@ -2978,10 +2985,10 @@ impl CodeGenerator {
         stmt: &TryStatement,
         ctx: &mut JSContext,
     ) -> Result<u16, String> {
-        self.gen_try_statement(stmt, ctx)?;
         let reg = self.alloc_register();
         self.emit(Opcode::LoadUndefined);
         self.emit_u16(reg);
+        self.gen_try_statement(stmt, ctx, Some(reg))?;
         Ok(reg)
     }
 
@@ -3146,6 +3153,15 @@ impl CodeGenerator {
         stmt: &ForStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
+        self.gen_for_statement_with_result(stmt, ctx, None)
+    }
+
+    fn gen_for_statement_with_result(
+        &mut self,
+        stmt: &ForStatement,
+        ctx: &mut JSContext,
+        result_reg: Option<u16>,
+    ) -> Result<(), String> {
         let needs_block_scope = if let Some(ForInit::VariableDeclaration(decl)) = &stmt.init {
             decl.kind != VariableKind::Var
         } else {
@@ -3235,7 +3251,11 @@ impl CodeGenerator {
             continue_target: Some(loop_start_for_continue),
         });
 
-        self.gen_statement(&stmt.body, ctx)?;
+        if let Some(v_reg) = result_reg {
+            self.gen_statement_with_target(&stmt.body, ctx, v_reg)?;
+        } else {
+            self.gen_statement(&stmt.body, ctx)?;
+        }
 
         let update_pos = self.code.len();
         if let Some(update) = &stmt.update {
@@ -3269,6 +3289,15 @@ impl CodeGenerator {
         &mut self,
         stmt: &ForInStatement,
         ctx: &mut JSContext,
+    ) -> Result<(), String> {
+        self.gen_for_in_statement_with_result(stmt, ctx, None)
+    }
+
+    fn gen_for_in_statement_with_result(
+        &mut self,
+        stmt: &ForInStatement,
+        ctx: &mut JSContext,
+        result_reg: Option<u16>,
     ) -> Result<(), String> {
         let needs_block_scope = match &stmt.left {
             ForInOfLeft::VariableDeclaration(decl) => decl.kind != VariableKind::Var,
@@ -3315,6 +3344,8 @@ impl CodeGenerator {
                 ForInOfLeft::AssignmentTarget(AssignmentTarget::Identifier(name)) => {
                     if let Some(slot) = self.lookup_var_slot(name) {
                         slot
+                    } else if !self.is_strict {
+                        self.declare_var(name, VariableKind::Var)
                     } else {
                         return Err(format!("for-in: undefined variable {}", name));
                     }
@@ -3422,7 +3453,11 @@ impl CodeGenerator {
         }
         self.free_register(key_val_reg);
 
-        self.gen_statement(&stmt.body, ctx)?;
+        if let Some(v_reg) = result_reg {
+            self.gen_statement_with_target(&stmt.body, ctx, v_reg)?;
+        } else {
+            self.gen_statement(&stmt.body, ctx)?;
+        }
 
         let continue_target = self.code.len();
         if let Some(frame) = self.breakable_frames.last_mut() {
@@ -3461,6 +3496,15 @@ impl CodeGenerator {
         &mut self,
         stmt: &ForOfStatement,
         ctx: &mut JSContext,
+    ) -> Result<(), String> {
+        self.gen_for_of_statement_with_result(stmt, ctx, None)
+    }
+
+    fn gen_for_of_statement_with_result(
+        &mut self,
+        stmt: &ForOfStatement,
+        ctx: &mut JSContext,
+        result_reg: Option<u16>,
     ) -> Result<(), String> {
         let needs_block_scope = match &stmt.left {
             ForInOfLeft::VariableDeclaration(decl) => decl.kind != VariableKind::Var,
@@ -3520,7 +3564,11 @@ impl CodeGenerator {
         }
         self.free_register(val_reg);
 
-        self.gen_statement(&stmt.body, ctx)?;
+        if let Some(v_reg) = result_reg {
+            self.gen_statement_with_target(&stmt.body, ctx, v_reg)?;
+        } else {
+            self.gen_statement(&stmt.body, ctx)?;
+        }
 
         let continue_target = self.code.len();
         if let Some(frame) = self.breakable_frames.last_mut() {
@@ -3704,6 +3752,7 @@ impl CodeGenerator {
         &mut self,
         stmt: &TryStatement,
         ctx: &mut JSContext,
+        result_reg: Option<u16>,
     ) -> Result<(), String> {
         self.emit(Opcode::Try);
         let catch_pc_pos = self.code.len();
@@ -3714,8 +3763,14 @@ impl CodeGenerator {
         self.push_scope();
         self.pre_scan_let_const(&stmt.block.body)?;
         self.emit_tdz_for_block(&stmt.block.body)?;
-        for s in &stmt.block.body {
-            self.gen_statement(s, ctx)?;
+        if let Some(v_reg) = result_reg {
+            for s in &stmt.block.body {
+                self.gen_statement_with_target(s, ctx, v_reg)?;
+            }
+        } else {
+            for s in &stmt.block.body {
+                self.gen_statement(s, ctx)?;
+            }
         }
         self.pop_scope();
 
@@ -3736,6 +3791,16 @@ impl CodeGenerator {
 
             self.push_scope();
             if let Some(param) = &handler.param {
+                if self.is_strict {
+                    if let BindingPattern::Identifier(name) = param {
+                        if name == "eval" || name == "arguments" {
+                            return Err(format!(
+                                "SyntaxError: Catch variable may not be '{}' in strict mode",
+                                name
+                            ));
+                        }
+                    }
+                }
                 match param {
                     BindingPattern::Identifier(name) => {
                         self.pre_scan_binding(param, VariableKind::Let);
@@ -3760,8 +3825,14 @@ impl CodeGenerator {
             }
             self.pre_scan_let_const(&handler.body.body)?;
             self.emit_tdz_for_block(&handler.body.body)?;
-            for s in &handler.body.body {
-                self.gen_statement(s, ctx)?;
+            if let Some(v_reg) = result_reg {
+                for s in &handler.body.body {
+                    self.gen_statement_with_target(s, ctx, v_reg)?;
+                }
+            } else {
+                for s in &handler.body.body {
+                    self.gen_statement(s, ctx)?;
+                }
             }
             self.pop_scope();
 
@@ -5497,8 +5568,10 @@ impl CodeGenerator {
         value_reg: u16,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        let idx_reg = self.alloc_register();
-        self.emit_int_const(idx_reg, 0);
+        let iter_reg = self.alloc_register();
+        self.emit(Opcode::GetIterator);
+        self.emit_u16(iter_reg);
+        self.emit_u16(value_reg);
 
         let len = arr.elements.len();
         for (i, elem) in arr.elements.iter().enumerate() {
@@ -5509,81 +5582,72 @@ impl CodeGenerator {
                     self.emit_u16(rest_reg);
                     self.emit_u16(0);
                     let loop_start = self.code.len();
-                    let len_key = self.alloc_register();
-                    let len_atom = ctx.common_atoms.length;
-                    let len_const = self.add_constant(JSValue::new_string(len_atom));
-                    self.emit(Opcode::LoadConst);
-                    self.emit_u16(len_key);
-                    self.emit_u32(len_const);
-                    let arr_len = self.alloc_register();
-                    self.emit(Opcode::GetProp);
-                    self.emit_u16(arr_len);
-                    self.emit_u16(value_reg);
-                    self.emit_u16(len_key);
-                    self.free_register(len_key);
-                    let cmp = self.alloc_register();
-                    self.emit(Opcode::Lt);
-                    self.emit_u16(cmp);
-                    self.emit_u16(idx_reg);
-                    self.emit_u16(arr_len);
-                    self.free_register(arr_len);
-                    self.emit(Opcode::JumpIfNot);
-                    self.emit_u16(cmp);
+                    let val_for_rest = self.alloc_register();
+                    let done_for_rest = self.alloc_register();
+                    self.emit(Opcode::IteratorNext);
+                    self.emit_u16(val_for_rest);
+                    self.emit_u16(done_for_rest);
+                    self.emit_u16(iter_reg);
+                    self.emit(Opcode::JumpIf);
+                    self.emit_u16(done_for_rest);
                     let exit_patch = self.code.len();
                     self.emit_i32(0);
-                    self.free_register(cmp);
-                    let item = self.alloc_register();
-                    self.emit(Opcode::GetField);
-                    self.emit_u16(item);
-                    self.emit_u16(value_reg);
-                    self.emit_u16(idx_reg);
+                    self.free_register(done_for_rest);
                     self.emit(Opcode::ArrayPush);
                     self.emit_u16(rest_reg);
-                    self.emit_u16(item);
-                    self.free_register(item);
-                    self.emit(Opcode::IncLocal);
-                    self.emit_u16(idx_reg);
+                    self.emit_u16(val_for_rest);
+                    self.free_register(val_for_rest);
                     self.emit_backward_jump(loop_start);
                     let end_pos = self.code.len();
                     self.patch_jump(exit_patch, end_pos);
-
                     self.gen_assignment_target_destructure(&rest.argument, rest_reg, ctx)?;
                     self.free_register(rest_reg);
-                    self.free_register(idx_reg);
+                    self.free_register(iter_reg);
                     return Ok(());
                 }
             }
 
+            let val_reg = self.alloc_register();
+            let done_reg = self.alloc_register();
+            self.emit(Opcode::IteratorNext);
+            self.emit_u16(val_reg);
+            self.emit_u16(done_reg);
+            self.emit_u16(iter_reg);
+
+            self.emit(Opcode::JumpIfNot);
+            self.emit_u16(done_reg);
+            let not_done_skip = self.code.len();
+            self.emit_i32(0);
+
+            let undef_reg = self.alloc_register();
+            self.emit(Opcode::LoadUndefined);
+            self.emit_u16(undef_reg);
+            self.emit(Opcode::Move);
+            self.emit_u16(val_reg);
+            self.emit_u16(undef_reg);
+            self.free_register(undef_reg);
+
+            let after_undef = self.code.len();
+            self.patch_jump(not_done_skip, after_undef);
+            self.free_register(done_reg);
+
             if let Some(elem) = elem {
                 match elem {
                     PatternElement::Pattern(target) => {
-                        let elem_reg = self.alloc_register();
-                        self.emit(Opcode::GetField);
-                        self.emit_u16(elem_reg);
-                        self.emit_u16(value_reg);
-                        self.emit_u16(idx_reg);
-                        self.gen_assignment_target_destructure(target, elem_reg, ctx)?;
-                        self.free_register(elem_reg);
+                        self.gen_assignment_target_destructure(target, val_reg, ctx)?;
                     }
                     PatternElement::RestElement(_) => {
-                        return Err("rest element position not yet supported".to_string());
+                        return Err("rest element not at end".to_string());
                     }
                     PatternElement::AssignmentPattern(ap) => {
-                        let elem_reg = self.alloc_register();
-                        self.emit(Opcode::GetField);
-                        self.emit_u16(elem_reg);
-                        self.emit_u16(value_reg);
-                        self.emit_u16(idx_reg);
-                        self.gen_default_value_assignment(&ap.right, elem_reg, ctx)?;
-                        self.gen_assignment_target_destructure(&ap.left, elem_reg, ctx)?;
-                        self.free_register(elem_reg);
+                        self.gen_default_value_assignment(&ap.right, val_reg, ctx)?;
+                        self.gen_assignment_target_destructure(&ap.left, val_reg, ctx)?;
                     }
                 }
             }
-            self.emit(Opcode::IncLocal);
-            self.emit_u16(idx_reg);
+            self.free_register(val_reg);
         }
-        self.free_register(idx_reg);
+        self.free_register(iter_reg);
         Ok(())
     }
 

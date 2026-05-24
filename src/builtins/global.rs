@@ -478,7 +478,13 @@ fn global_isnan(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::bool(true);
     }
-    JSValue::bool(args[0].get_float().is_nan())
+    let val = args[0];
+    if val.is_int() || val.is_float() {
+        JSValue::bool(val.to_number().is_nan())
+    } else {
+        let n = val.to_number();
+        JSValue::bool(n.is_nan())
+    }
 }
 
 fn global_isfinite(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
