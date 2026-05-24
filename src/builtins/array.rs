@@ -885,7 +885,7 @@ fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value];
+            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
             if let Ok(mapped_value) = call_callback(ctx, *callback, &callback_args) {
                 result.push(mapped_value);
             }

@@ -928,23 +928,35 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let value = desc_obj.get(_ctx.intern("value"));
     let getter = desc_obj.get(_ctx.intern("get"));
     let setter = desc_obj.get(_ctx.intern("set"));
-    let writable = desc_obj
-        .get(_ctx.intern("writable"))
-        .map(|v| v.is_truthy())
-        .unwrap_or(false);
-    let enumerable = desc_obj
-        .get(_ctx.intern("enumerable"))
-        .map(|v| v.is_truthy())
-        .unwrap_or(false);
-    let configurable = desc_obj
-        .get(_ctx.intern("configurable"))
-        .map(|v| v.is_truthy())
-        .unwrap_or(false);
+
+    // Only set attributes that are explicitly provided in the descriptor
+    // Per spec: missing fields in the descriptor should leave existing attributes unchanged
+    let has_enumerable = desc_obj.find_offset(_ctx.intern("enumerable")).is_some();
+    let has_writable = desc_obj.find_offset(_ctx.intern("writable")).is_some();
+    let has_configurable = desc_obj.find_offset(_ctx.intern("configurable")).is_some();
+
+    let enumerable = if has_enumerable {
+        desc_obj.get(_ctx.intern("enumerable")).map(|v| v.is_truthy()).unwrap_or(false)
+    } else {
+        // Need to get the existing value - we handle this below
+        // by checking has_enumerable in the define_property flow
+        false // placeholder, handled by has_enumerable flag
+    };
+    let writable = if has_writable {
+        desc_obj.get(_ctx.intern("writable")).map(|v| v.is_truthy()).unwrap_or(false)
+    } else {
+        false
+    };
+    let configurable = if has_configurable {
+        desc_obj.get(_ctx.intern("configurable")).map(|v| v.is_truthy()).unwrap_or(false)
+    } else {
+        false
+    };
 
     let pd = if getter.is_some() || setter.is_some() {
         crate::object::object::PropertyDescriptor {
             value: None,
-            writable: false,
+            writable,
             enumerable,
             configurable,
             get: getter,
@@ -961,7 +973,7 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     };
 
-    obj_ref.define_property(prop_atom, pd);
+    obj_ref.define_property_ext(prop_atom, pd, has_writable, has_enumerable, has_configurable);
     obj.clone()
 }
 

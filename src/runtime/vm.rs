@@ -5180,21 +5180,65 @@ impl VM {
                     if let Some(proto_ptr) = ctx.get_array_prototype() {
                         arr.header.set_prototype_raw(proto_ptr);
                     }
-                    if obj_val.is_object() || obj_val.is_function() {
-                        let js_obj = obj_val.as_object();
+                    // Collect all enumerable properties from the object and its prototype chain
+                    let mut seen = Vec::new();
+                    let obj_proto_ptr = ctx.get_object_prototype().map(|p| p as usize);
+                    let mut current_ptr = if obj_val.is_object() || obj_val.is_function() {
+                        Some(obj_val.get_ptr() as usize)
+                    } else {
+                        None
+                    };
+                    while let Some(ptr) = current_ptr {
+                        // Stop at Object.prototype
+                        if let Some(obj_proto) = obj_proto_ptr {
+                            if ptr == obj_proto {
+                                break;
+                            }
+                        }
+                        // Check if this prototype is Array.prototype or String.prototype etc.
+                        if js_obj.prototype == obj_proto_ptr && ptr != obj_val.get_ptr() as usize {
+                            // This is a built-in prototype (not Object.prototype itself)
+                            // Only include if the object IS a direct instance of this prototype
+                        }
+                        let js_obj = unsafe { &*(ptr as *const crate::object::object::JSObject) };
+                        let mut int_keys: Vec<i64> = Vec::new();
+                        let mut str_keys: Vec<crate::runtime::atom::Atom> = Vec::new();
+                        // Handle dense array indices
                         if js_obj.is_dense_array() {
                             let arr_obj = unsafe {
-                                &*(obj_val.get_ptr()
-                                    as *mut crate::object::array_obj::JSArrayObject)
+                                &*(ptr as *mut crate::object::array_obj::JSArrayObject)
                             };
                             for i in 0..arr_obj.elements.len() {
                                 let idx_atom = ctx.intern(i.to_string().as_str());
-                                arr.push(JSValue::new_string(idx_atom));
+                                if !seen.contains(&idx_atom.0) {
+                                    seen.push(idx_atom.0);
+                                    int_keys.push(i as i64);
+                                }
                             }
                         }
                         for (atom, _value) in js_obj.own_properties() {
+                            if seen.contains(&atom.0) {
+                                continue;
+                            }
+                            seen.push(atom.0);
+                            let key_str = ctx.get_atom_str(atom);
+                            if let Ok(n) = key_str.parse::<i64>() {
+                                if n >= 0 && key_str == n.to_string() {
+                                    int_keys.push(n);
+                                    continue;
+                                }
+                            }
+                            str_keys.push(atom);
+                        }
+                        int_keys.sort();
+                        for k in &int_keys {
+                            let atom = ctx.intern(&k.to_string());
                             arr.push(JSValue::new_string(atom));
                         }
+                        for atom in str_keys {
+                            arr.push(JSValue::new_string(atom));
+                        }
+                        current_ptr = js_obj.prototype.map(|p| p as usize);
                     }
                     let len_atom = ctx.common_atoms.length;
                     arr.header

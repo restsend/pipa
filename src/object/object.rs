@@ -1521,11 +1521,80 @@ impl JSObject {
     }
 
     pub fn define_property(&mut self, prop: Atom, desc: PropertyDescriptor) -> bool {
+        self.define_property_ext(prop, desc, true, true, true)
+    }
+
+    pub fn define_property_ext(
+        &mut self,
+        prop: Atom,
+        mut desc: PropertyDescriptor,
+        has_writable: bool,
+        has_enumerable: bool,
+        has_configurable: bool,
+    ) -> bool {
         if let Some(existing) = self.get_own_descriptor(prop) {
             if !existing.configurable {
-                return false;
+                if has_writable && desc.writable != existing.writable {
+                    return false;
+                }
+                if has_enumerable && desc.enumerable != existing.enumerable {
+                    return false;
+                }
+                if has_configurable && desc.configurable != existing.configurable {
+                    return false;
+                }
+                if let Some(value) = desc.value {
+                    if !existing.writable {
+                        return false;
+                    }
+                    self.set(prop, value);
+                }
+                if desc.get.is_some() || desc.set.is_some() {
+                    return false;
+                }
+                return true;
             }
-            self.delete(prop);
+            // Preserve existing attributes for any fields not specified in the descriptor
+            if !has_enumerable {
+                desc.enumerable = existing.enumerable;
+            }
+            if !has_writable {
+                desc.writable = existing.writable;
+            }
+            if !has_configurable {
+                desc.configurable = existing.configurable;
+            }
+            // Update the existing property in-place to preserve creation order
+            if desc.is_accessor() {
+                self.ensure_extra()
+                    .accessors
+                    .get_or_insert_with(|| Box::new(FxHashMap::default()))
+                    .insert(
+                        prop,
+                        AccessorEntry {
+                            get: desc.get,
+                            set: desc.set,
+                            enumerable: desc.enumerable,
+                            configurable: desc.configurable,
+                        },
+                    );
+            } else if let Some(value) = desc.value {
+                if let Some(offset) = self.find_offset(prop) {
+                    if offset < self.props.len() {
+                        self.props[offset].value = value;
+                        self.props[offset].attrs = attrs_from_bools(
+                            desc.writable, desc.enumerable, desc.configurable,
+                        );
+                    }
+                } else {
+                    self.props.push(PropSlot::new(
+                        prop,
+                        value,
+                        attrs_from_bools(desc.writable, desc.enumerable, desc.configurable),
+                    ));
+                }
+            }
+            return true;
         }
         if desc.is_accessor() {
             self.ensure_extra()
