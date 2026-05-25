@@ -1853,38 +1853,6 @@ impl CodeGenerator {
                     }
                     self.pop_scope();
                 }
-                ASTNode::ForInStatement(stmt) => {
-                    if let ForInOfLeft::VariableDeclaration(vd) = &stmt.left {
-                        if vd.kind != VariableKind::Var {
-                            for d in &vd.declarations {
-                                self.pre_scan_binding(&d.id, vd.kind);
-                            }
-                        }
-                    }
-                    self.push_scope();
-                    if let ASTNode::BlockStatement(block) = stmt.body.as_ref() {
-                        self.pre_scan_let_const(&block.body)?;
-                    } else {
-                        self.pre_scan_let_const(&[stmt.body.as_ref().clone()])?;
-                    }
-                    self.pop_scope();
-                }
-                ASTNode::ForOfStatement(stmt) => {
-                    if let ForInOfLeft::VariableDeclaration(vd) = &stmt.left {
-                        if vd.kind != VariableKind::Var {
-                            for d in &vd.declarations {
-                                self.pre_scan_binding(&d.id, vd.kind);
-                            }
-                        }
-                    }
-                    self.push_scope();
-                    if let ASTNode::BlockStatement(block) = stmt.body.as_ref() {
-                        self.pre_scan_let_const(&block.body)?;
-                    } else {
-                        self.pre_scan_let_const(&[stmt.body.as_ref().clone()])?;
-                    }
-                    self.pop_scope();
-                }
                 _ => {}
             }
         }
@@ -3680,6 +3648,16 @@ impl CodeGenerator {
         self.emit_u16(key_val_reg);
         self.emit_u16(keys_reg);
         self.emit_u16(idx_reg);
+
+        // Clear sync map for per-iteration let bindings BEFORE assigning.
+        if needs_block_scope {
+            if let Some(slot) = self.scope_stack.last().and_then(|scope| {
+                scope.iter().find(|(_, e)| e.kind != VariableKind::Var).map(|(_, e)| e.slot)
+            }) {
+                self.emit(Opcode::ResetPerIterVar);
+                self.emit_u16(slot);
+            }
+        }
         if has_complex_left {
             match &stmt.left {
                 ForInOfLeft::VariableDeclaration(decl) => {
@@ -3705,21 +3683,6 @@ impl CodeGenerator {
                 ForInOfLeft::AssignmentTarget(AssignmentTarget::Identifier(n)) => Some(n.clone()),
                 _ => None,
             };
-            // Emit ResetPerIterVar BEFORE assigning the new key to the variable
-            // so that the sync map entry is cleared and SetLocal/Move won't
-            // update the old iteration's closure cell
-            if needs_block_scope {
-                if let ForInOfLeft::VariableDeclaration(decl) = &stmt.left {
-                    if let Some(first) = decl.declarations.first() {
-                        if let BindingPattern::Identifier(name) = &first.id {
-                            if let Some(slot) = self.lookup_var_slot(name) {
-                                self.emit(Opcode::ResetPerIterVar);
-                                self.emit_u16(slot);
-                            }
-                        }
-                    }
-                }
-            }
             if var_slot != key_val_reg {
                 self.emit(Opcode::Move);
                 self.emit_u16(var_slot);

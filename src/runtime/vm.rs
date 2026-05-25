@@ -3304,6 +3304,10 @@ impl VM {
                             if slot < 64 {
                                 frame.upvalue_sync_bitset &= !(1u64 << slot);
                             }
+                            if map.is_empty() {
+                                frame.upvalue_sync_map = None;
+                                frame.upvalue_sync_bitset = 0;
+                            }
                         }
                         self.refresh_cache();
                     }
