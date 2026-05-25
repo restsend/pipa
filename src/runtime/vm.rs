@@ -6405,7 +6405,12 @@ impl VM {
                     let unboxed_func =
                         unsafe { &mut *(func_ptr as *mut crate::object::function::JSFunction) };
                     if !is_closure {
-                        let proto_obj = crate::object::object::JSObject::new();
+                        let mut proto_obj = crate::object::object::JSObject::new();
+                        // Per spec, the prototype property of a function is
+                        // a new object with Object.prototype as its prototype.
+                        if let Some(obj_pp) = ctx.get_object_prototype() {
+                            proto_obj.prototype = Some(obj_pp);
+                        }
                         let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
                         ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
                         let func_value = JSValue::new_function(func_ptr);
