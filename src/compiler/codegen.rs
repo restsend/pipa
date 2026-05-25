@@ -4368,11 +4368,10 @@ impl CodeGenerator {
                         self.emit(Opcode::GetGlobal);
                         self.emit_u16(r);
                         self.emit_u32(idx);
-                        // Emit CheckRef for closed lexical variables (out of
-                        // scope let/const) — throws ReferenceError even in
-                        // sloppy mode per spec.
+                        // Emit CheckRef for closed lexical variables, unless
+                        // suppress_ref_error is set (typeof operator).
                         let is_closed = self.parent_vars.get(&id.name).map_or(false, |pv| pv.closed);
-                        if is_closed || (!self.suppress_ref_error && self.is_strict) {
+                        if (is_closed && !self.suppress_ref_error) || (!self.suppress_ref_error && self.is_strict) {
                             self.emit(Opcode::CheckRef);
                             self.emit_u16(r);
                             self.emit_u32(idx);
