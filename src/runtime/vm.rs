@@ -6384,7 +6384,13 @@ impl VM {
                     }
 
                     if func_name_atom != 0 {
-                        func.name = crate::runtime::atom::Atom(func_name_atom);
+                        let name_atom = crate::runtime::atom::Atom(func_name_atom);
+                        func.name = name_atom;
+                        // Set .name as an own data property so that it shows
+                        // up as an own property (per spec, SetFunctionName
+                        // creates an own property, not an inherited accessor).
+                        let name_str = JSValue::new_string(name_atom);
+                        func.base.set(ctx.common_atoms.name, name_str);
                     }
 
                     let is_closure = !upvalue_descs.is_empty();
