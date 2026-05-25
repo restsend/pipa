@@ -60,6 +60,32 @@ pub fn init_function(ctx: &mut JSContext) {
         Some(create_builtin_method(ctx, "function_name")),
         None,
     );
+    // Throw TypeError accessors for .caller and .arguments.
+    // Per spec, bound and strict mode functions throw when accessing these.
+    let caller_getter = {
+        let mut f = JSFunction::new_builtin(ctx.intern("caller"), 0);
+        f.set_builtin_marker(ctx, "throw_type_error_caller");
+        let ptr = Box::into_raw(Box::new(f)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track_function(ptr);
+        JSValue::new_function(ptr)
+    };
+    let args_getter = {
+        let mut f = JSFunction::new_builtin(ctx.intern("arguments"), 0);
+        f.set_builtin_marker(ctx, "throw_type_error_caller");
+        let ptr = Box::into_raw(Box::new(f)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track_function(ptr);
+        JSValue::new_function(ptr)
+    };
+    proto_obj.define_non_enumerable_accessor(
+        ctx.intern("caller"),
+        Some(caller_getter),
+        Some(caller_getter),
+    );
+    proto_obj.define_non_enumerable_accessor(
+        ctx.intern("arguments"),
+        Some(args_getter),
+        Some(args_getter),
+    );
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto_obj.prototype = Some(obj_proto_ptr);
@@ -156,24 +182,25 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "throw_type_error_callee",
         HostFunction::new("callee", 0, throw_type_error_callee),
     );
+    ctx.register_builtin(
+        "throw_type_error_caller",
+        HostFunction::new("caller", 0, throw_type_error_caller_args),
+    );
 }
 
 fn throw_type_error_callee(ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
-    let mut err = crate::object::object::JSObject::new();
-    err.set(
-        ctx.intern("name"),
-        JSValue::new_string(ctx.intern("TypeError")),
-    );
-    err.set(
-        ctx.intern("message"),
-        JSValue::new_string(ctx.intern("arguments.callee is not supported in strict mode")),
-    );
-    if let Some(proto) = ctx.get_type_error_prototype() {
-        err.prototype = Some(proto);
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        vm.set_pending_type_error(ctx, "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
     }
-    let ptr = Box::into_raw(Box::new(err)) as usize;
-    ctx.runtime_mut().gc_heap_mut().track(ptr);
-    ctx.pending_exception = Some(JSValue::new_object(ptr));
+    JSValue::undefined()
+}
+
+fn throw_type_error_caller_args(ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        vm.set_pending_type_error(ctx, "'caller', 'callee', and 'arguments' properties may not be accessed on strict mode functions or the arguments objects for calls to them");
+    }
     JSValue::undefined()
 }
 
@@ -292,6 +319,9 @@ fn function_bind(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     let mut wrapper = JSObject::new();
+    if let Some(proto_ptr) = ctx.get_function_prototype() {
+        wrapper.prototype = Some(proto_ptr);
+    }
     wrapper.set(ctx.common_atoms.__boundFn, *this_val);
     wrapper.set(ctx.common_atoms.__boundThis, this_arg);
 

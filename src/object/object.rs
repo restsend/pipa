@@ -1031,6 +1031,26 @@ impl JSObject {
             );
     }
 
+    pub fn define_non_enumerable_accessor(
+        &mut self,
+        prop: Atom,
+        getter: Option<JSValue>,
+        setter: Option<JSValue>,
+    ) {
+        self.ensure_extra()
+            .accessors
+            .get_or_insert_with(|| Box::new(FxHashMap::default()))
+            .insert(
+                prop,
+                AccessorEntry {
+                    get: getter,
+                    set: setter,
+                    enumerable: false,
+                    configurable: false,
+                },
+            );
+    }
+
     pub fn get_own_private_accessor_entry(&self, prop: Atom) -> Option<&AccessorEntry> {
         self.extra.as_ref()?.private_accessors.as_ref()?.get(&prop)
     }

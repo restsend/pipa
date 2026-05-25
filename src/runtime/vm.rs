@@ -1194,7 +1194,7 @@ impl VM {
     }
 
     #[cold]
-    fn set_pending_type_error(&mut self, ctx: &mut JSContext, msg: &str) {
+    pub fn set_pending_type_error(&mut self, ctx: &mut JSContext, msg: &str) {
         use crate::object::object::JSObject;
         let mut err = JSObject::new();
         let name_atom = ctx.intern("name");
