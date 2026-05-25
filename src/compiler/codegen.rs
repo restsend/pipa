@@ -1373,6 +1373,16 @@ impl CodeGenerator {
         assert_eq!(this_slot, 0);
         self.reserved_slots.insert(this_slot);
 
+        // Allocate parameter variable slots AFTER the value register range
+        // so that we can load TDZ without corrupting argument values.
+        let value_reg_count = params.len() as u16;
+        // Leave room for value_regs (1..=value_reg_count) and this_slot (0).
+        // Parameter variable slots and save temps start at value_reg_count + 1.
+        let param_slot_start = value_reg_count + 1;
+        if self.next_register < param_slot_start {
+            self.next_register = param_slot_start;
+        }
+
         let mut fixed_param_count = 0u16;
         let mut before_default = true;
 
@@ -1390,61 +1400,53 @@ impl CodeGenerator {
             }
             match param {
                 Parameter::Identifier(name) => {
-                    self.declare_var(name, VariableKind::Var);
+                    let slot = self.declare_var(name, VariableKind::Let);
                     if before_default {
                         fixed_param_count += 1;
                     }
+                    // Set to TDZ so default value evaluation of later params
+                    // referencing this param throws ReferenceError.
+                    self.emit(Opcode::LoadTdz);
+                    self.emit_u16(slot);
                 }
                 Parameter::Pattern(pattern) => {
-                    self.predeclare_binding_pattern(pattern, VariableKind::Var);
+                    self.predeclare_binding_pattern(pattern, VariableKind::Let);
                     if before_default {
                         fixed_param_count += 1;
                     }
                 }
                 Parameter::AssignmentPattern(ap) => {
-                    self.predeclare_assignment_target(&ap.left, VariableKind::Var);
+                    self.predeclare_assignment_target(&ap.left, VariableKind::Let);
                     before_default = false;
                 }
                 Parameter::RestElement(rest) => {
-                    self.predeclare_assignment_target(&rest.argument, VariableKind::Var);
+                    self.predeclare_assignment_target(&rest.argument, VariableKind::Let);
                     before_default = false;
                 }
             }
         }
         self.max_register = self.max_register.max(fixed_param_count);
 
+        // Save argument values into temp registers before loading TDZ.
+        // This preserves the actual argument values from being overwritten
+        // when we LoadTdz into the same registers (slot == value_reg for
+        // simple params).
+        let mut arg_saves: Vec<Option<u16>> = Vec::new();
         for (index, param) in params.iter().enumerate() {
-            let value_reg = (index as u16) + 1;
-            match param {
-                Parameter::Identifier(name) => {
-                    if let Some(slot) = self.lookup_var_slot(name) {
-                        if slot != value_reg {
-                            self.emit(Opcode::Move);
-                            self.emit_u16(slot);
-                            self.emit_u16(value_reg);
-                        }
-                    }
-                }
-                Parameter::Pattern(pattern) => {
-                    self.gen_binding_pattern(pattern, value_reg, VariableKind::Var, ctx)?;
-                }
-                Parameter::AssignmentPattern(ap) => {
-                    let binding_name = match &*ap.left {
-                        AssignmentTarget::Identifier(name) => Some(name.as_str()),
-                        _ => None,
-                    };
-                    self.gen_default_value_binding(&ap.right, value_reg, binding_name, ctx)?;
-                    self.gen_assignment_target_binding(
-                        &ap.left,
-                        value_reg,
-                        VariableKind::Var,
-                        ctx,
-                    )?;
-                }
-                Parameter::RestElement(_) => break,
+            if matches!(param, Parameter::RestElement(_)) {
+                arg_saves.push(None);
+                continue;
             }
+            let value_reg = (index as u16) + 1;
+            let tmp = self.alloc_register();
+            self.emit(Opcode::Move);
+            self.emit_u16(tmp);
+            self.emit_u16(value_reg);
+            arg_saves.push(Some(tmp));
         }
 
+        // Gather rest parameters BEFORE LoadTdz (which overwrites param
+        // slots that may overlap with extra argument registers).
         if params
             .iter()
             .any(|p| matches!(p, Parameter::RestElement(_)))
@@ -1458,11 +1460,79 @@ impl CodeGenerator {
                     self.gen_assignment_target_binding(
                         &rest.argument,
                         rest_source_reg,
-                        VariableKind::Var,
+                        VariableKind::Let,
                         ctx,
                     )?;
                     break;
                 }
+            }
+        }
+
+        // Emit LoadTdz for ALL parameter slots to establish TDZ during
+        // default value evaluation. Skip rest element slots since they've
+        // already been bound by GatherRest.
+        for (name, entry) in &self.scope_stack[0].clone() {
+            if entry.kind != VariableKind::Var {
+                // Skip if this variable is the rest parameter
+                let is_rest = params.iter().any(|p| {
+                    if let Parameter::RestElement(rest) = p {
+                        matches!(&*rest.argument, AssignmentTarget::Identifier(n) if n == name)
+                    } else {
+                        false
+                    }
+                });
+                if !is_rest {
+                    self.emit(Opcode::LoadTdz);
+                    self.emit_u16(entry.slot);
+                }
+            }
+        }
+
+        for (index, param) in params.iter().enumerate() {
+            let value_reg = (index as u16) + 1;
+            let saved_tmp = arg_saves[index];
+            
+            if let Some(tmp) = saved_tmp {
+                // Restore the argument value from the saved temp, overwriting TDZ.
+                self.emit(Opcode::Move);
+                self.emit_u16(value_reg);
+                self.emit_u16(tmp);
+                self.free_register(tmp);
+            }
+
+            match param {
+                Parameter::Identifier(name) => {
+                    if let Some(slot) = self.lookup_var_slot(name) {
+                        if slot != value_reg {
+                            self.emit(Opcode::Move);
+                            self.emit_u16(slot);
+                            self.emit_u16(value_reg);
+                        }
+                        for scope in self.scope_stack.iter_mut().rev() {
+                            if let Some(entry) = scope.get_mut(name) {
+                                entry.initialized = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Parameter::Pattern(pattern) => {
+                    self.gen_binding_pattern(pattern, value_reg, VariableKind::Let, ctx)?;
+                }
+                Parameter::AssignmentPattern(ap) => {
+                    let binding_name = match &*ap.left {
+                        AssignmentTarget::Identifier(name) => Some(name.as_str()),
+                        _ => None,
+                    };
+                    self.gen_default_value_binding(&ap.right, value_reg, binding_name, ctx)?;
+                    self.gen_assignment_target_binding(
+                        &ap.left,
+                        value_reg,
+                        VariableKind::Let,
+                        ctx,
+                    )?;
+                }
+                Parameter::RestElement(_) => break,
             }
         }
 
@@ -2479,6 +2549,13 @@ impl CodeGenerator {
                     self.emit(Opcode::Move);
                     self.emit_u16(slot);
                     self.emit_u16(value_reg);
+                }
+                // Mark as initialized so CheckTdz is not emitted
+                for scope in self.scope_stack.iter_mut().rev() {
+                    if let Some(entry) = scope.get_mut(name) {
+                        entry.initialized = true;
+                        break;
+                    }
                 }
                 if kind == VariableKind::Var
                     && self.is_global_scope()
