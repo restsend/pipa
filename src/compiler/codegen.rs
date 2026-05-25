@@ -1385,6 +1385,7 @@ impl CodeGenerator {
 
         let mut fixed_param_count = 0u16;
         let mut before_default = true;
+        let mut needs_tdz = false;
 
         for param in params {
             if self.is_strict {
@@ -1403,21 +1404,36 @@ impl CodeGenerator {
                     let slot = self.declare_var(name, VariableKind::Let);
                     if before_default {
                         fixed_param_count += 1;
+                    } else {
+                        needs_tdz = true;
                     }
-                    // Set to TDZ so default value evaluation of later params
-                    // referencing this param throws ReferenceError.
-                    self.emit(Opcode::LoadTdz);
-                    self.emit_u16(slot);
+                    // Only emit LoadTdz for params that come AFTER the first
+                    // default (may be referenced by earlier defaults) or for
+                    // params that ARE defaults (self-reference check).
+                    if needs_tdz || matches!(param, Parameter::AssignmentPattern(_)) {
+                        self.emit(Opcode::LoadTdz);
+                        self.emit_u16(slot);
+                    }
                 }
                 Parameter::Pattern(pattern) => {
                     self.predeclare_binding_pattern(pattern, VariableKind::Let);
                     if before_default {
                         fixed_param_count += 1;
+                    } else {
+                        needs_tdz = true;
                     }
                 }
                 Parameter::AssignmentPattern(ap) => {
                     self.predeclare_assignment_target(&ap.left, VariableKind::Let);
                     before_default = false;
+                    // Put this param's variable slot into TDZ so its own
+                    // default value evaluation can detect self-references.
+                    if let Some(name) = self.first_binding_name(&ap.left) {
+                        if let Some(slot) = self.lookup_var_slot(&name) {
+                            self.emit(Opcode::LoadTdz);
+                            self.emit_u16(slot);
+                        }
+                    }
                 }
                 Parameter::RestElement(rest) => {
                     self.predeclare_assignment_target(&rest.argument, VariableKind::Let);
@@ -1464,26 +1480,6 @@ impl CodeGenerator {
                         ctx,
                     )?;
                     break;
-                }
-            }
-        }
-
-        // Emit LoadTdz for ALL parameter slots to establish TDZ during
-        // default value evaluation. Skip rest element slots since they've
-        // already been bound by GatherRest.
-        for (name, entry) in &self.scope_stack[0].clone() {
-            if entry.kind != VariableKind::Var {
-                // Skip if this variable is the rest parameter
-                let is_rest = params.iter().any(|p| {
-                    if let Parameter::RestElement(rest) = p {
-                        matches!(&*rest.argument, AssignmentTarget::Identifier(n) if n == name)
-                    } else {
-                        false
-                    }
-                });
-                if !is_rest {
-                    self.emit(Opcode::LoadTdz);
-                    self.emit_u16(entry.slot);
                 }
             }
         }
@@ -2689,6 +2685,35 @@ impl CodeGenerator {
             BindingPattern::AssignmentPattern(ap) => {
                 self.predeclare_assignment_target(&ap.left, kind);
             }
+        }
+    }
+
+    fn first_binding_name(&self, target: &AssignmentTarget) -> Option<String> {
+        match target {
+            AssignmentTarget::Identifier(name) => Some(name.clone()),
+            AssignmentTarget::ArrayPattern(arr) => {
+                arr.elements.first().and_then(|e| {
+                    if let Some(pat) = e {
+                        match pat {
+                            PatternElement::Pattern(p) => self.first_binding_name(p),
+                            PatternElement::RestElement(r) => self.first_binding_name(&r.argument),
+                            PatternElement::AssignmentPattern(ap) => self.first_binding_name(&ap.left),
+                        }
+                    } else {
+                        None
+                    }
+                })
+            }
+            AssignmentTarget::ObjectPattern(obj) => {
+                obj.properties.first().and_then(|prop| {
+                    match prop {
+                        ObjectPatternProperty::Property { value, .. } => self.first_binding_name(value),
+                        ObjectPatternProperty::RestElement(r) => self.first_binding_name(&r.argument),
+                    }
+                })
+            }
+            AssignmentTarget::AssignmentPattern(ap) => self.first_binding_name(&ap.left),
+            _ => None,
         }
     }
 
