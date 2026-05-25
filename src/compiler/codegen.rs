@@ -1374,6 +1374,8 @@ impl CodeGenerator {
         self.reserved_slots.insert(this_slot);
 
         let mut fixed_param_count = 0u16;
+        let mut before_default = true;
+
         for param in params {
             if self.is_strict {
                 match param {
@@ -1389,18 +1391,23 @@ impl CodeGenerator {
             match param {
                 Parameter::Identifier(name) => {
                     self.declare_var(name, VariableKind::Var);
-                    fixed_param_count += 1;
+                    if before_default {
+                        fixed_param_count += 1;
+                    }
                 }
                 Parameter::Pattern(pattern) => {
                     self.predeclare_binding_pattern(pattern, VariableKind::Var);
-                    fixed_param_count += 1;
+                    if before_default {
+                        fixed_param_count += 1;
+                    }
                 }
                 Parameter::AssignmentPattern(ap) => {
                     self.predeclare_assignment_target(&ap.left, VariableKind::Var);
-                    fixed_param_count += 1;
+                    before_default = false;
                 }
                 Parameter::RestElement(rest) => {
                     self.predeclare_assignment_target(&rest.argument, VariableKind::Var);
+                    before_default = false;
                 }
             }
         }
