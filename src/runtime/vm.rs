@@ -918,6 +918,26 @@ impl VM {
                 }
                 Ok(true)
             } else if js_func.is_builtin() {
+                if is_call_new && !ctx.builtin_is_constructor(
+                    &js_func.builtin_atom.map(|ba| ctx.get_atom_str(ba).to_string()).unwrap_or_default()
+                ) {
+                    self.set_pending_type_error(ctx, "not a constructor");
+                    if let Some(exc) = self.pending_throw.take() {
+                        match self.dispatch_throw_value(ctx, exc) {
+                            ThrowDispatch::Caught => return Ok(false),
+                            ThrowDispatch::Uncaught(e) => return Err(e),
+                        ThrowDispatch::AsyncComplete(ExecutionOutcome::Complete(v)) => {
+                            self.set_reg(dst, v);
+                            return Ok(false);
+                        }
+                        ThrowDispatch::AsyncComplete(ExecutionOutcome::Yield(v)) => {
+                            self.set_reg(dst, v);
+                            return Ok(false);
+                        }
+                        }
+                    }
+                    return Ok(false);
+                }
                 let caller_base = self.cached_registers_base;
                 let mut args_buf = [JSValue::undefined(); 17];
                 let builtin_name = js_func
