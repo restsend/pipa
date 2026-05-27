@@ -125,13 +125,27 @@ pub fn init_string(ctx: &mut JSContext) {
     let mut string_func = crate::object::function::JSFunction::new_builtin(string_atom, 1);
     string_func.set_builtin_marker(ctx, "string_constructor");
 
-    string_func.base.set(
+    string_func.base.define_property(
         ctx.intern("fromCharCode"),
-        create_builtin_function(ctx, "string_fromCharCode"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(create_builtin_function(ctx, "string_fromCharCode")),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
     );
-    string_func.base.set(
+    string_func.base.define_property(
         ctx.intern("fromCodePoint"),
-        create_builtin_function(ctx, "string_fromCodePoint"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(create_builtin_function(ctx, "string_fromCodePoint")),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
     );
 
     let string_ptr = Box::into_raw(Box::new(string_func)) as usize;
@@ -898,9 +912,45 @@ fn string_fromcharcode(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 fn string_fromcodepoint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let mut result = String::new();
     for arg in args {
-        let code = arg.get_int() as u32;
+        let cp = if arg.is_int() {
+            arg.get_int() as f64
+        } else if arg.is_float() {
+            arg.get_float()
+        } else if arg.is_undefined() || arg.is_null() {
+            0.0
+        } else if arg.is_bool() {
+            if arg.get_bool() { 1.0 } else { 0.0 }
+        } else {
+            let mut err = crate::object::object::JSObject::new();
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Invalid code point")));
+            if let Some(proto) = ctx.get_type_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        };
+        if cp.is_nan() || cp < 0.0 || cp > 1114111.0 || cp != cp.floor() {
+            let mut err = crate::object::object::JSObject::new();
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Invalid code point")));
+            if let Some(proto) = ctx.get_range_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+        let code = cp as u32;
         if let Some(c) = char::from_u32(code) {
             result.push(c);
+        } else if code >= 0xD800 && code <= 0xDFFF {
+            result.push('\u{FFFD}');
+        } else {
+            result.push('\u{FFFD}');
         }
     }
     JSValue::new_string(ctx.intern(&result))
