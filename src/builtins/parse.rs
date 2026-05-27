@@ -112,24 +112,43 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
         } else if ra.is_object() {
             let obj = ra.as_object();
+            let mut radix_num = None;
             if let Some(val_of) = obj.get(ctx.intern("valueOf")) {
                 if val_of.is_function() {
                     if let Some(ptr) = ctx.get_register_vm_ptr() {
                         let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
                         match vm.call_function_with_this(ctx, val_of, *ra, &[]) {
-                            Ok(result) if result.is_int() => result.get_int() as f64,
-                            Ok(result) if result.is_float() => result.get_float(),
-                            _ => 0.0,
+                            Ok(result) if result.is_int() => radix_num = Some(result.get_int() as f64),
+                            Ok(result) if result.is_float() => radix_num = Some(result.get_float()),
+                            Ok(result) if result.is_bool() => {
+                                radix_num = Some(if result.get_bool() { 1.0 } else { 0.0 });
+                            }
+                            _ => {}
                         }
-                    } else {
-                        0.0
                     }
-                } else {
-                    0.0
                 }
-            } else {
-                0.0
             }
+            if radix_num.is_none() {
+                if let Some(to_str) = obj.get(ctx.intern("toString")) {
+                    if to_str.is_function() {
+                        if let Some(ptr) = ctx.get_register_vm_ptr() {
+                            let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                            match vm.call_function_with_this(ctx, to_str, *ra, &[]) {
+                                Ok(result) if result.is_string() => {
+                                    let s = ctx.get_atom_str(result.get_atom());
+                                    if let Ok(v) = s.trim().parse::<f64>() {
+                                        radix_num = Some(v);
+                                    }
+                                }
+                                Ok(result) if result.is_int() => radix_num = Some(result.get_int() as f64),
+                                Ok(result) if result.is_float() => radix_num = Some(result.get_float()),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            radix_num.unwrap_or(0.0)
         } else {
             0.0
         };
