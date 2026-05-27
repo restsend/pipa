@@ -574,6 +574,11 @@ impl JSObject {
     }
 
     #[inline(always)]
+    pub fn clear_dense_array_flag(&mut self) {
+        self.flags &= !FLAG_DENSE_ARRAY;
+    }
+
+    #[inline(always)]
     pub fn set_prototype_raw(&mut self, ptr: *mut JSObject) {
         self.prototype = if ptr.is_null() { None } else { Some(ptr) }
     }
@@ -2074,6 +2079,10 @@ impl JSObject {
     #[inline(always)]
     pub fn props_len(&self) -> usize {
         self.props.len()
+    }
+
+    pub fn iter_props(&self) -> SmallPropIter<'_> {
+        self.props.iter()
     }
 
     #[inline]

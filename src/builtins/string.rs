@@ -1144,12 +1144,14 @@ fn string_replace(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 }
 
-fn js_to_length(val: &JSValue) -> usize {
+pub fn js_to_length(val: &JSValue) -> u64 {
     let n = val.to_number();
-    if n.is_nan() || n.is_infinite() || n <= 0.0 {
+    if n.is_nan() || n <= 0.0 {
         0
+    } else if n.is_infinite() {
+        u64::MAX
     } else {
-        n as usize
+        n as u64
     }
 }
 
@@ -1180,7 +1182,7 @@ fn string_pad_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         None => return JSValue::undefined(),
     };
     let target_len = if args.len() > 1 {
-        js_to_length(&args[1])
+        js_to_length(&args[1]).min(1 << 30) as usize
     } else {
         0
     };
@@ -1221,7 +1223,7 @@ fn string_pad_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         None => return JSValue::undefined(),
     };
     let target_len = if args.len() > 1 {
-        js_to_length(&args[1])
+        js_to_length(&args[1]).min(1 << 30) as usize
     } else {
         0
     };

@@ -1,3 +1,4 @@
+use crate::builtins::string::js_to_length;
 use crate::host::HostFunction;
 use crate::object::array_obj::JSArrayObject;
 use crate::object::function::JSFunction;
@@ -685,27 +686,57 @@ fn array_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let length_atom = ctx.common_atoms.length;
     let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
+        if l.is_int() { l.get_int() as u64 } else { 0 }
     } else {
         0
     };
 
-    let from_index = if args.len() > 2 {
-        args[2].get_int() as i32
+    let from_index_f = if args.len() > 2 {
+        args[2].to_number()
     } else {
-        0
+        0.0
     };
 
-    let start = if from_index < 0 {
-        ((len as i32) + from_index).max(0) as u32
+    let start = if from_index_f.is_nan() {
+        0u64
+    } else if from_index_f < 0.0 {
+        ((len as f64) + from_index_f).max(0.0) as u64
     } else {
-        from_index.min(len as i32) as u32
+        (from_index_f as u64).min(len)
     };
 
-    for i in start..len {
-        if let Some(val) = array_get(obj, i as usize, ctx) {
-            if val.strict_eq(search) {
-                return JSValue::new_int(i as i64);
+    if start >= len {
+        return JSValue::new_int(-1);
+    }
+
+    if len - start > 10_000_000 {
+        if obj.is_dense_array() {
+            let ptr = this.get_ptr();
+            let dense_arr = unsafe { &*(ptr as *const crate::object::array_obj::JSArrayObject) };
+            let dense_len = dense_arr.elements.len() as u64;
+            for i in start..dense_len.min(len) {
+                if let Some(val) = dense_arr.elements.get(i as usize) {
+                    if val.strict_eq(search) {
+                        return JSValue::new_int(i as i64);
+                    }
+                }
+            }
+        } else {
+            for slot in obj.iter_props() {
+                let s = ctx.get_atom_str(slot.atom);
+                if let Ok(idx) = s.parse::<u64>() {
+                    if idx >= start && idx < len && slot.value.strict_eq(search) {
+                        return JSValue::new_int(idx as i64);
+                    }
+                }
+            }
+        }
+    } else {
+        for i in start..len {
+            if let Some(val) = array_get(obj, i as usize, ctx) {
+                if val.strict_eq(search) {
+                    return JSValue::new_int(i as i64);
+                }
             }
         }
     }
@@ -729,20 +760,75 @@ fn array_includes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let length_atom = ctx.common_atoms.length;
     let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
+        if l.is_int() { l.get_int() as u64 } else { 0 }
     } else {
         0
     };
 
-    for i in 0..len {
-        if let Some(val) = array_get(obj, i as usize, ctx) {
-            if val.strict_eq(search) {
-                return JSValue::bool(true);
+    let from_index_f = if args.len() > 2 {
+        args[2].to_number()
+    } else {
+        0.0
+    };
+
+    let start = if from_index_f.is_nan() {
+        0u64
+    } else if from_index_f < 0.0 {
+        ((len as f64) + from_index_f).max(0.0) as u64
+    } else {
+        (from_index_f as u64).min(len)
+    };
+
+    if start >= len {
+        return JSValue::bool(false);
+    }
+
+    if len - start > 10_000_000 {
+        if obj.is_dense_array() {
+            let ptr = this.get_ptr();
+            let dense_arr = unsafe { &*(ptr as *const crate::object::array_obj::JSArrayObject) };
+            let dense_len = dense_arr.elements.len() as u64;
+            for i in start..dense_len.min(len) {
+                if let Some(val) = dense_arr.elements.get(i as usize) {
+                    if val_same_value_zero(val, search) {
+                        return JSValue::bool(true);
+                    }
+                }
+            }
+        } else {
+            for slot in obj.iter_props() {
+                let s = ctx.get_atom_str(slot.atom);
+                if let Ok(idx) = s.parse::<u64>() {
+                    if idx >= start && idx < len && val_same_value_zero(&slot.value, search) {
+                        return JSValue::bool(true);
+                    }
+                }
+            }
+        }
+    } else {
+        for i in start..len {
+            if let Some(val) = array_get(obj, i as usize, ctx) {
+                if val_same_value_zero(&val, search) {
+                    return JSValue::bool(true);
+                }
             }
         }
     }
 
     JSValue::bool(false)
+}
+
+fn val_same_value_zero(a: &JSValue, b: &JSValue) -> bool {
+    if a.is_float() && b.is_float() {
+        let af = a.get_float();
+        let bf = b.get_float();
+        if af.is_nan() && bf.is_nan() {
+            return true;
+        }
+        af.to_bits() == bf.to_bits()
+    } else {
+        a.strict_eq(b)
+    }
 }
 
 fn array_join(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1356,35 +1442,67 @@ fn array_splice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        arr.get(len_atom).as_ref().map(|v| js_to_length(v)).unwrap_or(0)
     };
     let start = args
         .get(1)
         .map(|v| {
-            let i = v.get_int() as isize;
-            if i < 0 {
-                (len as isize + i).max(0) as usize
-            } else {
-                (i as usize).min(len)
-            }
+            let n = v.to_number();
+            let i = if n < 0.0 { (len as f64 + n).max(0.0) as u64 } else { n.min(len as f64) as u64 };
+            i.min(len)
         })
         .unwrap_or(0);
     let delete_count = args
         .get(2)
-        .map(|v| (v.get_int() as usize).min(len - start))
-        .unwrap_or(len - start);
+        .map(|v| (js_to_length(v)).min(len.saturating_sub(start)))
+        .unwrap_or(len.saturating_sub(start));
     let insert_items: Vec<JSValue> = args.iter().skip(3).copied().collect();
 
-    let mut elements: Vec<JSValue> = (0..len)
-        .map(|i| {
-            let arr = this.as_object();
-            array_get(arr, i, ctx).unwrap_or(JSValue::undefined())
-        })
-        .collect();
+    let new_len = len - delete_count + insert_items.len() as u64;
+    let mut removed: Vec<JSValue> = Vec::with_capacity(delete_count.min(1024) as usize);
 
-    let removed: Vec<JSValue> = elements
-        .splice(start..start + delete_count, insert_items)
-        .collect();
+    for i in 0..delete_count {
+        let arr = this.as_object();
+        removed.push(array_get(arr, (start + i) as usize, ctx).unwrap_or(JSValue::undefined()));
+    }
+
+    let shift = insert_items.len() as i64 - delete_count as i64;
+
+    if shift < 0 {
+        for i in start..(len - delete_count) {
+            let src_idx = (start + delete_count + (i - start)) as usize;
+            let dst_idx = (start + insert_items.len() as u64 + (i - start)) as usize;
+            let val = {
+                let arr = this.as_object();
+                array_get(arr, src_idx, ctx).unwrap_or(JSValue::undefined())
+            };
+            let arr = this.as_object_mut();
+            arr.set(ctx.int_atom_mut(dst_idx), val);
+        }
+        for i in new_len..len {
+            let arr = this.as_object_mut();
+            arr.delete(ctx.int_atom_mut(i as usize));
+        }
+    } else if shift > 0 {
+        for i in (start..(len - delete_count)).rev() {
+            let src_idx = (start + delete_count + (i - start)) as usize;
+            let dst_idx = (start + insert_items.len() as u64 + (i - start)) as usize;
+            let val = {
+                let arr = this.as_object();
+                array_get(arr, src_idx, ctx).unwrap_or(JSValue::undefined())
+            };
+            let arr = this.as_object_mut();
+            arr.set(ctx.int_atom_mut(dst_idx), val);
+        }
+    }
+
+    for (i, item) in insert_items.iter().enumerate() {
+        let arr = this.as_object_mut();
+        arr.set(ctx.int_atom_mut((start + i as u64) as usize), *item);
+    }
+
+    let arr = this.as_object_mut();
+    arr.set_length(len_atom, JSValue::new_int(new_len as i64));
 
     let mut removed_arr = new_jsarray_with_proto(ctx);
     for v in removed.iter() {
@@ -1393,21 +1511,6 @@ fn array_splice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     removed_arr
         .header
         .set_length(len_atom, JSValue::new_int(removed_arr.len() as i64));
-
-    let arr = this.as_object_mut();
-    if this.as_object().is_dense_array() {
-        let arr_obj = unsafe { &mut *(this.get_ptr() as *mut JSArrayObject) };
-        arr_obj.set_elements(elements);
-        arr_obj
-            .header
-            .set_length(len_atom, JSValue::new_int(arr_obj.len() as i64));
-    } else {
-        for (i, val) in elements.iter().enumerate() {
-            let key = ctx.int_atom_mut(i);
-            arr.set(key, *val);
-        }
-        arr.set_length(len_atom, JSValue::new_int(elements.len() as i64));
-    }
 
     alloc_jsarray(removed_arr, ctx)
 }
@@ -1777,11 +1880,62 @@ fn array_last_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let len_atom = ctx.common_atoms.length;
     let arr = this.as_object();
-    let len = arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0);
-    for i in (0..len).rev() {
-        if let Some(el) = array_get(arr, i, ctx) {
-            if el.strict_eq(&search) {
-                return JSValue::new_int(i as i64);
+    let len = arr.get(len_atom).map(|v| v.get_int() as u64).unwrap_or(0);
+
+    let from_index_f = if args.len() > 2 {
+        args[2].to_number()
+    } else {
+        len.saturating_sub(1) as f64
+    };
+
+    let end = if from_index_f.is_nan() {
+        0i64
+    } else if from_index_f < 0.0 {
+        ((len as f64) + from_index_f).max(-1.0) as i64
+    } else {
+        (from_index_f as u64).min(len.saturating_sub(1)) as i64
+    };
+
+    if end < 0 || len == 0 {
+        return JSValue::new_int(-1);
+    }
+
+    let end_u = end as u64;
+
+    if end_u > 10_000_000 {
+        if arr.is_dense_array() {
+            let ptr = this.get_ptr();
+            let dense_arr = unsafe { &*(ptr as *const crate::object::array_obj::JSArrayObject) };
+            let dense_len = dense_arr.elements.len() as u64;
+            for i in (0..=end_u.min(dense_len.saturating_sub(1))).rev() {
+                if let Some(val) = dense_arr.elements.get(i as usize) {
+                    if val.strict_eq(&search) {
+                        return JSValue::new_int(i as i64);
+                    }
+                }
+            }
+        } else {
+            let mut candidates: Vec<u64> = Vec::new();
+            for slot in arr.iter_props() {
+                let s = ctx.get_atom_str(slot.atom);
+                if let Ok(idx) = s.parse::<u64>() {
+                    if idx <= end_u && idx < len && slot.value.strict_eq(&search) {
+                        candidates.push(idx);
+                    }
+                }
+            }
+            if let Some(&max) = candidates.iter().max() {
+                return JSValue::new_int(max as i64);
+            }
+        }
+    } else {
+        for i in (0..=end_u).rev() {
+            if i < len {
+                if let Some(el) = array_get(arr, i as usize, ctx) {
+                    if el.strict_eq(&search) {
+                        return JSValue::new_int(i as i64);
+                    }
+                }
             }
         }
     }

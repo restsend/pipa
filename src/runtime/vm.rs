@@ -4212,6 +4212,23 @@ impl VM {
                                 }
                                 if let Some(setter) = setter_found {
                                     let _ = self.call_function_with_this(ctx, setter, obj_val, &[value]);
+                                } else if idx > 100_000 {
+                                    let len_atom = ctx.common_atoms.length;
+                                    let old_len = arr
+                                        .header
+                                        .get(len_atom)
+                                        .map(|v| if v.is_int() { v.get_int() as usize } else { 0 })
+                                        .unwrap_or(0);
+                                    if idx + 1 > old_len {
+                                        arr.header.set_length_ic(
+                                            len_atom,
+                                            JSValue::new_int((idx + 1) as i64),
+                                            ctx.shape_cache_mut(),
+                                        );
+                                    }
+                                    let key_atom = self.int_atom(idx, ctx);
+                                    arr.header.set_cached(key_atom, value, ctx.shape_cache_mut());
+                                    arr.header.clear_dense_array_flag();
                                 } else {
                                     while arr.elements.len() < idx {
                                         arr.elements.push(JSValue::undefined());
