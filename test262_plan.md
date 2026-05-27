@@ -13,11 +13,11 @@
 
 | Module | Pass | Fail | Total | Pass Rate |
 |---|---|---|---|---|
-| Math | 282 | 42 | 324 | 86.7% |
-| Number | 321 | 18 | 339 | 94.7% |
-| Boolean | 48 | 2 | 50 | 96.0% |
-| parseInt | 49 | 6 | 55 | 89.1% |
-| parseFloat | 48 | 6 | 54 | 88.9% |
+| Math | 317 | 7 | 324 | 97.8% |
+| Number | 330 | 9 | 339 | 97.3% |
+| Boolean | 49 | 1 | 50 | 98.0% |
+| parseInt | 51 | 4 | 55 | 92.7% |
+| parseFloat | 51 | 3 | 54 | 94.4% |
 | Symbol | 44 | 54 | 98 | 44.9% |
 | Error | 23 | 69 | 92 | 25.0% |
 | JSON | 73 | 92 | 165 | 44.2% |
@@ -25,12 +25,12 @@
 | Set | 72 | 310 | 382 | 18.8% |
 | Reflect | 33 | 120 | 153 | 21.6% |
 | Proxy | 0 | 311 | 311 | 0.0% |
-| Date | 177 | 417 | 594 | 29.8% |
+| Date | 173 | 421 | 594 | 29.1% |
 | Iterator | 52 | 461 | 513 | 10.1% |
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
-| String | 834 | 388 | 1222 | 68.2% |
+| String | 866 | 356 | 1222 | 70.9% |
 | Array | 804 | 1533 | 2337 | 34.4% |
 
 ### Slow (very large array operations, not hangs)
@@ -82,3 +82,5 @@ Fixes:
 - 2026-05-27: Fixed parseFloat proper string parsing (scientific notation, Infinity, ToPrimitive), bench-v8 1241
 - 2026-05-27: Fixed Number.prototype.toString for wrapper objects, Object.prototype.toString for Number/Boolean wrappers, parseInt/parseFloat ToPrimitive, bench-v8 1238
 - 2026-05-27: Fixed parseInt radix: object radix via valueOf/toString, empty string, Infinity, Int32 overflow, Boolean valueOf. parseInt 89.1%, parseFloat 88.9%, Boolean 96.0%, bench-v8 1246
+- 2026-05-27: Added not-a-constructor check for builtins in CallNew, made global builtins non-enumerable. parseInt 92.7%, parseFloat 94.4%, Number 97.3%, Boolean 98.0%, Math 97.8%, String 70.9%, bench-v8 1275
+- 2026-05-27: Fixed String.fromCodePoint range/integer validation. bench-v8 1235
