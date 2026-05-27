@@ -407,8 +407,27 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() > 2 && args[2].is_object() {
         let arr_obj = args[2].as_object();
         let length_atom = ctx.common_atoms.length;
-        if let Some(len_val) = arr_obj.get(length_atom) {
-            let len = len_val.get_int() as usize;
+
+        let len_val = arr_obj.get(length_atom);
+        if let Some(lv) = len_val {
+            if !lv.is_int() {
+                call_args = &[];
+                if let Some(ptr) = ctx.get_register_vm_ptr() {
+                    let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                    let result = vm.call_function_with_this(ctx, *this_val, this_arg, call_args);
+                    return match result {
+                        Ok(val) => val,
+                        Err(_) => {
+                            if let Some(exc) = ctx.pending_exception.take() {
+                                vm.pending_throw = Some(exc);
+                            }
+                            JSValue::undefined()
+                        }
+                    };
+                }
+                return JSValue::undefined();
+            }
+            let len = lv.get_int() as usize;
 
             if arr_obj.is_mapped_arguments() {
                 let fi = arr_obj.mapped_args_frame_index();
