@@ -142,34 +142,6 @@ pub struct VM {
 }
 
 impl VM {
-    fn builtin_needs_this_for_call_with_this(name: &str) -> bool {
-        matches!(
-            name,
-            "function_bind"
-                | "function_call"
-                | "function_apply"
-                | "function_toString"
-                | "function_length"
-                | "function_name"
-                | "function_has_instance"
-                | "object_hasOwnProperty"
-                | "object_valueOf"
-                | "object_toString"
-                | "object_isPrototypeOf"
-                | "object_property_is_enumerable"
-                | "object_to_locale_string"
-                | "intl_collator_compare_getter"
-                | "intl_collator_resolved_options"
-                | "intl_numberformat_resolved_options"
-                | "intl_datetimeformat_resolved_options"
-                | "date_toPrimitive"
-                | "generator_symbol_iterator"
-                | "generator_next"
-                | "generator_return"
-                | "async_generator_next"
-        )
-    }
-
     fn builtin_needs_callee(name: &str) -> bool {
         matches!(name, "intl_collator_compare_call")
     }
@@ -1630,7 +1602,7 @@ impl VM {
                 .builtin_atom
                 .map(|ba| ctx.get_atom_str(ba).to_string())
                 .unwrap_or_default();
-            let needs_this = Self::builtin_needs_this_for_call_with_this(&builtin_name);
+            let needs_this = ctx.builtin_needs_this(&builtin_name);
 
             let mut call_args_vec: Vec<JSValue> = Vec::new();
             let call_args: &[JSValue] = if needs_this {
