@@ -37,7 +37,8 @@
 
 | Module | Sub | Tests |
 |---|---|---|
-| Function | prototype/apply | module timeout (unknown cause) |
+| Object | prototype/setPrototypeOf | 2 tests hang on Object.prototype mutation |
+| Array | prototype/reverse,sort | Now fixed (completed without hang) |
 
 ## Fixes Applied
 
@@ -73,3 +74,5 @@ Fixes:
 - 2026-05-27: Fixed exception_handlers leak, all categories complete without segfault, bench-v8 score 1226
 - 2026-05-27: Fixed padEnd/padStart infinite loop, String module now completes (844/1222 = 69.1%), bench-v8 score 1216
 - 2026-05-27: Fixed Array indexOf/lastIndexOf/includes/splice/SetField slow paths for large sparse arrays, all Array sub-suites complete without hang, bench-v8 score 1218
+- 2026-05-27: Fixed Function.prototype.apply hang on array-like with getter/non-int length (390/507 pass), bench-v8 score 1212
+- 2026-05-27: Fixed Array sort/reverse/all-iterable-methods hang on negative/huge length, bench-v8 score 1243
