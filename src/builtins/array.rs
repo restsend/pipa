@@ -25,6 +25,10 @@ fn array_get(obj: &JSObject, index: usize, ctx: &mut JSContext) -> Option<crate:
 }
 use crate::value::JSValue;
 
+fn safe_array_len(obj: &JSObject, len_atom: crate::runtime::atom::Atom) -> u64 {
+    obj.get(len_atom).as_ref().map(|v| js_to_length(v)).unwrap_or(0)
+}
+
 fn init_array_length(obj: &mut JSObject, len: i64, ctx: &mut JSContext) {
     use crate::object::object::PropertyDescriptor;
     let len_atom = ctx.common_atoms.length;
@@ -1301,7 +1305,7 @@ fn array_sort(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
@@ -1362,12 +1366,15 @@ fn array_reverse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        arr.get(len_atom).as_ref().map(|v| js_to_length(v)).unwrap_or(0)
     };
+    if len > 10_000_000 {
+        return this;
+    }
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
             let arr = this.as_object();
-            array_get(arr, i, ctx).unwrap_or(JSValue::undefined())
+            array_get(arr, i as usize, ctx).unwrap_or(JSValue::undefined())
         })
         .collect();
     elements.reverse();
@@ -1399,7 +1406,7 @@ fn array_fill(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     let start = args
         .get(2)
@@ -1526,7 +1533,7 @@ fn array_to_spliced(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     let start = args
         .get(1)
@@ -1585,7 +1592,7 @@ fn array_flat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             result.push(arr_val);
             return;
         }
-        let len = arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0);
+        let len = safe_array_len(&arr, len_atom) as usize;
         let elements: Vec<JSValue> = (0..len)
             .map(|i| array_get(arr, i, ctx).unwrap_or(JSValue::undefined()))
             .collect();
@@ -1628,7 +1635,7 @@ fn array_flat_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
 
     let mut result_elements: Vec<JSValue> = Vec::new();
@@ -1682,7 +1689,7 @@ fn array_find_last(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     for i in (0..len).rev() {
         let el = {
@@ -1710,7 +1717,7 @@ fn array_find_last_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     for i in (0..len).rev() {
         let el = {
@@ -1737,7 +1744,7 @@ fn array_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let len_atom = ctx.common_atoms.length;
     let arr = this.as_object();
-    let len = arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0);
+    let len = safe_array_len(&arr, len_atom) as usize;
     let idx = args.get(1).map(|v| v.get_int()).unwrap_or(0);
     let actual_idx = if idx < 0 { len as i64 + idx } else { idx };
     if actual_idx < 0 || actual_idx as usize >= len {
@@ -1757,7 +1764,7 @@ fn array_to_sorted(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
@@ -1811,7 +1818,7 @@ fn array_to_reversed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
@@ -1843,7 +1850,7 @@ fn array_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+        safe_array_len(&arr, len_atom) as usize
     };
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
