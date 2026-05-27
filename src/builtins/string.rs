@@ -1144,6 +1144,33 @@ fn string_replace(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 }
 
+fn js_to_length(val: &JSValue) -> usize {
+    let n = val.to_number();
+    if n.is_nan() || n.is_infinite() || n <= 0.0 {
+        0
+    } else {
+        n as usize
+    }
+}
+
+fn js_to_string_arg(val: &JSValue, ctx: &mut JSContext) -> String {
+    if val.is_string() {
+        ctx.get_atom_str(val.get_atom()).to_string()
+    } else if val.is_int() {
+        format!("{}", val.get_int())
+    } else if val.is_float() {
+        js_float_to_string(val.get_float())
+    } else if val.is_bool() {
+        if val.get_bool() { "true".to_string() } else { "false".to_string() }
+    } else if val.is_undefined() {
+        "undefined".to_string()
+    } else if val.is_null() {
+        "null".to_string()
+    } else {
+        "[object Object]".to_string()
+    }
+}
+
 fn string_pad_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
@@ -1153,19 +1180,19 @@ fn string_pad_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         None => return JSValue::undefined(),
     };
     let target_len = if args.len() > 1 {
-        args[1].get_int() as usize
+        js_to_length(&args[1])
     } else {
         0
     };
-    let pad_str = if args.len() > 2 && args[2].is_string() {
-        ctx.get_atom_str(args[2].get_atom()).to_string()
+    let pad_str = if args.len() > 2 {
+        js_to_string_arg(&args[2], ctx)
     } else {
         " ".to_string()
     };
 
     let s_len = s.chars().count();
     if target_len <= s_len {
-        return args[0];
+        return JSValue::new_string(ctx.intern(&s));
     }
 
     let mut pad_count = target_len - s_len;
@@ -1173,7 +1200,7 @@ fn string_pad_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let pad_chars: Vec<char> = pad_str.chars().collect();
     let pad_char_len = pad_chars.len();
     if pad_char_len == 0 {
-        return args[0];
+        return JSValue::new_string(ctx.intern(&s));
     }
     let mut i = 0;
     while pad_count > 0 {
@@ -1194,19 +1221,19 @@ fn string_pad_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         None => return JSValue::undefined(),
     };
     let target_len = if args.len() > 1 {
-        args[1].get_int() as usize
+        js_to_length(&args[1])
     } else {
         0
     };
-    let pad_str = if args.len() > 2 && args[2].is_string() {
-        ctx.get_atom_str(args[2].get_atom()).to_string()
+    let pad_str = if args.len() > 2 {
+        js_to_string_arg(&args[2], ctx)
     } else {
         " ".to_string()
     };
 
     let s_len = s.chars().count();
     if target_len <= s_len {
-        return args[0];
+        return JSValue::new_string(ctx.intern(&s));
     }
 
     let mut pad_count = target_len - s_len;
@@ -1214,7 +1241,7 @@ fn string_pad_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let pad_chars: Vec<char> = pad_str.chars().collect();
     let pad_char_len = pad_chars.len();
     if pad_char_len == 0 {
-        return args[0];
+        return JSValue::new_string(ctx.intern(&s));
     }
     let mut i = 0;
     while pad_count > 0 {

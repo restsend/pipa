@@ -9,7 +9,7 @@
 
 ## Status (2026-05-27)
 
-### Completes without crash
+### Completes without crash or hang
 
 | Module | Pass | Fail | Total | Pass Rate |
 |---|---|---|---|---|
@@ -30,21 +30,17 @@
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
-| String/proto | 715 | 325 | 1040 | 68.7% |
-| String other | 19 | 28 | 47 | 40.4% |
+| String | 844 | 378 | 1222 | 69.1% |
+| Array | 804 | 1533 | 2337 | 34.4% |
 
-### Hangs (infinite loop)
+### Slow (very large array operations, not hangs)
 
-| Module | Sub | Tests Affected |
+| Module | Sub | Tests |
 |---|---|---|
-| String | prototype/padEnd | max-length-not-greater-than-string.js and others |
-| String | prototype/padStart | similar |
-| Array | prototype/indexOf | 28 tests timeout |
-| Array | prototype/lastIndexOf | timeout |
-| Array | prototype/reverse | timeout |
-| Array | prototype/sort | timeout |
-| Array | prototype/splice | timeout |
-| Function | prototype/apply | entire module timeout |
+| Array | prototype/indexOf | 3 tests with 2^32-length arrays |
+| Array | prototype/lastIndexOf | 3 tests with 2^32-length arrays |
+| Array | prototype/splice | 1 test with large array |
+| Function | prototype/apply | module timeout (unknown cause) |
 
 ## Fixes Applied
 
@@ -54,6 +50,13 @@ Root cause: When a function returned from inside a try block via Return/End opco
 
 Fix: Added cleanup_handlers_for_frame() called before pop_frame in Return and End opcode handlers.
 
+### String padEnd/padStart hang (2026-05-27)
+
+Root cause: string_pad_end and string_pad_start used args[1].get_int() to get the target length. For object arguments, get_int() returns the raw object pointer as an integer (e.g. 94203228883904), causing the padding loop to iterate trillions of times.
+
+Fix: Replaced get_int() with js_to_length() which properly converts to number first (NaN/objects -> 0). Also replaced direct string check with js_to_string_arg() for the filler argument.
+
 ## Progress Log
 
 - 2026-05-27: Fixed exception_handlers leak, all categories complete without segfault, bench-v8 score 1226
+- 2026-05-27: Fixed padEnd/padStart infinite loop, String module now completes (844/1222 = 69.1%), bench-v8 score 1216
