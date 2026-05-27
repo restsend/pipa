@@ -37,9 +37,6 @@
 
 | Module | Sub | Tests |
 |---|---|---|
-| Array | prototype/indexOf | 3 tests with 2^32-length arrays |
-| Array | prototype/lastIndexOf | 3 tests with 2^32-length arrays |
-| Array | prototype/splice | 1 test with large array |
 | Function | prototype/apply | module timeout (unknown cause) |
 
 ## Fixes Applied
@@ -56,7 +53,23 @@ Root cause: string_pad_end and string_pad_start used args[1].get_int() to get th
 
 Fix: Replaced get_int() with js_to_length() which properly converts to number first (NaN/objects -> 0). Also replaced direct string check with js_to_string_arg() for the filler argument.
 
+### Array indexOf/lastIndexOf/includes/splice slow paths (2026-05-27)
+
+Root causes:
+1. indexOf/lastIndexOf: Used i32/u32 for length and fromIndex, truncating values > 2^31. Iterated all indices 0..len even for sparse arrays with len = 2^32.
+2. includes: Same u32 length issue, iterated all indices.
+3. splice: Materialized entire array into Vec before splicing, causing OOM for large sparse arrays.
+4. SetField opcode: Extended dense arrays by pushing undefined values up to the index, causing billions of pushes for idx > 2^31.
+
+Fixes:
+- indexOf/lastIndexOf/includes: Use u64 for length, f64 for fromIndex, handle NaN, use sparse iteration for len > 10M.
+- splice: Rewrite to shift elements in-place without materializing, use js_to_length for proper clamping.
+- SetField: For dense arrays with idx > 100K, store as sparse property and clear dense flag instead of extending.
+- js_to_length: Made pub, returns u64, handles Infinity.
+- padEnd/padStart: Clamp target_len to 1<<30.
+
 ## Progress Log
 
 - 2026-05-27: Fixed exception_handlers leak, all categories complete without segfault, bench-v8 score 1226
 - 2026-05-27: Fixed padEnd/padStart infinite loop, String module now completes (844/1222 = 69.1%), bench-v8 score 1216
+- 2026-05-27: Fixed Array indexOf/lastIndexOf/includes/splice/SetField slow paths for large sparse arrays, all Array sub-suites complete without hang, bench-v8 score 1218
