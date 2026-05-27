@@ -77,3 +77,4 @@ Fixes:
 - 2026-05-27: Fixed Function.prototype.apply hang on array-like with getter/non-int length (390/507 pass), bench-v8 score 1212
 - 2026-05-27: Fixed Array sort/reverse/all-iterable-methods hang on negative/huge length, bench-v8 score 1243
 - 2026-05-27: Fixed parseInt Infinity/bool/string-radix/large-number bugs (44/55 = 80%), bench-v8 score 1211
+- 2026-05-27: Fixed remaining array method length reads (forEach/every/some/map/filter/etc), bench-v8 score 1300
