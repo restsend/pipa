@@ -155,28 +155,28 @@ pub fn init_function(ctx: &mut JSContext) {
 }
 
 pub fn register_builtins(ctx: &mut JSContext) {
-    ctx.register_builtin("function_bind", HostFunction::new("bind", 1, function_bind));
-    ctx.register_builtin("function_call", HostFunction::new("call", 1, function_call));
+    ctx.register_builtin("function_bind", HostFunction::method("bind", 1, function_bind));
+    ctx.register_builtin("function_call", HostFunction::method("call", 1, function_call));
     ctx.register_builtin(
         "function_apply",
-        HostFunction::new("apply", 2, function_apply),
+        HostFunction::method("apply", 2, function_apply),
     );
     ctx.register_builtin(
         "function_toString",
-        HostFunction::new("toString", 0, function_to_string),
+        HostFunction::method("toString", 0, function_to_string),
     );
     ctx.register_builtin(
         "function_length",
-        HostFunction::new("length", 0, function_length),
+        HostFunction::method("length", 0, function_length),
     );
-    ctx.register_builtin("function_name", HostFunction::new("name", 0, function_name));
+    ctx.register_builtin("function_name", HostFunction::method("name", 0, function_name));
     ctx.register_builtin(
         "function_constructor",
-        HostFunction::new("Function", 1, function_constructor),
+        HostFunction::ctor("Function", 1, function_constructor),
     );
     ctx.register_builtin(
         "function_has_instance",
-        HostFunction::new(SYMBOL_HAS_INSTANCE_DISPLAY, 1, function_has_instance),
+        HostFunction::method(SYMBOL_HAS_INSTANCE_DISPLAY, 1, function_has_instance),
     );
     ctx.register_builtin(
         "throw_type_error_callee",
@@ -368,21 +368,21 @@ fn function_call(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         call_args.push(arg.clone());
     }
 
-    if let Some(ptr) = ctx.get_register_vm_ptr() {
-        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
-        let result = vm.call_function_with_this(ctx, *this_val, this_arg, &call_args);
-        match result {
-            Ok(val) => val,
-            Err(e) => {
-                if ctx.pending_exception.is_none() {
-                    ctx.pending_exception = Some(JSValue::new_string(ctx.intern(&e)));
-                }
-                JSValue::undefined()
-            }
-        }
-    } else {
-        JSValue::undefined()
-    }
+     if let Some(ptr) = ctx.get_register_vm_ptr() {
+         let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+         let result = vm.call_function_with_this(ctx, *this_val, this_arg, &call_args);
+         match result {
+             Ok(val) => val,
+             Err(_) => {
+                 if let Some(exc) = ctx.pending_exception.take() {
+                     vm.pending_throw = Some(exc);
+                 }
+                 JSValue::undefined()
+             }
+         }
+     } else {
+         JSValue::undefined()
+     }
 }
 
 fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -524,9 +524,9 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let result = vm.call_function_with_this(ctx, *this_val, this_arg, call_args);
         match result {
             Ok(val) => val,
-            Err(e) => {
-                if ctx.pending_exception.is_none() {
-                    ctx.pending_exception = Some(JSValue::new_string(ctx.intern(&e)));
+            Err(_) => {
+                if let Some(exc) = ctx.pending_exception.take() {
+                    vm.pending_throw = Some(exc);
                 }
                 JSValue::undefined()
             }

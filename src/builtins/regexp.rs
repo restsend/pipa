@@ -7,7 +7,7 @@ use crate::value::JSValue;
 pub fn init_regexp(ctx: &mut JSContext) {
     ctx.register_builtin(
         "regexp_constructor",
-        HostFunction::new("RegExp", 2, regexp_constructor),
+        HostFunction::ctor("RegExp", 2, regexp_constructor),
     );
 
     let global = ctx.global();

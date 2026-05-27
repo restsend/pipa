@@ -8,11 +8,39 @@ pub struct HostFunction {
     pub func: HostFunc,
     pub name: &'static str,
     pub arity: u32,
+    pub needs_this: bool,
+    pub is_constructor: bool,
 }
 
 impl HostFunction {
     pub fn new(name: &'static str, arity: u32, func: HostFunc) -> Self {
-        HostFunction { name, arity, func }
+        HostFunction {
+            name,
+            arity,
+            func,
+            needs_this: false,
+            is_constructor: false,
+        }
+    }
+
+    pub fn method(name: &'static str, arity: u32, func: HostFunc) -> Self {
+        HostFunction {
+            name,
+            arity,
+            func,
+            needs_this: true,
+            is_constructor: false,
+        }
+    }
+
+    pub fn ctor(name: &'static str, arity: u32, func: HostFunc) -> Self {
+        HostFunction {
+            name,
+            arity,
+            func,
+            needs_this: false,
+            is_constructor: true,
+        }
     }
 
     pub fn call(&self, ctx: &mut JSContext, args: &[JSValue]) -> JSValue {

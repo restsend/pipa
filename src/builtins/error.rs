@@ -4,7 +4,8 @@ use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), 1);
+    let arity = ctx.get_builtin_arity(name).unwrap_or(1);
+    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -380,26 +381,26 @@ fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "error_constructor",
-        HostFunction::new("Error", 1, error_constructor),
+        HostFunction::ctor("Error", 1, error_constructor),
     );
     ctx.register_builtin(
         "type_error_constructor",
-        HostFunction::new("TypeError", 1, type_error_constructor),
+        HostFunction::ctor("TypeError", 1, type_error_constructor),
     );
     ctx.register_builtin(
         "reference_error_constructor",
-        HostFunction::new("ReferenceError", 1, reference_error_constructor),
+        HostFunction::ctor("ReferenceError", 1, reference_error_constructor),
     );
     ctx.register_builtin(
         "syntax_error_constructor",
-        HostFunction::new("SyntaxError", 1, syntax_error_constructor),
+        HostFunction::ctor("SyntaxError", 1, syntax_error_constructor),
     );
     ctx.register_builtin(
         "range_error_constructor",
-        HostFunction::new("RangeError", 1, range_error_constructor),
+        HostFunction::ctor("RangeError", 1, range_error_constructor),
     );
     ctx.register_builtin(
         "error_toString",
-        HostFunction::new("toString", 0, error_to_string),
+        HostFunction::method("toString", 0, error_to_string),
     );
 }

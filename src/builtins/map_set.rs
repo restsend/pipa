@@ -966,59 +966,59 @@ pub fn init_map_set(ctx: &mut JSContext) {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "map_constructor",
-        HostFunction::new("Map", 0, map_constructor),
+        HostFunction::ctor("Map", 0, map_constructor),
     );
-    ctx.register_builtin("map_set", HostFunction::new("set", 2, map_set));
-    ctx.register_builtin("map_get", HostFunction::new("get", 1, map_get));
-    ctx.register_builtin("map_has", HostFunction::new("has", 1, map_has));
-    ctx.register_builtin("map_delete", HostFunction::new("delete", 1, map_delete));
-    ctx.register_builtin("map_clear", HostFunction::new("clear", 0, map_clear));
-    ctx.register_builtin("map_forEach", HostFunction::new("forEach", 1, map_for_each));
-    ctx.register_builtin("map_keys", HostFunction::new("keys", 0, map_keys));
-    ctx.register_builtin("map_values", HostFunction::new("values", 0, map_values));
-    ctx.register_builtin("map_entries", HostFunction::new("entries", 0, map_entries));
+    ctx.register_builtin("map_set", HostFunction::method("set", 2, map_set));
+    ctx.register_builtin("map_get", HostFunction::method("get", 1, map_get));
+    ctx.register_builtin("map_has", HostFunction::method("has", 1, map_has));
+    ctx.register_builtin("map_delete", HostFunction::method("delete", 1, map_delete));
+    ctx.register_builtin("map_clear", HostFunction::method("clear", 0, map_clear));
+    ctx.register_builtin("map_forEach", HostFunction::method("forEach", 1, map_for_each));
+    ctx.register_builtin("map_keys", HostFunction::method("keys", 0, map_keys));
+    ctx.register_builtin("map_values", HostFunction::method("values", 0, map_values));
+    ctx.register_builtin("map_entries", HostFunction::method("entries", 0, map_entries));
     ctx.register_builtin(
         "map_symbol_iterator",
-        HostFunction::new("[Symbol.iterator]", 0, map_symbol_iterator),
+        HostFunction::method("[Symbol.iterator]", 0, map_symbol_iterator),
     );
 
     ctx.register_builtin(
         "set_constructor",
-        HostFunction::new("Set", 0, set_constructor),
+        HostFunction::ctor("Set", 0, set_constructor),
     );
-    ctx.register_builtin("set_add", HostFunction::new("add", 1, set_add));
-    ctx.register_builtin("set_has", HostFunction::new("has", 1, set_has));
-    ctx.register_builtin("set_delete", HostFunction::new("delete", 1, set_delete));
-    ctx.register_builtin("set_clear", HostFunction::new("clear", 0, set_clear));
-    ctx.register_builtin("set_forEach", HostFunction::new("forEach", 1, set_for_each));
-    ctx.register_builtin("set_values", HostFunction::new("values", 0, set_values));
-    ctx.register_builtin("set_keys", HostFunction::new("keys", 0, set_keys));
-    ctx.register_builtin("set_entries", HostFunction::new("entries", 0, set_entries));
+    ctx.register_builtin("set_add", HostFunction::method("add", 1, set_add));
+    ctx.register_builtin("set_has", HostFunction::method("has", 1, set_has));
+    ctx.register_builtin("set_delete", HostFunction::method("delete", 1, set_delete));
+    ctx.register_builtin("set_clear", HostFunction::method("clear", 0, set_clear));
+    ctx.register_builtin("set_forEach", HostFunction::method("forEach", 1, set_for_each));
+    ctx.register_builtin("set_values", HostFunction::method("values", 0, set_values));
+    ctx.register_builtin("set_keys", HostFunction::method("keys", 0, set_keys));
+    ctx.register_builtin("set_entries", HostFunction::method("entries", 0, set_entries));
     ctx.register_builtin(
         "set_symbol_iterator",
-        HostFunction::new("[Symbol.iterator]", 0, set_symbol_iterator),
+        HostFunction::method("[Symbol.iterator]", 0, set_symbol_iterator),
     );
 
     ctx.register_builtin(
         "weakmap_constructor",
-        HostFunction::new("WeakMap", 0, weakmap_constructor),
+        HostFunction::ctor("WeakMap", 0, weakmap_constructor),
     );
-    ctx.register_builtin("weakmap_set", HostFunction::new("set", 2, weakmap_set));
-    ctx.register_builtin("weakmap_get", HostFunction::new("get", 1, weakmap_get));
-    ctx.register_builtin("weakmap_has", HostFunction::new("has", 1, weakmap_has));
+    ctx.register_builtin("weakmap_set", HostFunction::method("set", 2, weakmap_set));
+    ctx.register_builtin("weakmap_get", HostFunction::method("get", 1, weakmap_get));
+    ctx.register_builtin("weakmap_has", HostFunction::method("has", 1, weakmap_has));
     ctx.register_builtin(
         "weakmap_delete",
-        HostFunction::new("delete", 1, weakmap_delete),
+        HostFunction::method("delete", 1, weakmap_delete),
     );
 
     ctx.register_builtin(
         "weakset_constructor",
-        HostFunction::new("WeakSet", 0, weakset_constructor),
+        HostFunction::ctor("WeakSet", 0, weakset_constructor),
     );
-    ctx.register_builtin("weakset_add", HostFunction::new("add", 1, weakset_add));
-    ctx.register_builtin("weakset_has", HostFunction::new("has", 1, weakset_has));
+    ctx.register_builtin("weakset_add", HostFunction::method("add", 1, weakset_add));
+    ctx.register_builtin("weakset_has", HostFunction::method("has", 1, weakset_has));
     ctx.register_builtin(
         "weakset_delete",
-        HostFunction::new("delete", 1, weakset_delete),
+        HostFunction::method("delete", 1, weakset_delete),
     );
 }

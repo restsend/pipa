@@ -223,7 +223,7 @@ const SYMBOL_UNSCOPABLES_DESC: &str = "Symbol.unscopables";
 const SYMBOL_HAS_INSTANCE_DESC: &str = "Symbol.hasInstance";
 const SYMBOL_ASYNC_ITERATOR_DESC: &str = "Symbol.asyncIterator";
 
-fn get_or_create_well_known_symbol(ctx: &mut JSContext, description: &str) -> JSValue {
+pub fn get_or_create_well_known_symbol(ctx: &mut JSContext, description: &str) -> JSValue {
     let desc_atom = ctx.intern(description);
     let global = ctx.global();
     if global.is_object() {
@@ -239,6 +239,13 @@ fn get_or_create_well_known_symbol(ctx: &mut JSContext, description: &str) -> JS
 }
 
 pub fn init_symbol(ctx: &mut JSContext) {
+    let symbol_atom = ctx.intern("Symbol");
+    let global = ctx.global();
+    if global.is_object() {
+        if global.as_object().get(symbol_atom).is_some() {
+            return;
+        }
+    }
     let mut symbol_ctor = JSFunction::new_builtin(ctx.intern("Symbol"), 1);
     symbol_ctor.set_builtin_marker(ctx, "symbol_constructor");
 
@@ -341,11 +348,11 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "symbol_valueOf",
-        HostFunction::new("valueOf", 0, symbol_value_of),
+        HostFunction::method("valueOf", 0, symbol_value_of),
     );
     ctx.register_builtin(
         "symbol_toString",
-        HostFunction::new("toString", 0, symbol_to_string),
+        HostFunction::method("toString", 0, symbol_to_string),
     );
 }
 
@@ -387,6 +394,11 @@ pub fn get_symbol_async_iterator(ctx: &mut JSContext) -> JSValue {
 
 pub fn get_symbol_async_iterator_atom(ctx: &mut JSContext) -> Atom {
     ctx.intern("Symbol.asyncIterator")
+}
+
+pub fn get_symbol_to_string_tag_prop_key(ctx: &mut JSContext) -> Atom {
+    let sym = get_or_create_well_known_symbol(ctx, SYMBOL_TO_STRING_TAG_DESC);
+    crate::runtime::atom::Atom(0x40000000 | sym.get_symbol_id())
 }
 
 pub fn is_symbol(val: &JSValue) -> bool {

@@ -7,12 +7,13 @@ use crate::value::JSValue;
 
 pub fn register_websocket(ctx: &mut JSContext) {
     ctx.register_builtin("WebSocket", HostFunction::new("WebSocket", 1, ws_ctor));
-    ctx.register_builtin("ws_send", HostFunction::new("send", 2, ws_send));
-    ctx.register_builtin("ws_close", HostFunction::new("close", 1, ws_close));
+    ctx.register_builtin("ws_send", HostFunction::method("send", 2, ws_send));
+    ctx.register_builtin("ws_close", HostFunction::method("close", 1, ws_close));
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
+    let arity = ctx.get_builtin_arity(name).unwrap_or(1);
+    let mut func = JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);

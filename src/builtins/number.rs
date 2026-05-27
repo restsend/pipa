@@ -1,3 +1,4 @@
+use crate::builtins::global::{js_to_number_value, throw_type_error_if_no_exception};
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
@@ -80,9 +81,24 @@ pub fn number_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         &args[0]
     };
 
-    let radix = if args.len() > 1 {
-        let r = args[1].to_number() as i32;
-        if (2..=36).contains(&r) { r } else { 10 }
+    let radix = if args.len() > 1 && !args[1].is_undefined() {
+        let r = match js_to_number_value(ctx, &args[1]) {
+            Ok(f) => f as i32,
+            Err(()) => return throw_type_error_if_no_exception(ctx, "toString() radix cannot be converted to a number"),
+        };
+        if !(2..=36).contains(&r) {
+            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("radix must be between 2 and 36")));
+            if let Some(proto) = ctx.get_range_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+        r
     } else {
         10
     };

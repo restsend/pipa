@@ -61,12 +61,14 @@ fn get_symbol_to_string_tag_atom(ctx: &mut JSContext) -> Option<Atom> {
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), 1);
+    let arity = ctx
+        .get_builtin_arity(name)
+        .unwrap_or(1);
+    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
-    let val = JSValue::new_function(ptr);
-    val
+    JSValue::new_function(ptr)
 }
 
 pub fn init_object(ctx: &mut JSContext) {
@@ -148,9 +150,11 @@ pub fn init_object(ctx: &mut JSContext) {
         ctx.intern("hasOwn"),
         create_builtin_function(ctx, "object_hasOwn"),
     );
-    object_obj
-        .base
-        .set(ctx.intern("is"), create_builtin_function(ctx, "object_is"));
+    crate::builtins::global::set_non_enumerable(
+        &mut object_obj.base,
+        ctx.intern("is"),
+        create_builtin_function(ctx, "object_is"),
+    );
     object_obj.base.set(
         ctx.intern("getOwnPropertySymbols"),
         create_builtin_function(ctx, "object_get_own_property_symbols"),
@@ -247,7 +251,7 @@ fn object_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "object_constructor",
-        HostFunction::new("Object", 1, object_constructor),
+        HostFunction::ctor("Object", 1, object_constructor),
     );
     ctx.register_builtin("object_keys", HostFunction::new("keys", 1, object_keys));
     ctx.register_builtin(
@@ -339,27 +343,27 @@ pub fn register_builtins(ctx: &mut JSContext) {
 
     ctx.register_builtin(
         "object_hasOwnProperty",
-        HostFunction::new("hasOwnProperty", 1, object_has_own_property),
+        HostFunction::method("hasOwnProperty", 1, object_has_own_property),
     );
     ctx.register_builtin(
         "object_valueOf",
-        HostFunction::new("valueOf", 0, object_value_of),
+        HostFunction::method("valueOf", 0, object_value_of),
     );
     ctx.register_builtin(
         "object_toString",
-        HostFunction::new("toString", 0, object_to_string),
+        HostFunction::method("toString", 0, object_to_string),
     );
     ctx.register_builtin(
         "object_isPrototypeOf",
-        HostFunction::new("isPrototypeOf", 1, object_is_prototype_of),
+        HostFunction::method("isPrototypeOf", 1, object_is_prototype_of),
     );
     ctx.register_builtin(
         "object_property_is_enumerable",
-        HostFunction::new("propertyIsEnumerable", 1, object_property_is_enumerable),
+        HostFunction::method("propertyIsEnumerable", 1, object_property_is_enumerable),
     );
     ctx.register_builtin(
         "object_to_locale_string",
-        HostFunction::new("toLocaleString", 0, object_to_locale_string),
+        HostFunction::method("toLocaleString", 0, object_to_locale_string),
     );
 }
 
@@ -653,6 +657,7 @@ fn object_to_string(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 ObjectType::Date => tag = "Date",
                 ObjectType::RegExp => tag = "RegExp",
                 ObjectType::BigInt => tag = "BigInt",
+                ObjectType::Boolean => tag = "Boolean",
                 ObjectType::Promise => tag = "Promise",
                 _ => {}
             }
@@ -682,11 +687,11 @@ fn object_is_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::bool(false);
     }
     let this = &args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::bool(false);
     }
     let v = &args[1];
-    if !v.is_object() {
+    if !v.is_object_like() {
         return JSValue::bool(false);
     }
     let this_ptr = this.get_ptr() as *mut JSObject;
@@ -783,28 +788,34 @@ fn object_has_own(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn object_is(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        if args.len() == 0 {
-            return JSValue::bool(true);
-        }
-        return JSValue::bool(false);
-    }
-    let a = &args[0];
-    let b = &args[1];
+    let a = args.get(0).copied().unwrap_or(JSValue::undefined());
+    let b = args.get(1).copied().unwrap_or(JSValue::undefined());
 
-    if a.is_float() && b.is_float() {
-        let af = a.get_float();
-        let bf = b.get_float();
+    let af = if a.is_float() {
+        Some(a.get_float())
+    } else if a.is_int() {
+        Some(a.get_int() as f64)
+    } else {
+        None
+    };
+    let bf = if b.is_float() {
+        Some(b.get_float())
+    } else if b.is_int() {
+        Some(b.get_int() as f64)
+    } else {
+        None
+    };
+
+    if let (Some(af), Some(bf)) = (af, bf) {
         if af.is_nan() && bf.is_nan() {
             return JSValue::bool(true);
         }
-
         if af == 0.0 && bf == 0.0 {
             return JSValue::bool(af.signum() == bf.signum());
         }
         return JSValue::bool(af == bf);
     }
-    JSValue::bool(a.strict_eq(b))
+    JSValue::bool(a.strict_eq(&b))
 }
 
 fn object_get_own_property_symbols(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {

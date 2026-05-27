@@ -120,7 +120,7 @@ pub struct VM {
 
     exception_handlers: Vec<ExceptionHandler>,
 
-    pending_throw: Option<JSValue>,
+    pub(crate) pending_throw: Option<JSValue>,
 
     finally_rethrow: Option<JSValue>,
     pending_finally_rethrow: Option<JSValue>,
@@ -205,6 +205,13 @@ impl VM {
         };
         vm.frames[0] = CallFrame::new();
         vm
+    }
+
+    fn cleanup_handlers_for_frame(&mut self) {
+        let fi = self.frame_index;
+        while self.exception_handlers.last().map_or(false, |h| h.frame_index == fi) {
+            self.exception_handlers.pop();
+        }
     }
 
     fn throw_reference_error(&mut self, ctx: &mut JSContext, msg: &str) -> Option<JSValue> {
@@ -2134,6 +2141,7 @@ impl VM {
                     if self.frame_index == 0 {
                         return Ok(ExecutionOutcome::Complete(self.get_reg(0)));
                     }
+                    self.cleanup_handlers_for_frame();
                     self.pop_frame(self.get_reg(0));
                 }
                 Opcode::Return => {
@@ -2190,7 +2198,8 @@ impl VM {
                         }
                         return Ok(ExecutionOutcome::Complete(ret));
                     }
-                    let is_async = frame.is_async;
+                    let is_async = self.frames[self.frame_index].is_async;
+                    self.cleanup_handlers_for_frame();
                     if is_async {
                         ret = ctx.call_builtin("promise_resolve", &[ret]);
                     }
@@ -8906,5 +8915,16 @@ mod tests {
 
         let result = run_bytecode(code, vec![], 2);
         assert_eq!(result.get_int(), 40);
+    }
+}
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        for frame in self.frames.iter_mut() {
+            frame.saved_args = Vec::new();
+            frame.upvalue_sync_map = None;
+            frame.eval_bindings = None;
+            frame.cached_arguments = None;
+        }
     }
 }

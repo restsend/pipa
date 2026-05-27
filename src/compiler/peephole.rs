@@ -20,6 +20,57 @@ pub fn optimize_with_level(bytecode: &mut Bytecode, opt_level: OptLevel) {
     }
 }
 
+fn embedded_function_size(code: &[u8], start: usize) -> usize {
+    let mut pc = start;
+    if pc >= code.len() {
+        return 1;
+    }
+    pc += 1; // opcode byte
+    if pc + 2 > code.len() { return pc - start; }
+    pc += 2; // param_count u16
+    if pc + 1 > code.len() { return pc - start; }
+    pc += 1; // uses_arguments u8
+    if pc + 1 > code.len() { return pc - start; }
+    pc += 1; // is_strict u8
+    if pc + 2 > code.len() { return pc - start; }
+    pc += 2; // locals_count u16
+    if pc + 4 > code.len() { return pc - start; }
+    let bytecode_len = read_i32(code, pc) as usize;
+    pc += 4;
+    pc += bytecode_len;
+    if pc + 4 > code.len() { return pc - start; }
+    let constants_len = read_i32(code, pc) as usize;
+    pc += 4;
+    for _ in 0..constants_len {
+        if pc >= code.len() { return pc - start; }
+        let tag = code[pc];
+        pc += 1;
+        match tag {
+            4 => { pc += 8; }
+            5 => { pc += 8; }
+            6 => { pc += 4; }
+            _ => {}
+        }
+    }
+    if pc + 4 > code.len() { return pc - start; }
+    let upvalue_count = read_i32(code, pc) as usize;
+    pc += 4;
+    pc += upvalue_count * 8;
+    if pc + 4 > code.len() { return pc - start; }
+    let line_entry_count = read_i32(code, pc) as usize;
+    pc += 4;
+    pc += line_entry_count * 8;
+    if pc + 4 > code.len() { return pc - start; }
+    pc += 4; // func_name_atom
+    if pc + 4 > code.len() { return pc - start; }
+    let var_count = read_i32(code, pc) as usize;
+    pc += 4;
+    pc += var_count * 6;
+    if pc + 2 > code.len() { return pc - start; }
+    pc += 2; // dst register
+    pc - start
+}
+
 fn run_pass(bytecode: &mut Bytecode) -> bool {
     let mut changed = false;
     let mut pc = 0usize;
@@ -27,7 +78,15 @@ fn run_pass(bytecode: &mut Bytecode) -> bool {
 
     while pc < code.len() {
         let op = Opcode::from_u8_unchecked(code[pc]);
-        let size = Opcode::instruction_size(op);
+        let size = if op == Opcode::NewFunction
+            || op == Opcode::NewAsyncFunction
+            || op == Opcode::NewGeneratorFunction
+            || op == Opcode::NewAsyncGeneratorFunction
+        {
+            embedded_function_size(code, pc)
+        } else {
+            Opcode::instruction_size(op)
+        };
         if size == 0 || pc + size > code.len() {
             break;
         }

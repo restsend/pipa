@@ -231,24 +231,24 @@ pub fn init_array(ctx: &mut JSContext) {
 }
 
 pub fn register_builtins(ctx: &mut JSContext) {
-    ctx.register_builtin("array_push", HostFunction::new("push", 1, array_push));
-    ctx.register_builtin("array_pop", HostFunction::new("pop", 0, array_pop));
-    ctx.register_builtin("array_shift", HostFunction::new("shift", 0, array_shift));
+    ctx.register_builtin("array_push", HostFunction::method("push", 1, array_push));
+    ctx.register_builtin("array_pop", HostFunction::method("pop", 0, array_pop));
+    ctx.register_builtin("array_shift", HostFunction::method("shift", 0, array_shift));
     ctx.register_builtin(
         "array_unshift",
-        HostFunction::new("unshift", 1, array_unshift),
+        HostFunction::method("unshift", 1, array_unshift),
     );
-    ctx.register_builtin("array_concat", HostFunction::new("concat", 1, array_concat));
-    ctx.register_builtin("array_slice", HostFunction::new("slice", 2, array_slice));
+    ctx.register_builtin("array_concat", HostFunction::method("concat", 1, array_concat));
+    ctx.register_builtin("array_slice", HostFunction::method("slice", 2, array_slice));
     ctx.register_builtin(
         "array_indexOf",
-        HostFunction::new("indexOf", 1, array_index_of),
+        HostFunction::method("indexOf", 1, array_index_of),
     );
     ctx.register_builtin(
         "array_includes",
-        HostFunction::new("includes", 1, array_includes),
+        HostFunction::method("includes", 1, array_includes),
     );
-    ctx.register_builtin("array_join", HostFunction::new("join", 1, array_join));
+    ctx.register_builtin("array_join", HostFunction::method("join", 1, array_join));
     ctx.register_builtin(
         "array_isArray",
         HostFunction::new("isArray", 1, array_is_array),
@@ -260,63 +260,63 @@ pub fn register_builtins(ctx: &mut JSContext) {
 
     ctx.register_builtin(
         "array_forEach",
-        HostFunction::new("forEach", 1, array_for_each),
+        HostFunction::method("forEach", 1, array_for_each),
     );
-    ctx.register_builtin("array_map", HostFunction::new("map", 1, array_map));
-    ctx.register_builtin("array_filter", HostFunction::new("filter", 1, array_filter));
-    ctx.register_builtin("array_reduce", HostFunction::new("reduce", 2, array_reduce));
-    ctx.register_builtin("array_every", HostFunction::new("every", 1, array_every));
-    ctx.register_builtin("array_some", HostFunction::new("some", 1, array_some));
-    ctx.register_builtin("array_find", HostFunction::new("find", 1, array_find));
+    ctx.register_builtin("array_map", HostFunction::method("map", 1, array_map));
+    ctx.register_builtin("array_filter", HostFunction::method("filter", 1, array_filter));
+    ctx.register_builtin("array_reduce", HostFunction::method("reduce", 2, array_reduce));
+    ctx.register_builtin("array_every", HostFunction::method("every", 1, array_every));
+    ctx.register_builtin("array_some", HostFunction::method("some", 1, array_some));
+    ctx.register_builtin("array_find", HostFunction::method("find", 1, array_find));
     ctx.register_builtin(
         "array_findIndex",
-        HostFunction::new("findIndex", 1, array_find_index),
+        HostFunction::method("findIndex", 1, array_find_index),
     );
     ctx.register_builtin(
         "array_reduceRight",
-        HostFunction::new("reduceRight", 2, array_reduce_right),
+        HostFunction::method("reduceRight", 2, array_reduce_right),
     );
-    ctx.register_builtin("array_sort", HostFunction::new("sort", 1, array_sort));
+    ctx.register_builtin("array_sort", HostFunction::method("sort", 1, array_sort));
     ctx.register_builtin(
         "array_reverse",
-        HostFunction::new("reverse", 0, array_reverse),
+        HostFunction::method("reverse", 0, array_reverse),
     );
-    ctx.register_builtin("array_fill", HostFunction::new("fill", 1, array_fill));
-    ctx.register_builtin("array_splice", HostFunction::new("splice", 2, array_splice));
-    ctx.register_builtin("array_flat", HostFunction::new("flat", 0, array_flat));
+    ctx.register_builtin("array_fill", HostFunction::method("fill", 1, array_fill));
+    ctx.register_builtin("array_splice", HostFunction::method("splice", 2, array_splice));
+    ctx.register_builtin("array_flat", HostFunction::method("flat", 0, array_flat));
     ctx.register_builtin(
         "array_flatMap",
-        HostFunction::new("flatMap", 1, array_flat_map),
+        HostFunction::method("flatMap", 1, array_flat_map),
     );
     ctx.register_builtin(
         "array_findLast",
-        HostFunction::new("findLast", 1, array_find_last),
+        HostFunction::method("findLast", 1, array_find_last),
     );
     ctx.register_builtin(
         "array_findLastIndex",
-        HostFunction::new("findLastIndex", 1, array_find_last_index),
+        HostFunction::method("findLastIndex", 1, array_find_last_index),
     );
-    ctx.register_builtin("array_at", HostFunction::new("at", 1, array_at));
+    ctx.register_builtin("array_at", HostFunction::method("at", 1, array_at));
     ctx.register_builtin(
         "array_toSorted",
-        HostFunction::new("toSorted", 1, array_to_sorted),
+        HostFunction::method("toSorted", 1, array_to_sorted),
     );
     ctx.register_builtin(
         "array_toReversed",
-        HostFunction::new("toReversed", 0, array_to_reversed),
+        HostFunction::method("toReversed", 0, array_to_reversed),
     );
-    ctx.register_builtin("array_with", HostFunction::new("with", 2, array_with));
+    ctx.register_builtin("array_with", HostFunction::method("with", 2, array_with));
     ctx.register_builtin(
         "array_lastIndexOf",
-        HostFunction::new("lastIndexOf", 1, array_last_index_of),
+        HostFunction::method("lastIndexOf", 1, array_last_index_of),
     );
     ctx.register_builtin(
         "array_toSpliced",
-        HostFunction::new("toSpliced", 3, array_to_spliced),
+        HostFunction::method("toSpliced", 3, array_to_spliced),
     );
     ctx.register_builtin(
         "array_constructor",
-        HostFunction::new("Array", 1, array_constructor),
+        HostFunction::ctor("Array", 1, array_constructor),
     );
 }
 

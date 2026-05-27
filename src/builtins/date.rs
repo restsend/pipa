@@ -1,3 +1,4 @@
+use crate::builtins::global::set_non_enumerable;
 use crate::host::HostFunction;
 use crate::object::function::JSFunction;
 use crate::object::object::JSObject;
@@ -12,74 +13,188 @@ fn current_timestamp_ms() -> f64 {
     (now.as_secs() as f64 * 1000.0) + (now.subsec_nanos() as f64 / 1_000_000.0)
 }
 
+fn parse_date_string(s: &str) -> f64 {
+    let s = s.trim();
+    if s.starts_with('+') || s.starts_with('-') || s.contains('.') || s.contains('e') || s.contains('E') {
+        if let Ok(ts) = s.parse::<f64>() {
+            return ts;
+        }
+    }
+    if let Some(rest) = s.strip_prefix("YYYY-") {
+    }
+    let parts: Vec<&str> = if s.contains('T') {
+        s.splitn(2, 'T').collect()
+    } else if s.contains(' ') {
+        s.splitn(2, ' ').collect()
+    } else {
+        vec![s, ""]
+    };
+    let date_part = parts[0];
+    let time_part = if parts.len() > 1 { parts[1] } else { "" };
+
+    let (year, month, day) = if date_part.contains('-') {
+        let dp: Vec<&str> = date_part.split('-').collect();
+        if dp.len() < 1 {
+            return f64::NAN;
+        }
+        let y = dp[0].parse::<i32>().unwrap_or(0);
+        let m = if dp.len() > 1 { dp[1].parse::<u32>().unwrap_or(1) } else { 1 };
+        let d = if dp.len() > 2 { dp[2].parse::<u32>().unwrap_or(1) } else { 1 };
+        (y, m, d)
+    } else {
+        let y = date_part.parse::<i32>().unwrap_or(0);
+        (y, 1, 1)
+    };
+
+    let (hour, minute, second, ms, tz_offset) = if time_part.is_empty() {
+        (0u32, 0u32, 0u32, 0u32, 0i64)
+    } else {
+        let (time_str, tz) = if time_part.ends_with('Z') {
+            (&time_part[..time_part.len() - 1], 0i64)
+        } else if let Some(idx) = time_part.rfind('+') {
+            let sign = 1i64;
+            let offset_str = &time_part[idx + 1..];
+            let off = parse_tz_offset(offset_str, sign);
+            (&time_part[..idx], off)
+        } else if let Some(idx) = time_part.rfind('-') {
+            if idx > 0 && time_part.chars().nth(idx - 1) != Some(':') && idx > 5 {
+                let sign = -1i64;
+                let offset_str = &time_part[idx + 1..];
+                let off = parse_tz_offset(offset_str, sign);
+                (&time_part[..idx], off)
+            } else {
+                (time_part, 0)
+            }
+        } else {
+            (time_part, 0)
+        };
+
+        let tp: Vec<&str> = time_str.split(':').collect();
+        let h = tp.first().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+        let mi = tp.get(1).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+        let sec_str = tp.get(2).map(|v| *v).unwrap_or("0");
+        let (sec, msec) = if sec_str.contains('.') {
+            let sp: Vec<&str> = sec_str.split('.').collect();
+            let s = sp[0].parse::<u32>().unwrap_or(0);
+            let ms = sp.get(1).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+            (s, ms)
+        } else {
+            (sec_str.parse::<u32>().unwrap_or(0), 0)
+        };
+        (h, mi, sec, msec, tz)
+    };
+
+    let ts = date_to_timestamp(year, month, day.max(1), hour, minute, second);
+    ts as f64 + ms as f64 - (tz_offset as f64 * 60000.0)
+}
+
+fn parse_tz_offset(s: &str, sign: i64) -> i64 {
+    let parts: Vec<&str> = s.split(':').collect();
+    let h = parts.first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+    let m = parts.get(1).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+    sign * (h * 60 + m)
+}
+
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin("date_now", HostFunction::new("now", 0, date_now));
     ctx.register_builtin("date_parse", HostFunction::new("parse", 1, date_parse));
     ctx.register_builtin("date_utc", HostFunction::new("UTC", 7, date_utc));
     ctx.register_builtin(
         "date_constructor",
-        HostFunction::new("Date", 7, date_constructor),
+        HostFunction::ctor("Date", 7, date_constructor),
     );
     ctx.register_builtin(
         "date_getTime",
-        HostFunction::new("getTime", 0, date_get_time),
+        HostFunction::method("getTime", 0, date_get_time),
     );
     ctx.register_builtin(
         "date_getFullYear",
-        HostFunction::new("getFullYear", 0, date_get_full_year),
+        HostFunction::method("getFullYear", 0, date_get_full_year),
     );
     ctx.register_builtin(
         "date_getMonth",
-        HostFunction::new("getMonth", 0, date_get_month),
+        HostFunction::method("getMonth", 0, date_get_month),
     );
     ctx.register_builtin(
         "date_getDate",
-        HostFunction::new("getDate", 0, date_get_date),
+        HostFunction::method("getDate", 0, date_get_date),
     );
-    ctx.register_builtin("date_getDay", HostFunction::new("getDay", 0, date_get_day));
+    ctx.register_builtin("date_getDay", HostFunction::method("getDay", 0, date_get_day));
     ctx.register_builtin(
         "date_getHours",
-        HostFunction::new("getHours", 0, date_get_hours),
+        HostFunction::method("getHours", 0, date_get_hours),
     );
     ctx.register_builtin(
         "date_getMinutes",
-        HostFunction::new("getMinutes", 0, date_get_minutes),
+        HostFunction::method("getMinutes", 0, date_get_minutes),
     );
     ctx.register_builtin(
         "date_getSeconds",
-        HostFunction::new("getSeconds", 0, date_get_seconds),
+        HostFunction::method("getSeconds", 0, date_get_seconds),
     );
     ctx.register_builtin(
         "date_getMilliseconds",
-        HostFunction::new("getMilliseconds", 0, date_get_milliseconds),
+        HostFunction::method("getMilliseconds", 0, date_get_milliseconds),
     );
     ctx.register_builtin(
         "date_getTimezoneOffset",
-        HostFunction::new("getTimezoneOffset", 0, date_get_timezone_offset),
+        HostFunction::method("getTimezoneOffset", 0, date_get_timezone_offset),
+    );
+    ctx.register_builtin(
+        "date_getUTCFullYear",
+        HostFunction::method("getUTCFullYear", 0, date_get_utc_full_year),
+    );
+    ctx.register_builtin(
+        "date_getUTCMonth",
+        HostFunction::method("getUTCMonth", 0, date_get_utc_month),
+    );
+    ctx.register_builtin(
+        "date_getUTCDate",
+        HostFunction::method("getUTCDate", 0, date_get_utc_date),
+    );
+    ctx.register_builtin(
+        "date_getUTCDay",
+        HostFunction::method("getUTCDay", 0, date_get_utc_day),
+    );
+    ctx.register_builtin(
+        "date_getUTCHours",
+        HostFunction::method("getUTCHours", 0, date_get_utc_hours),
+    );
+    ctx.register_builtin(
+        "date_getUTCMinutes",
+        HostFunction::method("getUTCMinutes", 0, date_get_utc_minutes),
+    );
+    ctx.register_builtin(
+        "date_getUTCSeconds",
+        HostFunction::method("getUTCSeconds", 0, date_get_utc_seconds),
+    );
+    ctx.register_builtin(
+        "date_getUTCMilliseconds",
+        HostFunction::method("getUTCMilliseconds", 0, date_get_utc_milliseconds),
     );
     ctx.register_builtin(
         "date_toString",
-        HostFunction::new("toString", 0, date_to_string),
+        HostFunction::method("toString", 0, date_to_string),
     );
     ctx.register_builtin(
         "date_toISOString",
-        HostFunction::new("toISOString", 0, date_to_iso_string),
+        HostFunction::method("toISOString", 0, date_to_iso_string),
     );
     ctx.register_builtin(
         "date_toUTCString",
-        HostFunction::new("toUTCString", 0, date_to_utc_string),
+        HostFunction::method("toUTCString", 0, date_to_utc_string),
     );
     ctx.register_builtin(
         "date_toDateString",
-        HostFunction::new("toDateString", 0, date_to_date_string),
+        HostFunction::method("toDateString", 0, date_to_date_string),
     );
     ctx.register_builtin(
         "date_toTimeString",
-        HostFunction::new("toTimeString", 0, date_to_time_string),
+        HostFunction::method("toTimeString", 0, date_to_time_string),
     );
     ctx.register_builtin(
         "date_valueOf",
-        HostFunction::new("valueOf", 0, date_value_of),
+        HostFunction::method("valueOf", 0, date_value_of),
     );
 }
 
@@ -156,6 +271,46 @@ pub fn init_date(ctx: &mut JSContext) {
     proto_obj.set(
         ctx.intern("getTimezoneOffset"),
         create_builtin_function(ctx, "date_getTimezoneOffset"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCFullYear"),
+        create_builtin_function(ctx, "date_getUTCFullYear"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCMonth"),
+        create_builtin_function(ctx, "date_getUTCMonth"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCDate"),
+        create_builtin_function(ctx, "date_getUTCDate"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCDay"),
+        create_builtin_function(ctx, "date_getUTCDay"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCHours"),
+        create_builtin_function(ctx, "date_getUTCHours"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCMinutes"),
+        create_builtin_function(ctx, "date_getUTCMinutes"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCSeconds"),
+        create_builtin_function(ctx, "date_getUTCSeconds"),
+    );
+    set_non_enumerable(
+        &mut proto_obj,
+        ctx.intern("getUTCMilliseconds"),
+        create_builtin_function(ctx, "date_getUTCMilliseconds"),
     );
     proto_obj.set(
         ctx.intern("toString"),
@@ -437,7 +592,7 @@ pub fn date_get_month(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let (_, month, _, _, _, _, _) = timestamp_to_date(timestamp);
-    JSValue::new_int(month as i64)
+    JSValue::new_int(month as i64 - 1)
 }
 
 pub fn date_get_date(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -520,6 +675,73 @@ pub fn date_get_milliseconds(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue 
 
 pub fn date_get_timezone_offset(_ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
     JSValue::new_int(0)
+}
+
+fn require_date_this(ctx: &mut JSContext, this: &JSValue) -> Option<JSValue> {
+    if !this.is_object() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Date object")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return Some(JSValue::undefined());
+    }
+    let obj = this.as_object();
+    if obj.get(ctx.intern("__dateValue__")).is_none() && obj.get(ctx.common_atoms.__value__).is_none() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Date object")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return Some(JSValue::undefined());
+    }
+    None
+}
+
+macro_rules! date_get_utc_field {
+    ($name:ident, $field:expr) => {
+        pub fn $name(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+            let this = args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+            if let Some(e) = require_date_this(ctx, &this) {
+                return e;
+            }
+            let ts = get_date_timestamp_with_ctx(&this, ctx);
+            if ts.is_nan() {
+                return JSValue::new_float(f64::NAN);
+            }
+            let (year, month, day, hour, minute, second, weekday) = timestamp_to_date(ts);
+            JSValue::new_int($field(year, month, day, hour, minute, second, weekday))
+        }
+    };
+}
+
+date_get_utc_field!(date_get_utc_full_year, |y,_,_,_,_,_,_| y as i64);
+date_get_utc_field!(date_get_utc_month, |_,m,_,_,_,_,_| m as i64 - 1);
+date_get_utc_field!(date_get_utc_date, |_,_,d,_,_,_,_| d as i64);
+date_get_utc_field!(date_get_utc_day, |_,_,_,_,_,_,w| w as i64);
+date_get_utc_field!(date_get_utc_hours, |_,_,_,h,_,_,_| h as i64);
+date_get_utc_field!(date_get_utc_minutes, |_,_,_,_,m,_,_| m as i64);
+date_get_utc_field!(date_get_utc_seconds, |_,_,_,_,_,s,_| s as i64);
+
+pub fn date_get_utc_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(e) = require_date_this(ctx, &this) {
+        return e;
+    }
+    let ts = get_date_timestamp_with_ctx(&this, ctx);
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
+    let ms = (ts % 1000.0).abs();
+    JSValue::new_int(ms as i64)
 }
 
 pub fn date_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -755,7 +977,7 @@ fn days_in_year(year: i32) -> i64 {
     if is_leap_year(year) { 366 } else { 365 }
 }
 
-pub fn date_constructor(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let timestamp = if args.is_empty() {
         current_timestamp_ms()
     } else if args.len() == 1 {
@@ -764,7 +986,8 @@ pub fn date_constructor(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else if args[0].is_float() {
             args[0].get_float()
         } else if args[0].is_string() {
-            current_timestamp_ms()
+            let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+            parse_date_string(&s)
         } else {
             return JSValue::new_float(f64::NAN);
         }

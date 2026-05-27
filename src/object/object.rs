@@ -69,6 +69,7 @@ pub enum ObjectType {
     Promise,
     Proxy,
     BigInt,
+    Boolean,
     ArrayBuffer,
     TypedArray,
     DataView,
@@ -1329,9 +1330,12 @@ impl JSObject {
         if self.shape.is_none() && !self.props.is_empty() {
         } else if self.shape.is_some() {
             let current = self.shape.unwrap();
-            let new_shape = cache.transition(current, prop);
-            self.shape = Some(new_shape);
-            self.shape_id_cache = unsafe { (*new_shape.as_ptr()).id.0 };
+            let shape_count = unsafe { (*current.as_ptr()).property_count } as usize;
+            if shape_count == self.props.len() {
+                let new_shape = cache.transition(current, prop);
+                self.shape = Some(new_shape);
+                self.shape_id_cache = unsafe { (*new_shape.as_ptr()).id.0 };
+            }
         } else {
             let current = self.ensure_shape(cache);
             let new_shape = cache.transition(current, prop);
@@ -1716,6 +1720,7 @@ impl JSObject {
                 attrs_from_bools(desc.writable, desc.enumerable, desc.configurable),
             ));
             self.track_property_order(prop);
+            self.update_property_map(prop);
         }
         true
     }

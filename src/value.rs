@@ -61,6 +61,9 @@ impl JSValue {
         let exponent = ((bits >> 52) & 0x7FF) as i32;
         if exponent == 0 {
             if (bits & 0x000F_FFFF_FFFF_FFFF) == 0 {
+                if bits & 0x8000_0000_0000_0000 != 0 {
+                    return None;
+                }
                 return Some(0i64);
             }
             return None;

@@ -204,13 +204,38 @@ impl JSFunction {
     }
 
     pub fn set_builtin_marker(&mut self, ctx: &mut JSContext, builtin_name: &str) {
+        use crate::object::object::PropertyDescriptor;
+
         const BUILTIN_MARKER: &str = "__builtin__";
         let atom = ctx.intern(builtin_name);
         self.builtin_atom = Some(atom);
 
         self.builtin_func = ctx.get_builtin_func(builtin_name);
+        if let Some(display_name) = ctx.get_builtin_name(builtin_name) {
+            self.name = ctx.intern(display_name);
+        }
         self.base
             .set(ctx.intern(BUILTIN_MARKER), JSValue::new_string(atom));
+
+        let length_desc = PropertyDescriptor {
+            value: Some(JSValue::new_int(self.arity as i64)),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        };
+        self.base.define_property(ctx.common_atoms.length, length_desc);
+
+        let name_desc = PropertyDescriptor {
+            value: Some(JSValue::new_string(self.name)),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        };
+        self.base.define_property(ctx.common_atoms.name, name_desc);
     }
 }
 

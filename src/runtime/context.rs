@@ -127,6 +127,7 @@ pub struct CommonAtoms {
     pub __done__: Atom,
     pub __iter_arr__: Atom,
     pub __iter_idx__: Atom,
+    pub to_string_tag: Atom,
 }
 
 impl CommonAtoms {
@@ -244,6 +245,7 @@ impl CommonAtoms {
             __done__: tbl.intern("__done__"),
             __iter_arr__: tbl.intern("__iter_arr__"),
             __iter_idx__: tbl.intern("__iter_idx__"),
+            to_string_tag: tbl.intern("Symbol.toStringTag"),
         }
     }
 }
@@ -528,6 +530,28 @@ impl JSContext {
 
     pub fn get_builtin_func(&self, name: &str) -> Option<crate::host::func::HostFunc> {
         self.builtin_functions.get(name).map(|f| f.func)
+    }
+
+    pub fn get_builtin_name(&self, name: &str) -> Option<&'static str> {
+        self.builtin_functions.get(name).map(|f| f.name)
+    }
+
+    pub fn builtin_needs_this(&self, name: &str) -> bool {
+        self.builtin_functions
+            .get(name)
+            .map(|f| f.needs_this)
+            .unwrap_or(false)
+    }
+
+    pub fn builtin_is_constructor(&self, name: &str) -> bool {
+        self.builtin_functions
+            .get(name)
+            .map(|f| f.is_constructor)
+            .unwrap_or(false)
+    }
+
+    pub fn get_builtin_arity(&self, name: &str) -> Option<u32> {
+        self.builtin_functions.get(name).map(|f| f.arity)
     }
 
     pub fn call_builtin_direct(

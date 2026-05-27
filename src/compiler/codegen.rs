@@ -2977,7 +2977,6 @@ impl CodeGenerator {
                 self.gen_try_statement(try_stmt, ctx, Some(target_reg))?;
             }
             _ => {
-                // Variable declarations, function declarations, etc.
                 if let Some(reg) = self.gen_statement_as_expression(stmt, ctx)? {
                     if reg != target_reg {
                         self.emit(Opcode::Move);
@@ -2985,7 +2984,12 @@ impl CodeGenerator {
                         self.emit_u16(reg);
                         self.free_register(reg);
                     }
-                } else {
+                } else if !matches!(
+                    stmt,
+                    ASTNode::VariableDeclaration(_)
+                        | ASTNode::FunctionDeclaration(_)
+                        | ASTNode::ClassDeclaration(_)
+                ) {
                     self.gen_statement(stmt, ctx)?;
                 }
             }
@@ -3279,7 +3283,7 @@ impl CodeGenerator {
         stmt: &WhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_while_statement_with_result(stmt, ctx, Some(0))
+        self.gen_while_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_while_statement_with_result(
@@ -3364,7 +3368,7 @@ impl CodeGenerator {
         stmt: &ForStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_statement_with_result(stmt, ctx, Some(0))
+        self.gen_for_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_for_statement_with_result(
@@ -3531,7 +3535,7 @@ impl CodeGenerator {
         stmt: &ForInStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_in_statement_with_result(stmt, ctx, Some(0))
+        self.gen_for_in_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_for_in_statement_with_result(
@@ -3761,7 +3765,7 @@ impl CodeGenerator {
         stmt: &ForOfStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_for_of_statement_with_result(stmt, ctx, Some(0))
+        self.gen_for_of_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_for_of_statement_with_result(
@@ -3867,7 +3871,7 @@ impl CodeGenerator {
         stmt: &DoWhileStatement,
         ctx: &mut JSContext,
     ) -> Result<(), String> {
-        self.gen_do_while_statement_with_result(stmt, ctx, Some(0))
+        self.gen_do_while_statement_with_result(stmt, ctx, None)
     }
 
     fn gen_do_while_statement_with_result(
@@ -5115,7 +5119,14 @@ impl CodeGenerator {
                 self.free_register(arg);
                 return Ok(dst);
             }
-            UnaryOp::Plus => {}
+            UnaryOp::Plus => {
+                let dst = self.alloc_register();
+                self.emit(Opcode::Pos);
+                self.emit_u16(dst);
+                self.emit_u16(arg);
+                self.free_register(arg);
+                return Ok(dst);
+            }
             UnaryOp::Void => {
                 let dst = self.alloc_register();
                 self.emit(Opcode::LoadUndefined);
@@ -6334,7 +6345,6 @@ impl CodeGenerator {
                                     | "Object"
                                     | "JSON"
                                     | "Number"
-                                    | "Boolean"
                                     | "String"
                                     | "Array"
                                     | "RegExp"
@@ -6392,39 +6402,6 @@ impl CodeGenerator {
             if self.current_function_name.as_ref().map_or(false, |n| n == &id.name)
                 && self.lookup_var_slot(&id.name).is_none()
                 && !self.upvalue_slots.contains_key(&id.name));
-
-        let is_namespace_call = if let Expression::MemberExpression(member) = &*call.callee {
-            if let Expression::Identifier(ident) = &*member.object {
-                matches!(
-                    ident.name.as_str(),
-                    "Math"
-                        | "Object"
-                        | "JSON"
-                        | "Number"
-                        | "Boolean"
-                        | "String"
-                        | "Array"
-                        | "RegExp"
-                        | "Error"
-                        | "Function"
-                        | "Promise"
-                        | "Symbol"
-                        | "Map"
-                        | "Set"
-                        | "WeakMap"
-                        | "WeakSet"
-                        | "BigInt"
-                        | "Date"
-                        | "Reflect"
-                        | "Proxy"
-                        | "console"
-                )
-            } else {
-                false
-            }
-        } else {
-            false
-        };
 
         let has_spread = call
             .arguments
@@ -6537,7 +6514,14 @@ impl CodeGenerator {
                         f
                     }
                 };
-                if is_namespace_call {
+                let is_ns = matches!(&*member.object, Expression::Identifier(ident)
+                    if matches!(ident.name.as_str(),
+                        "Math" | "Object" | "JSON" | "Number" | "String"
+                        | "Array" | "RegExp" | "Error" | "Function" | "Promise" | "Symbol"
+                        | "Map" | "Set" | "WeakMap" | "WeakSet" | "BigInt" | "Date"
+                        | "Reflect" | "Proxy" | "console"
+                    ));
+                if is_ns {
                     (func_reg, None, Some(obj_reg))
                 } else {
                     (func_reg, Some(obj_reg), None)

@@ -823,7 +823,7 @@ pub fn run_microtasks_with_vm(ctx: &mut JSContext, vm: &mut crate::runtime::vm::
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "promise_executor",
-        HostFunction::new("executor", 3, promise_executor),
+        HostFunction::ctor("executor", 3, promise_executor),
     );
     ctx.register_builtin(
         "promise_resolve",
@@ -833,14 +833,14 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "promise_reject",
         HostFunction::new("reject", 1, promise_reject),
     );
-    ctx.register_builtin("promise_then", HostFunction::new("then", 2, promise_then));
+    ctx.register_builtin("promise_then", HostFunction::method("then", 2, promise_then));
     ctx.register_builtin(
         "promise_catch",
-        HostFunction::new("catch", 2, promise_catch),
+        HostFunction::method("catch", 2, promise_catch),
     );
     ctx.register_builtin(
         "promise_finally",
-        HostFunction::new("finally", 2, promise_finally),
+        HostFunction::method("finally", 2, promise_finally),
     );
     ctx.register_builtin("promise_all", HostFunction::new("all", 1, promise_all));
     ctx.register_builtin("promise_race", HostFunction::new("race", 1, promise_race));

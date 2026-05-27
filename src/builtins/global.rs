@@ -32,12 +32,17 @@ use crate::builtins::websocket;
 use crate::host::HostFunction;
 use crate::object::function::JSFunction;
 use crate::object::object::JSObject;
+use crate::object::object::ObjectType;
+use crate::object::object::PropertyDescriptor;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 use std::collections::HashSet;
 
 pub fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
+    let arity = ctx
+        .get_builtin_arity(name)
+        .unwrap_or(1);
+    let mut func = JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -135,12 +140,13 @@ pub fn init_globals(ctx: &mut JSContext) {
     intl::register_builtins(ctx);
 
     init_console(ctx);
-    init_math(ctx);
+    symbol::init_symbol(ctx);
     init_reflect(ctx);
     init_json(ctx);
     init_global_funcs(ctx);
 
     object::init_object(ctx);
+    init_math(ctx);
     array::init_array(ctx);
     string::init_string(ctx);
 
@@ -523,14 +529,110 @@ fn global_eval(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn init_reflect(ctx: &mut JSContext) {
-    let reflect_obj = JSObject::new();
+    ctx.register_builtin(
+        "reflect_construct",
+        HostFunction::new("construct", 2, reflect_construct),
+    );
+    ctx.register_builtin(
+        "reflect_apply",
+        HostFunction::new("apply", 3, reflect_apply),
+    );
+
+    let reflect_atom = ctx.intern("Reflect");
+    let mut reflect_obj = JSObject::new();
+    reflect_obj.set(
+        ctx.intern("construct"),
+        create_builtin_function(ctx, "reflect_construct"),
+    );
+    reflect_obj.set(
+        ctx.intern("apply"),
+        create_builtin_function(ctx, "reflect_apply"),
+    );
     let reflect_ptr = Box::into_raw(Box::new(reflect_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(reflect_ptr);
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(ctx.intern("Reflect"), JSValue::new_object(reflect_ptr));
+        global_obj.set(reflect_atom, JSValue::new_object(reflect_ptr));
     }
+}
+
+fn reflect_construct(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_function() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.construct requires a constructor")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let target = args[0];
+    let new_target = if args.len() >= 3 && args[2].is_function() {
+        args[2]
+    } else {
+        target
+    };
+    let is_ctor = if new_target.is_function() {
+        let f = new_target.as_function();
+        if f.is_builtin() {
+            ctx.builtin_is_constructor(
+                &f.builtin_atom.map(|ba| ctx.get_atom_str(ba).to_string()).unwrap_or_default()
+            )
+        } else {
+            true
+        }
+    } else {
+        false
+    };
+    if !is_ctor {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("newTarget is not a constructor")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let proto_key = ctx.common_atoms.prototype;
+    let proto_val = if new_target.is_function() {
+        new_target.as_function().base.get(proto_key)
+    } else {
+        None
+    };
+    let mut obj = JSObject::new();
+    if let Some(pv) = proto_val {
+        if pv.is_object() {
+            obj.prototype = Some(pv.get_ptr() as *mut JSObject);
+        }
+    } else if let Some(op) = ctx.get_object_prototype() {
+        obj.prototype = Some(op);
+    }
+    let ptr = Box::into_raw(Box::new(obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    JSValue::new_object(ptr)
+}
+
+fn reflect_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.len() < 3 || !args[0].is_function() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.apply requires a function")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    JSValue::undefined()
 }
 
 fn init_console(ctx: &mut JSContext) {
@@ -580,6 +682,24 @@ fn set_non_configurable(
     );
 }
 
+pub fn set_non_enumerable(
+    obj: &mut crate::object::object::JSObject,
+    key: crate::runtime::atom::Atom,
+    value: JSValue,
+) {
+    obj.define_property(
+        key,
+        crate::object::object::PropertyDescriptor {
+            value: Some(value),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+}
+
 fn init_math(ctx: &mut JSContext) {
     let math_atom = ctx.intern("Math");
     let mut math_obj = JSObject::new();
@@ -596,126 +716,174 @@ fn init_math(ctx: &mut JSContext) {
     for (key, val) in &constants {
         set_non_configurable(&mut math_obj, *key, JSValue::new_float(*val));
     }
-    math_obj.set(ctx.intern("abs"), create_builtin_function(ctx, "math_abs"));
-    math_obj.set(
+    {
+        let key = symbol::get_symbol_to_string_tag_prop_key(ctx);
+        let val = JSValue::new_string(ctx.intern("Math"));
+        let mut desc = PropertyDescriptor::new_data(val);
+        desc.writable = false;
+        desc.enumerable = false;
+        desc.configurable = true;
+        math_obj.define_property_ext(key, desc, true, true, true);
+    }
+    set_non_enumerable(&mut math_obj, ctx.intern("abs"), create_builtin_function(ctx, "math_abs"));
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("floor"),
         create_builtin_function(ctx, "math_floor"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("ceil"),
         create_builtin_function(ctx, "math_ceil"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("round"),
         create_builtin_function(ctx, "math_round"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("sqrt"),
         create_builtin_function(ctx, "math_sqrt"),
     );
-    math_obj.set(ctx.intern("max"), create_builtin_function(ctx, "math_max"));
-    math_obj.set(ctx.intern("min"), create_builtin_function(ctx, "math_min"));
-    math_obj.set(ctx.intern("pow"), create_builtin_function(ctx, "math_pow"));
-    math_obj.set(
+    set_non_enumerable(&mut math_obj, ctx.intern("max"), create_builtin_function(ctx, "math_max"));
+    set_non_enumerable(&mut math_obj, ctx.intern("min"), create_builtin_function(ctx, "math_min"));
+    set_non_enumerable(&mut math_obj, ctx.intern("pow"), create_builtin_function(ctx, "math_pow"));
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("random"),
         create_builtin_function(ctx, "math_random"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("trunc"),
         create_builtin_function(ctx, "math_trunc"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("sign"),
         create_builtin_function(ctx, "math_sign"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("cbrt"),
         create_builtin_function(ctx, "math_cbrt"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("clz32"),
         create_builtin_function(ctx, "math_clz32"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("imul"),
         create_builtin_function(ctx, "math_imul"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("fround"),
         create_builtin_function(ctx, "math_fround"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
+        ctx.intern("f16round"),
+        create_builtin_function(ctx, "math_f16round"),
+    );
+    set_non_enumerable(
+        &mut math_obj,
+        ctx.intern("sumPrecise"),
+        create_builtin_function(ctx, "math_sumPrecise"),
+    );
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("hypot"),
         create_builtin_function(ctx, "math_hypot"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("expm1"),
         create_builtin_function(ctx, "math_expm1"),
     );
-    math_obj.set(ctx.intern("log"), create_builtin_function(ctx, "math_log"));
-    math_obj.set(
+    set_non_enumerable(&mut math_obj, ctx.intern("log"), create_builtin_function(ctx, "math_log"));
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("log1p"),
         create_builtin_function(ctx, "math_log1p"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("log10"),
         create_builtin_function(ctx, "math_log10"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("log2"),
         create_builtin_function(ctx, "math_log2"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("sinh"),
         create_builtin_function(ctx, "math_sinh"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("cosh"),
         create_builtin_function(ctx, "math_cosh"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("tanh"),
         create_builtin_function(ctx, "math_tanh"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("asinh"),
         create_builtin_function(ctx, "math_asinh"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("acosh"),
         create_builtin_function(ctx, "math_acosh"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("atanh"),
         create_builtin_function(ctx, "math_atanh"),
     );
-    math_obj.set(ctx.intern("sin"), create_builtin_function(ctx, "math_sin"));
-    math_obj.set(ctx.intern("cos"), create_builtin_function(ctx, "math_cos"));
-    math_obj.set(ctx.intern("tan"), create_builtin_function(ctx, "math_tan"));
-    math_obj.set(ctx.intern("exp"), create_builtin_function(ctx, "math_exp"));
-    math_obj.set(
+    set_non_enumerable(&mut math_obj, ctx.intern("sin"), create_builtin_function(ctx, "math_sin"));
+    set_non_enumerable(&mut math_obj, ctx.intern("cos"), create_builtin_function(ctx, "math_cos"));
+    set_non_enumerable(&mut math_obj, ctx.intern("tan"), create_builtin_function(ctx, "math_tan"));
+    set_non_enumerable(&mut math_obj, ctx.intern("exp"), create_builtin_function(ctx, "math_exp"));
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("asin"),
         create_builtin_function(ctx, "math_asin"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("acos"),
         create_builtin_function(ctx, "math_acos"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("atan"),
         create_builtin_function(ctx, "math_atan"),
     );
-    math_obj.set(
+    set_non_enumerable(
+        &mut math_obj,
         ctx.intern("atan2"),
         create_builtin_function(ctx, "math_atan2"),
     );
+    if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
+        math_obj.set_prototype_raw(obj_proto_ptr);
+    }
     let math_ptr = Box::into_raw(Box::new(math_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(math_ptr);
     let math_value = JSValue::new_object(math_ptr);
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(math_atom, math_value);
+        set_non_enumerable(global_obj, math_atom, math_value);
     }
 }
 
@@ -746,52 +914,191 @@ fn init_json(ctx: &mut JSContext) {
     }
 }
 
+pub fn throw_type_error(ctx: &mut JSContext, msg: &str) -> JSValue {
+    let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(msg)));
+    if let Some(proto) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto);
+    }
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+    JSValue::undefined()
+}
+
+pub fn throw_type_error_if_no_exception(ctx: &mut JSContext, msg: &str) -> JSValue {
+    if ctx.pending_exception.is_some() {
+        return JSValue::undefined();
+    }
+    throw_type_error(ctx, msg)
+}
+
+fn js_to_primitive_number(ctx: &mut JSContext, v: &JSValue) -> Option<JSValue> {
+    if !v.is_object() {
+        return Some(v.clone());
+    }
+    let obj = v.as_object();
+    if let Some(val) = obj.get(ctx.common_atoms.__value__) {
+        if !val.is_object() && !val.is_function() {
+            return Some(val);
+        }
+    }
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        let valueOf_atom = ctx.intern("valueOf");
+        let to_string_atom = ctx.intern("toString");
+        if let Some(valueof_fn) = obj.get(valueOf_atom) {
+            if valueof_fn.is_function() {
+                let result = vm.call_function_with_this(ctx, valueof_fn, v.clone(), &[]);
+                if ctx.pending_exception.is_some() {
+                    return None;
+                }
+                if let Ok(val) = result {
+                    if !val.is_object() && !val.is_function() {
+                        return Some(val);
+                    }
+                }
+            }
+        }
+        if ctx.pending_exception.is_some() {
+            return None;
+        }
+        if let Some(tostring_fn) = obj.get(to_string_atom) {
+            if tostring_fn.is_function() {
+                let result = vm.call_function_with_this(ctx, tostring_fn, v.clone(), &[]);
+                if ctx.pending_exception.is_some() {
+                    return None;
+                }
+                if let Ok(val) = result {
+                    if !val.is_object() && !val.is_function() {
+                        return Some(val);
+                    }
+                }
+            }
+        }
+        if ctx.pending_exception.is_some() {
+            return None;
+        }
+    }
+    None
+}
+
+pub fn js_to_number_value(ctx: &mut JSContext, v: &JSValue) -> Result<f64, ()> {
+    if v.is_int() {
+        return Ok(v.get_int() as f64);
+    }
+    if v.is_float() {
+        return Ok(v.get_float());
+    }
+    if v.is_bool() {
+        return Ok(if v.get_bool() { 1.0 } else { 0.0 });
+    }
+    if v.is_null() {
+        return Ok(0.0);
+    }
+    if v.is_undefined() {
+        return Ok(f64::NAN);
+    }
+    if v.is_symbol() {
+        return Err(());
+    }
+    if v.is_bigint() {
+        let bv = v.as_object().get_bigint_value();
+        return Ok(bv as f64);
+    }
+    if v.is_string() {
+        let s = ctx.get_atom_str(v.get_atom());
+        let s = s.trim();
+        if s.starts_with("0b") || s.starts_with("0B") {
+            return Ok(u64::from_str_radix(&s[2..], 2).map(|n| n as f64).unwrap_or(f64::NAN));
+        }
+        if s.starts_with("0o") || s.starts_with("0O") {
+            return Ok(u64::from_str_radix(&s[2..], 8).map(|n| n as f64).unwrap_or(f64::NAN));
+        }
+        if s.starts_with("0x") || s.starts_with("0X") {
+            return Ok(u64::from_str_radix(&s[2..], 16).map(|n| n as f64).unwrap_or(f64::NAN));
+        }
+        if let Ok(n) = s.parse::<i64>() {
+            return Ok(n as f64);
+        }
+        if let Ok(f) = s.parse::<f64>() {
+            return Ok(f);
+        }
+        return Ok(f64::NAN);
+    }
+    if v.is_object() {
+        let obj = v.as_object();
+        let obj_type = obj.obj_type();
+        if obj_type == crate::object::object::ObjectType::Array {
+            let elements: Vec<JSValue> = if obj.is_dense_array() {
+                use crate::object::array_obj::JSArrayObject;
+                let arr = unsafe { &*(v.get_ptr() as *const JSArrayObject) };
+                arr.elements.clone()
+            } else if let Some(elems) = obj.get_array_elements() {
+                elems.clone()
+            } else {
+                return Ok(0.0);
+            };
+            if elements.is_empty() {
+                return Ok(0.0);
+            }
+            let mut parts = Vec::new();
+            for elem in elements.iter() {
+                if elem.is_undefined() || elem.is_null() {
+                    parts.push("".to_string());
+                } else if elem.is_string() {
+                    parts.push(ctx.get_atom_str(elem.get_atom()).to_string());
+                } else if elem.is_int() {
+                    parts.push(format!("{}", elem.get_int()));
+                } else if elem.is_float() {
+                    parts.push(string::js_float_to_string(elem.get_float()));
+                } else if elem.is_bool() {
+                    parts.push(if elem.get_bool() { "true".to_string() } else { "false".to_string() });
+                } else {
+                    parts.push("".to_string());
+                }
+            }
+            let joined = parts.join(",");
+            return Ok(joined.trim().parse::<f64>().unwrap_or(f64::NAN));
+        }
+        if let Some(prim) = js_to_primitive_number(ctx, v) {
+            return js_to_number_value(ctx, &prim);
+        }
+        return Err(());
+    }
+    Ok(f64::NAN)
+}
+
 fn number_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_int(0);
     }
-    let v = &args[0];
-    if v.is_int() {
-        return *v;
-    }
-    if v.is_float() {
-        return *v;
-    }
-    if v.is_bool() {
-        return JSValue::new_int(if v.get_bool() { 1 } else { 0 });
-    }
-    if v.is_null() {
-        return JSValue::new_int(0);
-    }
-    if v.is_undefined() {
-        return JSValue::new_float(f64::NAN);
-    }
-    if v.is_string() {
-        let s = ctx.get_atom_str(v.get_atom());
-        if let Ok(n) = s.parse::<i64>() {
-            return JSValue::new_int(n);
+    match js_to_number_value(ctx, &args[0]) {
+        Ok(f) => {
+            if f.is_nan() {
+                return JSValue::new_float(f64::NAN);
+            }
+            if f == f.floor() && f.is_finite()
+                && f.abs() < 140737488355328.0
+            {
+                return JSValue::new_int(f as i64);
+            }
+            JSValue::new_float(f)
         }
-        if let Ok(f) = s.parse::<f64>() {
-            return JSValue::new_float(f);
+        Err(()) => {
+            if ctx.pending_exception.is_some() {
+                return JSValue::undefined();
+            }
+            throw_type_error(ctx, "Cannot convert Symbol to a number")
         }
-        return JSValue::new_float(f64::NAN);
     }
-    if v.is_symbol() {
-        return JSValue::new_float(f64::NAN);
-    }
-    if v.is_bigint() {
-        if v.is_object() {
-            return JSValue::new_int(v.as_object().get_bigint_value() as i64);
-        }
-        return JSValue::new_int(0);
-    }
-    JSValue::new_float(f64::NAN)
 }
 
 fn init_number(ctx: &mut JSContext) {
     ctx.register_builtin(
         "number_constructor",
-        HostFunction::new("Number", 1, number_constructor),
+        HostFunction::ctor("Number", 1, number_constructor),
     );
     ctx.register_builtin("number_isNaN", HostFunction::new("isNaN", 1, number_is_nan));
     ctx.register_builtin(
@@ -803,6 +1110,10 @@ fn init_number(ctx: &mut JSContext) {
         HostFunction::new("isInteger", 1, number_is_integer),
     );
     ctx.register_builtin(
+        "number_isSafeInteger",
+        HostFunction::new("isSafeInteger", 1, number_is_safe_integer),
+    );
+    ctx.register_builtin(
         "number_parseInt",
         HostFunction::new("parseInt", 1, global_parseint),
     );
@@ -812,102 +1123,149 @@ fn init_number(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "number_toFixed",
-        HostFunction::new("toFixed", 1, number_to_fixed),
+        HostFunction::method("toFixed", 1, number_to_fixed),
+    );
+    ctx.register_builtin(
+        "number_toExponential",
+        HostFunction::method("toExponential", 1, number_to_exponential),
     );
     ctx.register_builtin(
         "number_toPrecision",
-        HostFunction::new("toPrecision", 1, number_to_precision),
+        HostFunction::method("toPrecision", 1, number_to_precision),
     );
     ctx.register_builtin(
         "number_toString",
-        HostFunction::new("toString", 0, number_to_string),
+        HostFunction::new("toString", 1, number_to_string),
+    );
+    ctx.register_builtin(
+        "number_toLocaleString",
+        HostFunction::new("toLocaleString", 0, number_to_string),
     );
     ctx.register_builtin(
         "number_valueOf",
-        HostFunction::new("valueOf", 0, number_value_of),
+        HostFunction::method("valueOf", 0, number_value_of),
     );
 
     let number_atom = ctx.intern("Number");
     let mut num_func = JSFunction::new_builtin(number_atom, 1);
     num_func.set_builtin_marker(ctx, "number_constructor");
-    num_func
-        .base
-        .set(ctx.intern("MAX_VALUE"), JSValue::new_float(f64::MAX));
-    num_func
-        .base
-        .set(ctx.intern("MIN_VALUE"), JSValue::new_float(f64::MIN));
-    num_func.base.set(
+    set_non_configurable(
+        &mut num_func.base,
+        ctx.intern("MAX_VALUE"),
+        JSValue::new_float(1.7976931348623157e+308),
+    );
+    set_non_configurable(
+        &mut num_func.base,
+        ctx.intern("MIN_VALUE"),
+        JSValue::new_float(5e-324),
+    );
+    set_non_configurable(
+        &mut num_func.base,
         ctx.intern("POSITIVE_INFINITY"),
         JSValue::new_float(f64::INFINITY),
     );
-    num_func.base.set(
+    set_non_configurable(
+        &mut num_func.base,
         ctx.intern("NEGATIVE_INFINITY"),
         JSValue::new_float(f64::NEG_INFINITY),
     );
-    num_func
-        .base
-        .set(ctx.intern("NaN"), JSValue::new_float(f64::NAN));
-    num_func.base.set(
-        ctx.intern("isNaN"),
-        create_builtin_function(ctx, "number_isNaN"),
+    set_non_configurable(
+        &mut num_func.base,
+        ctx.intern("NaN"),
+        JSValue::new_float(f64::NAN),
     );
-    num_func.base.set(
-        ctx.intern("isFinite"),
-        create_builtin_function(ctx, "number_isFinite"),
+    set_non_configurable(
+        &mut num_func.base,
+        ctx.intern("MAX_SAFE_INTEGER"),
+        JSValue::new_float(9007199254740991.0),
     );
-    num_func.base.set(
-        ctx.intern("isInteger"),
-        create_builtin_function(ctx, "number_isInteger"),
+    set_non_configurable(
+        &mut num_func.base,
+        ctx.intern("MIN_SAFE_INTEGER"),
+        JSValue::new_float(-9007199254740991.0),
     );
-    num_func.base.set(
-        ctx.intern("parseInt"),
-        create_builtin_function(ctx, "number_parseInt"),
+    set_non_configurable(
+        &mut num_func.base,
+        ctx.intern("EPSILON"),
+        JSValue::new_float(f64::EPSILON),
     );
-    num_func.base.set(
-        ctx.intern("parseFloat"),
-        create_builtin_function(ctx, "number_parseFloat"),
-    );
+    set_non_enumerable(&mut num_func.base, ctx.intern("isNaN"), create_builtin_function(ctx, "number_isNaN"));
+    set_non_enumerable(&mut num_func.base, ctx.intern("isFinite"), create_builtin_function(ctx, "number_isFinite"));
+    set_non_enumerable(&mut num_func.base, ctx.intern("isInteger"), create_builtin_function(ctx, "number_isInteger"));
+    set_non_enumerable(&mut num_func.base, ctx.intern("isSafeInteger"), create_builtin_function(ctx, "number_isSafeInteger"));
+    let global = ctx.global();
+    if global.is_object() {
+        let global_obj = global.as_object();
+        if let Some(parse_int_fn) = global_obj.get(ctx.intern("parseInt")) {
+            set_non_enumerable(&mut num_func.base, ctx.intern("parseInt"), parse_int_fn);
+        }
+        if let Some(parse_float_fn) = global_obj.get(ctx.intern("parseFloat")) {
+            set_non_enumerable(&mut num_func.base, ctx.intern("parseFloat"), parse_float_fn);
+        }
+    }
     let num_ptr = Box::into_raw(Box::new(num_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(num_ptr);
     let num_value = JSValue::new_function(num_ptr);
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(number_atom, num_value);
+        set_non_enumerable(global_obj, number_atom, num_value);
     }
 
-    let mut proto_obj = JSObject::new();
-    proto_obj.set(
+    let mut number_proto = JSObject::new();
+    number_proto.set(ctx.common_atoms.__value__, JSValue::new_int(0));
+    set_non_enumerable(
+        &mut number_proto,
         ctx.intern("toFixed"),
         create_builtin_function(ctx, "number_toFixed"),
     );
-    proto_obj.set(
+    set_non_enumerable(
+        &mut number_proto,
+        ctx.intern("toExponential"),
+        create_builtin_function(ctx, "number_toExponential"),
+    );
+    set_non_enumerable(
+        &mut number_proto,
         ctx.intern("toPrecision"),
         create_builtin_function(ctx, "number_toPrecision"),
     );
-    proto_obj.set(
+    set_non_enumerable(
+        &mut number_proto,
         ctx.intern("toString"),
         create_builtin_function(ctx, "number_toString"),
     );
-    proto_obj.set(
+    set_non_enumerable(
+        &mut number_proto,
         ctx.intern("valueOf"),
         create_builtin_function(ctx, "number_valueOf"),
     );
-    proto_obj.set(ctx.common_atoms.constructor, num_value);
+    set_non_enumerable(
+        &mut number_proto,
+        ctx.intern("toLocaleString"),
+        create_builtin_function(ctx, "number_toLocaleString"),
+    );
+    set_non_enumerable(
+        &mut number_proto,
+        ctx.common_atoms.constructor,
+        num_value,
+    );
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
-        proto_obj.prototype = Some(obj_proto_ptr);
+        number_proto.prototype = Some(obj_proto_ptr);
     }
 
-    let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
+    let proto_ptr = Box::into_raw(Box::new(number_proto)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
     ctx.set_number_prototype(proto_ptr);
 
     let num_func_ptr = num_ptr as *mut crate::object::function::JSFunction;
     unsafe {
-        (*num_func_ptr)
-            .base
-            .set(ctx.common_atoms.prototype, JSValue::new_object(proto_ptr));
+        use crate::object::object::PropertyDescriptor;
+        let mut desc = PropertyDescriptor::new_data(JSValue::new_object(proto_ptr));
+        desc.writable = false;
+        desc.enumerable = false;
+        desc.configurable = false;
+        (*num_func_ptr).base.define_property(ctx.common_atoms.prototype, desc);
     }
 }
 
@@ -969,70 +1327,398 @@ fn number_is_integer(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 }
 
-fn number_to_fixed(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let this = if args.is_empty() {
-        return JSValue::new_string(_ctx.intern("0"));
+fn number_is_safe_integer(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
+        return JSValue::bool(false);
+    }
+    let v = &args[0];
+    if v.is_int() {
+        JSValue::bool(true)
+    } else if v.is_float() {
+        let f = v.get_float();
+        if !f.is_finite() || f.fract() != 0.0 {
+            return JSValue::bool(false);
+        }
+        let abs = f.abs();
+        JSValue::bool(abs <= 9007199254740991.0)
     } else {
-        &args[0]
-    };
-    let digits = if args.len() > 1 {
-        args[1].get_int() as usize
-    } else {
-        0
-    };
-
-    let val = if this.is_int() {
-        this.get_int() as f64
-    } else if this.is_float() {
-        this.get_float()
-    } else {
-        return JSValue::new_string(_ctx.intern("NaN"));
-    };
-
-    let result = format!("{:.1$}", val, digits);
-    JSValue::new_string(_ctx.intern(&result))
+        JSValue::bool(false)
+    }
 }
 
-fn number_to_precision(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn to_integer_or_nan(ctx: &mut JSContext, v: &JSValue) -> Result<f64, ()> {
+    if v.is_symbol() {
+        return Err(());
+    }
+    if v.is_bigint() {
+        return Err(());
+    }
+    if v.is_object() {
+        let obj = v.as_object();
+        let obj_type = obj.obj_type();
+        if obj_type == crate::object::object::ObjectType::Array {
+            let elements: Vec<JSValue> = if obj.is_dense_array() {
+                use crate::object::array_obj::JSArrayObject;
+                let arr = unsafe { &*(v.get_ptr() as *const JSArrayObject) };
+                arr.elements.clone()
+            } else if let Some(elems) = obj.get_array_elements() {
+                elems.clone()
+            } else {
+                return Ok(0.0);
+            };
+            if elements.is_empty() {
+                    return Ok(0.0);
+                }
+                let mut parts = Vec::new();
+                for elem in elements.iter() {
+                    if elem.is_undefined() || elem.is_null() {
+                        parts.push("".to_string());
+                    } else if elem.is_string() {
+                        parts.push(ctx.get_atom_str(elem.get_atom()).to_string());
+                    } else if elem.is_int() {
+                        parts.push(format!("{}", elem.get_int()));
+                    } else if elem.is_float() {
+                        parts.push(string::js_float_to_string(elem.get_float()));
+                    } else if elem.is_bool() {
+                        parts.push(if elem.get_bool() { "true".to_string() } else { "false".to_string() });
+                    } else {
+                        parts.push("".to_string());
+                    }
+                }
+                let joined = parts.join(",");
+                let f = joined.trim().parse::<f64>().unwrap_or(f64::NAN);
+                if f.is_nan() { return Ok(0.0); }
+                if f.is_infinite() { return Ok(f); }
+                return Ok(f.trunc());
+        }
+        if let Some(prim) = js_to_primitive_number(ctx, v) {
+            if prim.is_symbol() {
+                return Err(());
+            }
+            return to_integer_or_nan(ctx, &prim);
+        }
+        return Err(());
+    }
+    let f = match js_to_number_value(ctx, v) {
+        Ok(f) => f,
+        Err(()) => return Err(()),
+    };
+    if f.is_nan() { return Ok(0.0); }
+    if f.is_infinite() { return Ok(f); }
+    Ok(f.trunc())
+}
+
+fn this_number_value(ctx: &mut JSContext, this: &JSValue) -> Option<f64> {
+    if this.is_int() {
+        return Some(this.get_int() as f64);
+    }
+    if this.is_float() {
+        return Some(this.get_float());
+    }
+    if this.is_object() {
+        let obj = this.as_object();
+        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+            if v.is_int() {
+                return Some(v.get_int() as f64);
+            }
+            if v.is_float() {
+                return Some(v.get_float());
+            }
+        }
+    }
+    None
+}
+
+fn throw_range_error(ctx: &mut JSContext, msg: &str) -> JSValue {
+    let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(msg)));
+    if let Some(proto) = ctx.get_range_error_prototype() {
+        err.prototype = Some(proto);
+    }
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+    JSValue::undefined()
+}
+
+fn throw_type_error_number(ctx: &mut JSContext) -> JSValue {
+    let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+    err.set(
+        ctx.common_atoms.name,
+        JSValue::new_string(ctx.intern("TypeError")),
+    );
+    err.set(
+        ctx.common_atoms.message,
+        JSValue::new_string(ctx.intern("this is not a number")),
+    );
+    if let Some(proto) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto);
+    }
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+    JSValue::undefined()
+}
+
+fn format_exponential(val: f64, fraction_digits: Option<usize>) -> String {
+    if val == 0.0 {
+        return if let Some(digits) = fraction_digits {
+            if digits == 0 {
+                "0e+0".to_string()
+            } else {
+                format!("0.{:0<width$}e+0", "", width = digits)
+            }
+        } else {
+            "0e+0".to_string()
+        };
+    }
+    let sign = if val < 0.0 { "-" } else { "" };
+    let abs = val.abs();
+    if let Some(digits) = fraction_digits {
+        let high_prec = format!("{:.20e}", abs);
+        let mut parts: Vec<&str> = high_prec.splitn(2, 'e').collect();
+        let m_str = parts[0];
+        let e_val: i32 = parts.get(1).unwrap_or(&"0").parse().unwrap_or(0);
+        let m_digits: Vec<char> = m_str.replace(".", "").chars().collect();
+        let total_digits = digits + 1;
+        if total_digits < m_digits.len() {
+            let mut result_digits: Vec<char> = m_digits[..total_digits].to_vec();
+            let next = m_digits[total_digits];
+            if next >= '5' {
+                let mut carry = true;
+                for i in (0..result_digits.len()).rev() {
+                    if carry {
+                        let d = result_digits[i].to_digit(10).unwrap();
+                        if d == 9 {
+                            result_digits[i] = '0';
+                        } else {
+                            result_digits[i] = char::from_digit(d + 1, 10).unwrap();
+                            carry = false;
+                        }
+                    }
+                }
+                if carry {
+                    result_digits.insert(0, '1');
+                    let m = if digits == 0 {
+                        "1".to_string()
+                    } else {
+                        let mut s = "1.".to_string();
+                        for _ in 0..digits {
+                            s.push('0');
+                        }
+                        s
+                    };
+                    return format!("{}{}e{:+}", sign, m, e_val + 1);
+                }
+            }
+            let m = if digits == 0 {
+                result_digits.iter().collect::<String>()
+            } else {
+                let mut s = result_digits[0].to_string();
+                s.push('.');
+                for &d in &result_digits[1..] {
+                    s.push(d);
+                }
+                s
+            };
+            format!("{}{}e{:+}", sign, m, e_val)
+        } else {
+            let m = if digits == 0 {
+                m_digits.iter().collect::<String>()
+            } else {
+                let mut s = m_digits[0].to_string();
+                s.push('.');
+                for &d in &m_digits[1..] {
+                    s.push(d);
+                }
+                while s.len() < 2 + digits {
+                    s.push('0');
+                }
+                s
+            };
+            format!("{}{}e{:+}", sign, m, e_val)
+        }
+    } else {
+        let rust_fmt = format!("{:.15e}", abs);
+        let mut parts: Vec<&str> = rust_fmt.splitn(2, 'e').collect();
+        let m = parts[0].trim_end_matches('0');
+        let m = if m.ends_with('.') { &m[..m.len()-1] } else { m };
+        let e: i32 = parts.get(1).unwrap_or(&"0").parse().unwrap_or(0);
+        format!("{}{}e{:+}", sign, m, e)
+    }
+}
+
+fn number_to_fixed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = if args.is_empty() {
-        return JSValue::new_string(_ctx.intern("0"));
+        return throw_type_error_number(ctx);
     } else {
         &args[0]
     };
-    let precision = if args.len() > 1 {
-        args[1].get_int() as usize
+    let val = match this_number_value(ctx, this) {
+        Some(v) => v,
+        None => return throw_type_error_number(ctx),
+    };
+    let digits = if args.len() > 1 && !args[1].is_undefined() {
+        let d = match to_integer_or_nan(ctx, &args[1]) {
+            Ok(d) => d,
+            Err(()) => return throw_type_error_if_no_exception(ctx, "toFixed() argument cannot be converted to a number"),
+        };
+        if d < 0.0 || d > 100.0 {
+            return throw_range_error(ctx, "toFixed() digits argument must be between 0 and 100");
+        }
+        d as usize
     } else {
         0
     };
-
-    let val = if this.is_int() {
-        this.get_int() as f64
-    } else if this.is_float() {
-        this.get_float()
-    } else {
-        return JSValue::new_string(_ctx.intern("NaN"));
-    };
-
     if val.is_nan() {
-        return JSValue::new_string(_ctx.intern("NaN"));
+        return JSValue::new_string(ctx.intern("NaN"));
     }
     if val.is_infinite() {
-        return JSValue::new_string(_ctx.intern(if val.is_sign_positive() {
+        return JSValue::new_string(ctx.intern(if val.is_sign_positive() {
             "Infinity"
         } else {
             "-Infinity"
         }));
     }
+    let result = format!("{:.1$}", val, digits);
+    JSValue::new_string(ctx.intern(&result))
+}
 
-    let result = format!("{:.1$}", val, precision);
-    JSValue::new_string(_ctx.intern(&result))
+fn number_to_exponential(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = if args.is_empty() {
+        return throw_type_error_number(ctx);
+    } else {
+        &args[0]
+    };
+    let val = match this_number_value(ctx, this) {
+        Some(v) => v,
+        None => return throw_type_error_number(ctx),
+    };
+    let fraction_digits = if args.len() > 1 && !args[1].is_undefined() {
+        let d = match to_integer_or_nan(ctx, &args[1]) {
+            Ok(d) => d,
+            Err(()) => return throw_type_error_if_no_exception(ctx, "toExponential() argument cannot be converted to a number"),
+        };
+        Some(d)
+    } else {
+        None
+    };
+    if val.is_nan() {
+        return JSValue::new_string(ctx.intern("NaN"));
+    }
+    if val.is_infinite() {
+        return JSValue::new_string(ctx.intern(if val.is_sign_positive() {
+            "Infinity"
+        } else {
+            "-Infinity"
+        }));
+    }
+    let fraction_digits = match fraction_digits {
+        Some(d) => {
+            if d < 0.0 || d > 100.0 {
+                return throw_range_error(ctx, "toExponential() fractionDigits must be between 0 and 100");
+            }
+            Some(d as usize)
+        }
+        None => None,
+    };
+    if let Some(d) = fraction_digits {
+        if d > 100 {
+            return throw_range_error(ctx, "toExponential() fractionDigits must be between 0 and 100");
+        }
+    }
+    let result = format_exponential(val, fraction_digits);
+    JSValue::new_string(ctx.intern(&result))
+}
+
+fn number_to_precision(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = if args.is_empty() {
+        return throw_type_error_number(ctx);
+    } else {
+        &args[0]
+    };
+    let val = match this_number_value(ctx, this) {
+        Some(v) => v,
+        None => return throw_type_error_number(ctx),
+    };
+    if args.len() <= 1 || args[1].is_undefined() {
+        if val.is_nan() {
+            return JSValue::new_string(ctx.intern("NaN"));
+        }
+        if val.is_infinite() {
+            return JSValue::new_string(ctx.intern(if val.is_sign_positive() {
+                "Infinity"
+            } else {
+                "-Infinity"
+            }));
+        }
+        return JSValue::new_string(ctx.intern(&format!("{}", val)));
+    }
+    let precision = match to_integer_or_nan(ctx, &args[1]) {
+        Ok(p) => p,
+        Err(()) => return throw_type_error_if_no_exception(ctx, "toPrecision() argument cannot be converted to a number"),
+    };
+    if val.is_nan() {
+        return JSValue::new_string(ctx.intern("NaN"));
+    }
+    if val.is_infinite() {
+        return JSValue::new_string(ctx.intern(if val.is_sign_positive() {
+            "Infinity"
+        } else {
+            "-Infinity"
+        }));
+    }
+    if precision < 1.0 || precision > 100.0 {
+        return throw_range_error(ctx, "toPrecision() precision must be between 1 and 100");
+    }
+    let p = precision as usize;
+    let sign = if val < 0.0 { "-" } else { "" };
+    let abs = val.abs();
+    if abs == 0.0 {
+        let s = if p == 1 {
+            "0".to_string()
+        } else {
+            format!("0.{:0<width$}", "", width = p - 1)
+        };
+        return JSValue::new_string(ctx.intern(&format!("{}{}", sign, s)));
+    }
+    let e = abs.log10().floor() as i32;
+    let exp = e + 1;
+    if e >= -6 && e < p as i32 {
+        let exp_str = format_exponential(abs, Some(p - 1));
+        let mut parts: Vec<&str> = exp_str.splitn(2, 'e').collect();
+        let mantissa = parts[0].replace(".", "");
+        let e_val: i32 = parts.get(1).unwrap_or(&"+0").parse().unwrap_or(0);
+        let n_digits = mantissa.len();
+        let dot_pos = e_val + 1;
+        let mut s = String::new();
+        if dot_pos <= 0 {
+            s.push_str("0.");
+            for _ in 0..(-dot_pos) {
+                s.push('0');
+            }
+            s.push_str(&mantissa);
+        } else if dot_pos >= n_digits as i32 {
+            s.push_str(&mantissa);
+            for _ in 0..(dot_pos - n_digits as i32) {
+                s.push('0');
+            }
+        } else {
+            s.push_str(&mantissa[..dot_pos as usize]);
+            s.push('.');
+            s.push_str(&mantissa[dot_pos as usize..]);
+        }
+        return JSValue::new_string(ctx.intern(&format!("{}{}", sign, s)));
+    }
+    let m_digits = p - 1;
+    let result = format_exponential(abs, Some(m_digits));
+    JSValue::new_string(ctx.intern(&format!("{}{}", sign, result)))
 }
 
 fn boolean_constructor(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() {
-        return JSValue::bool(false);
-    }
-    JSValue::bool(args[0].is_truthy())
+    let val = if !args.is_empty() { args[0].is_truthy() } else { false };
+    JSValue::bool(val)
 }
 
 fn boolean_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1060,7 +1746,16 @@ fn boolean_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn boolean_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return JSValue::bool(false);
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Boolean.prototype.valueOf requires 'this' to be a Boolean")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     }
     let this = &args[0];
     if this.is_bool() {
@@ -1069,34 +1764,49 @@ fn boolean_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if this.is_object() {
         let obj = this.as_object();
         if let Some(v) = obj.get(ctx.common_atoms.__value__) {
-            return v;
+            if v.is_bool() {
+                return v;
+            }
         }
     }
-    JSValue::bool(false)
+    let mut err = JSObject::new();
+    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Boolean.prototype.valueOf requires 'this' to be a Boolean")));
+    if let Some(proto) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto);
+    }
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+    JSValue::undefined()
 }
 
 fn init_boolean(ctx: &mut JSContext) {
     ctx.register_builtin(
         "boolean_constructor",
-        HostFunction::new("Boolean", 1, boolean_constructor),
+        HostFunction::ctor("Boolean", 1, boolean_constructor),
     );
     ctx.register_builtin(
         "boolean_toString",
-        HostFunction::new("toString", 0, boolean_to_string),
+        HostFunction::method("toString", 0, boolean_to_string),
     );
     ctx.register_builtin(
         "boolean_valueOf",
-        HostFunction::new("valueOf", 0, boolean_value_of),
+        HostFunction::method("valueOf", 0, boolean_value_of),
     );
 
     let boolean_atom = ctx.intern("Boolean");
     let mut bool_func = JSFunction::new_builtin(boolean_atom, 1);
     bool_func.set_builtin_marker(ctx, "boolean_constructor");
+    if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
+        bool_func.base.set_prototype_raw(fn_proto_ptr);
+    }
     let bool_ptr = Box::into_raw(Box::new(bool_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(bool_ptr);
     let bool_value = JSValue::new_function(bool_ptr);
 
-    let mut proto_obj = JSObject::new();
+    let mut proto_obj = JSObject::new_typed(ObjectType::Boolean);
+    proto_obj.set(ctx.common_atoms.__value__, JSValue::bool(false));
     proto_obj.set(
         ctx.intern("toString"),
         create_builtin_function(ctx, "boolean_toString"),
@@ -1105,7 +1815,17 @@ fn init_boolean(ctx: &mut JSContext) {
         ctx.intern("valueOf"),
         create_builtin_function(ctx, "boolean_valueOf"),
     );
-    proto_obj.set(ctx.common_atoms.constructor, bool_value);
+    proto_obj.define_property(
+        ctx.common_atoms.constructor,
+        PropertyDescriptor {
+            value: Some(bool_value),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto_obj.prototype = Some(obj_proto_ptr);
     }
@@ -1116,13 +1836,36 @@ fn init_boolean(ctx: &mut JSContext) {
     unsafe {
         (*bool_func_ptr)
             .base
-            .set(ctx.common_atoms.prototype, JSValue::new_object(proto_ptr));
+            .define_property(
+                ctx.common_atoms.prototype,
+                PropertyDescriptor {
+                    value: Some(JSValue::new_object(proto_ptr)),
+                    writable: false,
+                    enumerable: false,
+                    configurable: false,
+                    get: None,
+                    set: None,
+                },
+            );
+        (*bool_func_ptr)
+            .base
+            .define_property(
+                ctx.intern("length"),
+                PropertyDescriptor {
+                    value: Some(JSValue::new_float(1.0)),
+                    writable: false,
+                    enumerable: false,
+                    configurable: true,
+                    get: None,
+                    set: None,
+                },
+            );
     }
 
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(boolean_atom, bool_value);
+        set_non_enumerable(global_obj, boolean_atom, bool_value);
     }
 }
 
@@ -1135,71 +1878,71 @@ fn init_date(ctx: &mut JSContext) {
     ctx.register_builtin("date_utc", HostFunction::new("UTC", 7, date::date_utc));
     ctx.register_builtin(
         "date_getTime",
-        HostFunction::new("getTime", 0, date::date_get_time),
+        HostFunction::method("getTime", 0, date::date_get_time),
     );
     ctx.register_builtin(
         "date_getFullYear",
-        HostFunction::new("getFullYear", 0, date::date_get_full_year),
+        HostFunction::method("getFullYear", 0, date::date_get_full_year),
     );
     ctx.register_builtin(
         "date_getMonth",
-        HostFunction::new("getMonth", 0, date::date_get_month),
+        HostFunction::method("getMonth", 0, date::date_get_month),
     );
     ctx.register_builtin(
         "date_getDate",
-        HostFunction::new("getDate", 0, date::date_get_date),
+        HostFunction::method("getDate", 0, date::date_get_date),
     );
     ctx.register_builtin(
         "date_getDay",
-        HostFunction::new("getDay", 0, date::date_get_day),
+        HostFunction::method("getDay", 0, date::date_get_day),
     );
     ctx.register_builtin(
         "date_getHours",
-        HostFunction::new("getHours", 0, date::date_get_hours),
+        HostFunction::method("getHours", 0, date::date_get_hours),
     );
     ctx.register_builtin(
         "date_getMinutes",
-        HostFunction::new("getMinutes", 0, date::date_get_minutes),
+        HostFunction::method("getMinutes", 0, date::date_get_minutes),
     );
     ctx.register_builtin(
         "date_getSeconds",
-        HostFunction::new("getSeconds", 0, date::date_get_seconds),
+        HostFunction::method("getSeconds", 0, date::date_get_seconds),
     );
     ctx.register_builtin(
         "date_getMilliseconds",
-        HostFunction::new("getMilliseconds", 0, date::date_get_milliseconds),
+        HostFunction::method("getMilliseconds", 0, date::date_get_milliseconds),
     );
     ctx.register_builtin(
         "date_getTimezoneOffset",
-        HostFunction::new("getTimezoneOffset", 0, date::date_get_timezone_offset),
+        HostFunction::method("getTimezoneOffset", 0, date::date_get_timezone_offset),
     );
     ctx.register_builtin(
         "date_toString",
-        HostFunction::new("toString", 0, date::date_to_string),
+        HostFunction::method("toString", 0, date::date_to_string),
     );
     ctx.register_builtin(
         "date_toISOString",
-        HostFunction::new("toISOString", 0, date::date_to_iso_string),
+        HostFunction::method("toISOString", 0, date::date_to_iso_string),
     );
     ctx.register_builtin(
         "date_toUTCString",
-        HostFunction::new("toUTCString", 0, date::date_to_utc_string),
+        HostFunction::method("toUTCString", 0, date::date_to_utc_string),
     );
     ctx.register_builtin(
         "date_toDateString",
-        HostFunction::new("toDateString", 0, date::date_to_date_string),
+        HostFunction::method("toDateString", 0, date::date_to_date_string),
     );
     ctx.register_builtin(
         "date_toTimeString",
-        HostFunction::new("toTimeString", 0, date::date_to_time_string),
+        HostFunction::method("toTimeString", 0, date::date_to_time_string),
     );
     ctx.register_builtin(
         "date_valueOf",
-        HostFunction::new("valueOf", 0, date::date_value_of),
+        HostFunction::method("valueOf", 0, date::date_value_of),
     );
     ctx.register_builtin(
         "date_toPrimitive",
-        HostFunction::new("toPrimitive", 1, date::date_to_primitive),
+        HostFunction::method("toPrimitive", 1, date::date_to_primitive),
     );
 
     date::init_date(ctx);
@@ -1208,15 +1951,15 @@ fn init_date(ctx: &mut JSContext) {
 fn init_regexp(ctx: &mut JSContext) {
     ctx.register_builtin(
         "regexp_test",
-        HostFunction::new("test", 1, regexp::regexp_test),
+        HostFunction::method("test", 1, regexp::regexp_test),
     );
     ctx.register_builtin(
         "regexp_exec",
-        HostFunction::new("exec", 1, regexp::regexp_exec),
+        HostFunction::method("exec", 1, regexp::regexp_exec),
     );
     ctx.register_builtin(
         "regexp_toString",
-        HostFunction::new("toString", 0, regexp::regexp_to_string),
+        HostFunction::method("toString", 0, regexp::regexp_to_string),
     );
 
     regexp::init_regexp(ctx);

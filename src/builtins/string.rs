@@ -4,11 +4,119 @@ use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), 1);
+    let arity = ctx.get_builtin_arity(name).unwrap_or(1);
+    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     JSValue::new_function(ptr)
+}
+
+pub fn js_float_to_string(f: f64) -> String {
+    if f.is_infinite() {
+        return if f.is_sign_positive() { "Infinity".to_string() } else { "-Infinity".to_string() };
+    }
+    if f.is_nan() {
+        return "NaN".to_string();
+    }
+    format!("{}", f)
+}
+
+fn this_to_string(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
+    if this.is_string() {
+        return Some(ctx.get_atom_str(this.get_atom()).to_string());
+    }
+    if this.is_undefined() || this.is_null() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not coercible")),
+        );
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return None;
+    }
+    if this.is_bool() {
+        return Some(if this.get_bool() { "true".to_string() } else { "false".to_string() });
+    }
+    if this.is_int() {
+        return Some(format!("{}", this.get_int()));
+    }
+    if this.is_float() {
+        return Some(js_float_to_string(this.get_float()));
+    }
+    if this.is_object() {
+        let obj = this.as_object();
+        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+            if v.is_string() {
+                return Some(ctx.get_atom_str(v.get_atom()).to_string());
+            }
+            if v.is_int() {
+                return Some(format!("{}", v.get_int()));
+            }
+            if v.is_float() {
+                return Some(js_float_to_string(v.get_float()));
+            }
+            if v.is_bool() {
+                return Some(if v.get_bool() { "true".to_string() } else { "false".to_string() });
+            }
+        }
+    }
+    Some(format!("{}", this.to_number()))
+}
+
+fn require_string_coercible(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
+    if this.is_undefined() || this.is_null() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not coercible")),
+        );
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return None;
+    }
+    if this.is_string() {
+        return Some(ctx.get_atom_str(this.get_atom()).to_string());
+    }
+    if this.is_bool() {
+        return Some(if this.get_bool() { "true".to_string() } else { "false".to_string() });
+    }
+    if this.is_int() {
+        return Some(format!("{}", this.get_int()));
+    }
+    if this.is_float() {
+        return Some(js_float_to_string(this.get_float()));
+    }
+    if this.is_object() {
+        let obj = this.as_object();
+        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+            if v.is_string() {
+                return Some(ctx.get_atom_str(v.get_atom()).to_string());
+            }
+            if v.is_int() {
+                return Some(format!("{}", v.get_int()));
+            }
+            if v.is_float() {
+                return Some(js_float_to_string(v.get_float()));
+            }
+            if v.is_bool() {
+                return Some(if v.get_bool() { "true".to_string() } else { "false".to_string() });
+            }
+        }
+        return Some(ctx.get_atom_str(this.get_atom()).to_string());
+    }
+    Some(ctx.get_atom_str(this.get_atom()).to_string())
 }
 
 pub fn init_string(ctx: &mut JSContext) {
@@ -197,49 +305,49 @@ pub fn init_string(ctx: &mut JSContext) {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "string_constructor",
-        HostFunction::new("String", 1, string_constructor),
+        HostFunction::ctor("String", 1, string_constructor),
     );
     ctx.register_builtin(
         "string_charAt",
-        HostFunction::new("charAt", 1, string_char_at),
+        HostFunction::method("charAt", 1, string_char_at),
     );
     ctx.register_builtin(
         "string_charCodeAt",
-        HostFunction::new("charCodeAt", 1, string_char_code_at),
+        HostFunction::method("charCodeAt", 1, string_char_code_at),
     );
     ctx.register_builtin(
         "string_concat",
-        HostFunction::new("concat", 1, string_concat),
+        HostFunction::method("concat", 1, string_concat),
     );
     ctx.register_builtin(
         "string_indexOf",
-        HostFunction::new("indexOf", 1, string_index_of),
+        HostFunction::method("indexOf", 1, string_index_of),
     );
     ctx.register_builtin(
         "string_lastIndexOf",
-        HostFunction::new("lastIndexOf", 1, string_last_index_of),
+        HostFunction::method("lastIndexOf", 1, string_last_index_of),
     );
-    ctx.register_builtin("string_slice", HostFunction::new("slice", 2, string_slice));
+    ctx.register_builtin("string_slice", HostFunction::method("slice", 2, string_slice));
     ctx.register_builtin(
         "string_substring",
-        HostFunction::new("substring", 2, string_substring),
+        HostFunction::method("substring", 2, string_substring),
     );
     ctx.register_builtin(
         "string_toString",
-        HostFunction::new("toString", 0, string_to_string),
+        HostFunction::method("toString", 0, string_to_string),
     );
     ctx.register_builtin(
         "string_toLowerCase",
-        HostFunction::new("toLowerCase", 0, string_to_lower_case),
+        HostFunction::method("toLowerCase", 0, string_to_lower_case),
     );
     ctx.register_builtin(
         "string_toUpperCase",
-        HostFunction::new("toUpperCase", 0, string_to_upper_case),
+        HostFunction::method("toUpperCase", 0, string_to_upper_case),
     );
-    ctx.register_builtin("string_split", HostFunction::new("split", 1, string_split));
+    ctx.register_builtin("string_split", HostFunction::method("split", 1, string_split));
     ctx.register_builtin(
         "string_length",
-        HostFunction::new("length", 0, string_length),
+        HostFunction::method("length", 0, string_length),
     );
     ctx.register_builtin(
         "string_fromCharCode",
@@ -249,72 +357,72 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "string_fromCodePoint",
         HostFunction::new("fromCodePoint", 1, string_fromcodepoint),
     );
-    ctx.register_builtin("string_trim", HostFunction::new("trim", 0, string_trim));
+    ctx.register_builtin("string_trim", HostFunction::method("trim", 0, string_trim));
     ctx.register_builtin(
         "string_trimStart",
-        HostFunction::new("trimStart", 0, string_trim_start),
+        HostFunction::method("trimStart", 0, string_trim_start),
     );
     ctx.register_builtin(
         "string_trimEnd",
-        HostFunction::new("trimEnd", 0, string_trim_end),
+        HostFunction::method("trimEnd", 0, string_trim_end),
     );
     ctx.register_builtin(
         "string_startsWith",
-        HostFunction::new("startsWith", 1, string_starts_with),
+        HostFunction::method("startsWith", 1, string_starts_with),
     );
     ctx.register_builtin(
         "string_endsWith",
-        HostFunction::new("endsWith", 1, string_ends_with),
+        HostFunction::method("endsWith", 1, string_ends_with),
     );
     ctx.register_builtin(
         "string_repeat",
-        HostFunction::new("repeat", 1, string_repeat),
+        HostFunction::method("repeat", 1, string_repeat),
     );
     ctx.register_builtin(
         "string_includes",
-        HostFunction::new("includes", 1, string_includes),
+        HostFunction::method("includes", 1, string_includes),
     );
     ctx.register_builtin(
         "string_replace",
-        HostFunction::new("replace", 2, string_replace),
+        HostFunction::method("replace", 2, string_replace),
     );
     ctx.register_builtin(
         "string_padStart",
-        HostFunction::new("padStart", 1, string_pad_start),
+        HostFunction::method("padStart", 1, string_pad_start),
     );
     ctx.register_builtin(
         "string_padEnd",
-        HostFunction::new("padEnd", 1, string_pad_end),
+        HostFunction::method("padEnd", 1, string_pad_end),
     );
     ctx.register_builtin(
         "string_replaceAll",
-        HostFunction::new("replaceAll", 2, string_replace_all),
+        HostFunction::method("replaceAll", 2, string_replace_all),
     );
     ctx.register_builtin(
         "string_search",
-        HostFunction::new("search", 1, string_search),
+        HostFunction::method("search", 1, string_search),
     );
-    ctx.register_builtin("string_match", HostFunction::new("match", 1, string_match));
-    ctx.register_builtin("string_at", HostFunction::new("at", 1, string_at));
+    ctx.register_builtin("string_match", HostFunction::method("match", 1, string_match));
+    ctx.register_builtin("string_at", HostFunction::method("at", 1, string_at));
     ctx.register_builtin(
         "string_isWellFormed",
-        HostFunction::new("isWellFormed", 0, string_is_well_formed),
+        HostFunction::method("isWellFormed", 0, string_is_well_formed),
     );
     ctx.register_builtin(
         "string_toWellFormed",
-        HostFunction::new("toWellFormed", 0, string_to_well_formed),
+        HostFunction::method("toWellFormed", 0, string_to_well_formed),
     );
     ctx.register_builtin(
         "string_codePointAt",
-        HostFunction::new("codePointAt", 1, string_code_point_at),
+        HostFunction::method("codePointAt", 1, string_code_point_at),
     );
     ctx.register_builtin(
         "string_matchAll",
-        HostFunction::new("matchAll", 1, string_match_all),
+        HostFunction::method("matchAll", 1, string_match_all),
     );
     ctx.register_builtin(
         "string_substr",
-        HostFunction::new("substr", 2, string_substr),
+        HostFunction::method("substr", 2, string_substr),
     );
 }
 
@@ -366,12 +474,11 @@ fn string_char_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-
-    let atom = if args[0].is_string() {
-        args[0].get_atom()
-    } else {
-        return JSValue::new_string(ctx.intern(""));
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
+    let atom = ctx.intern(&s);
 
     let index = if args.len() > 1 {
         args[1].get_int() as usize
@@ -398,12 +505,11 @@ fn string_char_code_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_float(f64::NAN);
     }
-
-    let atom = if args[0].is_string() {
-        args[0].get_atom()
-    } else {
-        return JSValue::new_float(f64::NAN);
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
+    let atom = ctx.intern(&s);
 
     let index = if args.len() > 1 {
         let v = args[1];
@@ -436,11 +542,9 @@ fn string_concat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-
-    let mut result = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        String::new()
+    let mut result = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     for arg in args.iter().skip(1) {
@@ -462,11 +566,9 @@ fn string_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::new_int(-1);
     }
-
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::new_int(-1);
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     let search = if args[1].is_string() {
@@ -502,11 +604,9 @@ fn string_last_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::new_int(-1);
     }
-
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::new_int(-1);
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     let search = if args[1].is_string() {
@@ -528,11 +628,9 @@ fn string_substring(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::new_string(ctx.intern(""));
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     let len = char_count(&s);
@@ -565,11 +663,9 @@ fn string_slice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::new_string(ctx.intern(""));
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     let len = char_count(&s);
@@ -608,32 +704,19 @@ fn string_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-
-    if args[0].is_string() {
-        return args[0].clone();
+    match require_string_coercible(ctx, &args[0]) {
+        Some(s) => JSValue::new_string(ctx.intern(&s)),
+        None => JSValue::undefined(),
     }
-
-    if args[0].is_object() {
-        let obj = args[0].as_object();
-        let prim = obj.get(ctx.common_atoms.__value__);
-        if let Some(v) = prim {
-            if v.is_string() {
-                return v;
-            }
-        }
-    }
-    args[0].clone()
 }
 
 fn string_to_lower_case(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_lowercase()
-    } else {
-        return JSValue::new_string(ctx.intern(""));
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s.to_lowercase(),
+        None => return JSValue::undefined(),
     };
 
     JSValue::new_string(ctx.intern(&s))
@@ -643,11 +726,9 @@ fn string_to_upper_case(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_uppercase()
-    } else {
-        return JSValue::new_string(ctx.intern(""));
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s.to_uppercase(),
+        None => return JSValue::undefined(),
     };
 
     JSValue::new_string(ctx.intern(&s))
@@ -660,15 +741,11 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
     }
-
-    let s_atom = if args[0].is_string() {
-        args[0].get_atom()
-    } else {
-        let mut result = JSObject::new_array();
-        result.set(ctx.common_atoms.length, JSValue::new_int(0));
-        let ptr = Box::into_raw(Box::new(result)) as usize;
-        return JSValue::new_object(ptr);
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
+    let s_atom = ctx.intern(&s);
 
     let length_atom = ctx.common_atoms.length;
 
@@ -676,7 +753,6 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let sep_obj = args[1].as_object();
         let pattern_atom = ctx.common_atoms.__pattern__;
         if sep_obj.get(pattern_atom).is_some() {
-            let s = ctx.get_atom_str(s_atom).to_string();
             let limit = if args.len() > 2 && args[2].is_int() {
                 args[2].get_int() as usize
             } else {
@@ -786,12 +862,11 @@ fn string_length(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_int(0);
     }
-
-    if args[0].is_string() {
-        JSValue::new_int(ctx.string_char_count(args[0].get_atom()) as i64)
-    } else {
-        JSValue::new_int(0)
-    }
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
+    JSValue::new_int(char_count(&s) as i64)
 }
 
 fn from_str_or_hex(s: &str) -> u32 {
@@ -835,7 +910,10 @@ fn string_trim(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     let trimmed = s.trim();
     JSValue::new_string(ctx.intern(trimmed))
 }
@@ -844,25 +922,30 @@ fn string_trim_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
-    let trimmed = s.trim_start();
-    JSValue::new_string(ctx.intern(trimmed))
+    match this_to_string(ctx, &args[0]) {
+        Some(s) => JSValue::new_string(ctx.intern(s.trim_start())),
+        None => JSValue::undefined(),
+    }
 }
 
 fn string_trim_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
-    let trimmed = s.trim_end();
-    JSValue::new_string(ctx.intern(trimmed))
+    match this_to_string(ctx, &args[0]) {
+        Some(s) => JSValue::new_string(ctx.intern(s.trim_end())),
+        None => JSValue::undefined(),
+    }
 }
 
 fn string_starts_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::bool(false);
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+    let s = match this_to_string(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     let prefix = ctx.get_atom_str(args[1].get_atom()).to_string();
     JSValue::bool(s.starts_with(&prefix))
 }
@@ -871,16 +954,25 @@ fn string_ends_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::bool(false);
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+    let s = match this_to_string(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     let suffix = ctx.get_atom_str(args[1].get_atom()).to_string();
     JSValue::bool(s.ends_with(&suffix))
 }
 
 fn string_repeat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
+        return JSValue::new_string(ctx.intern(""));
+    }
+    let s = match this_to_string(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     if args.len() < 2 {
         return JSValue::new_string(ctx.intern(""));
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
     let count = args[1].get_int();
     if count < 0 {
         return JSValue::new_string(ctx.intern(""));
@@ -894,23 +986,25 @@ fn string_includes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::bool(false);
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+    let s = match this_to_string(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     let search = ctx.get_atom_str(args[1].get_atom()).to_string();
     JSValue::bool(s.contains(&search))
 }
 
 fn string_replace(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 3 {
-        if args.is_empty() {
-            return JSValue::new_string(ctx.intern(""));
-        }
-        return args[0].clone();
+    if args.is_empty() {
+        return JSValue::new_string(ctx.intern(""));
     }
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return args[0].clone();
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
+    if args.len() < 3 {
+        return JSValue::new_string(ctx.intern(&s));
+    }
 
     if args[1].is_object() {
         let regexp_obj = args[1].as_object();
@@ -1054,7 +1148,10 @@ fn string_pad_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     let target_len = if args.len() > 1 {
         args[1].get_int() as usize
     } else {
@@ -1066,20 +1163,23 @@ fn string_pad_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         " ".to_string()
     };
 
-    if target_len <= s.len() {
+    let s_len = s.chars().count();
+    if target_len <= s_len {
         return args[0];
     }
 
-    let mut pad_count = target_len - s.len();
+    let mut pad_count = target_len - s_len;
     let mut prepend = String::new();
+    let pad_chars: Vec<char> = pad_str.chars().collect();
+    let pad_char_len = pad_chars.len();
+    if pad_char_len == 0 {
+        return args[0];
+    }
+    let mut i = 0;
     while pad_count > 0 {
-        if pad_count >= pad_str.len() {
-            prepend.push_str(&pad_str);
-            pad_count -= pad_str.len();
-        } else {
-            prepend.push_str(&pad_str[..pad_count]);
-            pad_count = 0;
-        }
+        prepend.push(pad_chars[i % pad_char_len]);
+        pad_count -= 1;
+        i += 1;
     }
 
     JSValue::new_string(ctx.intern(&(prepend + &s)))
@@ -1089,7 +1189,10 @@ fn string_pad_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     let target_len = if args.len() > 1 {
         args[1].get_int() as usize
     } else {
@@ -1101,37 +1204,39 @@ fn string_pad_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         " ".to_string()
     };
 
-    if target_len <= s.len() {
+    let s_len = s.chars().count();
+    if target_len <= s_len {
         return args[0];
     }
 
-    let mut pad_count = target_len - s.len();
+    let mut pad_count = target_len - s_len;
     let mut append = String::new();
+    let pad_chars: Vec<char> = pad_str.chars().collect();
+    let pad_char_len = pad_chars.len();
+    if pad_char_len == 0 {
+        return args[0];
+    }
+    let mut i = 0;
     while pad_count > 0 {
-        if pad_count >= pad_str.len() {
-            append.push_str(&pad_str);
-            pad_count -= pad_str.len();
-        } else {
-            append.push_str(&pad_str[..pad_count]);
-            pad_count = 0;
-        }
+        append.push(pad_chars[i % pad_char_len]);
+        pad_count -= 1;
+        i += 1;
     }
 
     JSValue::new_string(ctx.intern(&(s + &append)))
 }
 
 fn string_replace_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 3 {
-        if args.is_empty() {
-            return JSValue::new_string(ctx.intern(""));
-        }
-        return args[0];
+    if args.is_empty() {
+        return JSValue::new_string(ctx.intern(""));
     }
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return args[0];
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
+    if args.len() < 3 {
+        return JSValue::new_string(ctx.intern(&s));
+    }
     let search = if args[1].is_string() {
         ctx.get_atom_str(args[1].get_atom()).to_string()
     } else {
@@ -1151,10 +1256,9 @@ fn string_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::undefined();
     }
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::undefined();
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len();
@@ -1171,11 +1275,10 @@ fn string_is_well_formed(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::bool(false);
     }
-    let this = args[0];
-    if !this.is_string() {
-        return JSValue::bool(false);
-    }
-
+    let _s = match require_string_coercible(_ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     JSValue::bool(true)
 }
 
@@ -1183,12 +1286,10 @@ fn string_to_well_formed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::undefined();
     }
-    let this = args[0];
-    if !this.is_string() {
-        return this;
-    }
-    let s = ctx.get_atom_str(this.get_atom()).to_string();
-
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     JSValue::new_string(ctx.intern(&s))
 }
 
@@ -1196,11 +1297,10 @@ fn string_code_point_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::undefined();
     }
-    let this = args[0];
-    if !this.is_string() {
-        return JSValue::undefined();
-    }
-    let s = ctx.get_atom_str(this.get_atom()).to_string();
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len();
     let index = if args.len() > 1 {
@@ -1213,6 +1313,13 @@ fn string_code_point_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let c = chars[actual_index as usize];
+    if (c as u32) >= 0xD800 && (c as u32) <= 0xDBFF && actual_index as usize + 1 < len {
+        let next = chars[actual_index as usize + 1];
+        if (next as u32) >= 0xDC00 && (next as u32) <= 0xDFFF {
+            let cp = 0x10000 + (((c as u32) - 0xD800) << 10) + (next as u32) - 0xDC00;
+            return JSValue::new_int(cp as i64);
+        }
+    }
     JSValue::new_int(c as u32 as i64)
 }
 
@@ -1223,15 +1330,9 @@ fn string_match_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
     }
-
-    let this = args[0];
-    let s = if this.is_string() {
-        ctx.get_atom_str(this.get_atom()).to_string()
-    } else {
-        let mut result = JSObject::new_array();
-        result.set(ctx.common_atoms.length, JSValue::new_int(0));
-        let ptr = Box::into_raw(Box::new(result)) as usize;
-        return JSValue::new_object(ptr);
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     let pattern = if args.len() > 1 {
@@ -1342,10 +1443,9 @@ fn string_search(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::new_int(-1);
     }
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::new_int(-1);
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     if args[1].is_object() {
@@ -1403,10 +1503,9 @@ fn string_match(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::null();
     }
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::null();
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
 
     if args[1].is_object() {
@@ -1514,10 +1613,9 @@ fn string_substr(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_string(ctx.intern(""));
     }
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom()).to_string()
-    } else {
-        return JSValue::new_string(ctx.intern(""));
+    let s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
     };
     let len = char_count(&s);
 

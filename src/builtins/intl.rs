@@ -694,23 +694,23 @@ pub fn register_builtins(ctx: &mut JSContext) {
 
     ctx.register_builtin(
         "intl_collator_resolved_options",
-        HostFunction::new("resolvedOptions", 0, intl_collator_resolved_options),
+        HostFunction::method("resolvedOptions", 0, intl_collator_resolved_options),
     );
     ctx.register_builtin(
         "intl_collator_compare_getter",
-        HostFunction::new("get compare", 0, intl_collator_compare_getter),
+        HostFunction::method("get compare", 0, intl_collator_compare_getter),
     );
     ctx.register_builtin(
         "intl_collator_compare_call",
-        HostFunction::new("", 2, intl_collator_compare_call),
+        HostFunction::method("", 2, intl_collator_compare_call),
     );
     ctx.register_builtin(
         "intl_numberformat_resolved_options",
-        HostFunction::new("resolvedOptions", 0, intl_numberformat_resolved_options),
+        HostFunction::method("resolvedOptions", 0, intl_numberformat_resolved_options),
     );
     ctx.register_builtin(
         "intl_datetimeformat_resolved_options",
-        HostFunction::new("resolvedOptions", 0, intl_datetimeformat_resolved_options),
+        HostFunction::method("resolvedOptions", 0, intl_datetimeformat_resolved_options),
     );
 }
 

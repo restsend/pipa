@@ -14,23 +14,23 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "weakref_constructor",
-        HostFunction::new("WeakRef", 1, weakref_constructor),
+        HostFunction::ctor("WeakRef", 1, weakref_constructor),
     );
     ctx.register_builtin(
         "weakref_deref",
-        HostFunction::new("deref", 0, weakref_deref),
+        HostFunction::method("deref", 0, weakref_deref),
     );
     ctx.register_builtin(
         "finalization_registry_constructor",
-        HostFunction::new("FinalizationRegistry", 1, finalization_registry_constructor),
+        HostFunction::ctor("FinalizationRegistry", 1, finalization_registry_constructor),
     );
     ctx.register_builtin(
         "finalization_registry_register",
-        HostFunction::new("register", 2, finalization_registry_register),
+        HostFunction::method("register", 2, finalization_registry_register),
     );
     ctx.register_builtin(
         "finalization_registry_unregister",
-        HostFunction::new("unregister", 1, finalization_registry_unregister),
+        HostFunction::method("unregister", 1, finalization_registry_unregister),
     );
 }
 

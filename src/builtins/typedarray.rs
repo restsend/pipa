@@ -527,106 +527,106 @@ pub fn init_typed_array(ctx: &mut JSContext) {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "ArrayBuffer",
-        HostFunction::new("ArrayBuffer", 1, array_buffer_constructor),
+        HostFunction::ctor("ArrayBuffer", 1, array_buffer_constructor),
     );
     ctx.register_builtin(
         "DataView",
-        HostFunction::new("DataView", 1, data_view_constructor),
+        HostFunction::ctor("DataView", 1, data_view_constructor),
     );
 
     ctx.register_builtin(
         "Int8Array",
-        HostFunction::new("Int8Array", 1, int8_array_constructor),
+        HostFunction::ctor("Int8Array", 1, int8_array_constructor),
     );
     ctx.register_builtin(
         "Uint8Array",
-        HostFunction::new("Uint8Array", 1, uint8_array_constructor),
+        HostFunction::ctor("Uint8Array", 1, uint8_array_constructor),
     );
     ctx.register_builtin(
         "Uint8ClampedArray",
-        HostFunction::new("Uint8ClampedArray", 1, uint8_clamped_array_constructor),
+        HostFunction::ctor("Uint8ClampedArray", 1, uint8_clamped_array_constructor),
     );
     ctx.register_builtin(
         "Int16Array",
-        HostFunction::new("Int16Array", 1, int16_array_constructor),
+        HostFunction::ctor("Int16Array", 1, int16_array_constructor),
     );
     ctx.register_builtin(
         "Uint16Array",
-        HostFunction::new("Uint16Array", 1, uint16_array_constructor),
+        HostFunction::ctor("Uint16Array", 1, uint16_array_constructor),
     );
     ctx.register_builtin(
         "Int32Array",
-        HostFunction::new("Int32Array", 1, int32_array_constructor),
+        HostFunction::ctor("Int32Array", 1, int32_array_constructor),
     );
     ctx.register_builtin(
         "Uint32Array",
-        HostFunction::new("Uint32Array", 1, uint32_array_constructor),
+        HostFunction::ctor("Uint32Array", 1, uint32_array_constructor),
     );
     ctx.register_builtin(
         "Float32Array",
-        HostFunction::new("Float32Array", 1, float32_array_constructor),
+        HostFunction::ctor("Float32Array", 1, float32_array_constructor),
     );
     ctx.register_builtin(
         "Float64Array",
-        HostFunction::new("Float64Array", 1, float64_array_constructor),
+        HostFunction::ctor("Float64Array", 1, float64_array_constructor),
     );
     ctx.register_builtin(
         "BigInt64Array",
-        HostFunction::new("BigInt64Array", 1, bigint64_array_constructor),
+        HostFunction::ctor("BigInt64Array", 1, bigint64_array_constructor),
     );
     ctx.register_builtin(
         "BigUint64Array",
-        HostFunction::new("BigUint64Array", 1, biguint64_array_constructor),
+        HostFunction::ctor("BigUint64Array", 1, biguint64_array_constructor),
     );
 
     ctx.register_builtin(
         "typedarray_buffer",
-        HostFunction::new("buffer", 0, typed_array_get_buffer),
+        HostFunction::method("buffer", 0, typed_array_get_buffer),
     );
     ctx.register_builtin(
         "typedarray_byteLength",
-        HostFunction::new("byteLength", 0, typed_array_get_byte_length),
+        HostFunction::method("byteLength", 0, typed_array_get_byte_length),
     );
     ctx.register_builtin(
         "typedarray_byteOffset",
-        HostFunction::new("byteOffset", 0, typed_array_get_byte_offset),
+        HostFunction::method("byteOffset", 0, typed_array_get_byte_offset),
     );
     ctx.register_builtin(
         "typedarray_length",
-        HostFunction::new("length", 0, typed_array_get_length),
+        HostFunction::method("length", 0, typed_array_get_length),
     );
 
     ctx.register_builtin(
         "arraybuffer_byteLength",
-        HostFunction::new("byteLength", 0, array_buffer_get_byte_length),
+        HostFunction::method("byteLength", 0, array_buffer_get_byte_length),
     );
 
     ctx.register_builtin(
         "dataview_buffer",
-        HostFunction::new("buffer", 0, data_view_get_buffer),
+        HostFunction::method("buffer", 0, data_view_get_buffer),
     );
     ctx.register_builtin(
         "dataview_byteLength",
-        HostFunction::new("byteLength", 0, data_view_get_byte_length),
+        HostFunction::method("byteLength", 0, data_view_get_byte_length),
     );
     ctx.register_builtin(
         "dataview_byteOffset",
-        HostFunction::new("byteOffset", 0, data_view_get_byte_offset),
+        HostFunction::method("byteOffset", 0, data_view_get_byte_offset),
     );
     ctx.register_builtin(
         "dataview_getInt8",
-        HostFunction::new("getInt8", 1, data_view_get_int8),
+        HostFunction::method("getInt8", 1, data_view_get_int8),
     );
     ctx.register_builtin(
         "dataview_getUint8",
-        HostFunction::new("getUint8", 1, data_view_get_uint8),
+        HostFunction::method("getUint8", 1, data_view_get_uint8),
     );
     ctx.register_builtin(
         "dataview_setInt8",
-        HostFunction::new("setInt8", 2, data_view_set_int8),
+        HostFunction::method("setInt8", 2, data_view_set_int8),
     );
     ctx.register_builtin(
         "dataview_setUint8",
-        HostFunction::new("setUint8", 2, data_view_set_uint8),
+        HostFunction::method("setUint8", 2, data_view_set_uint8),
     );
 }

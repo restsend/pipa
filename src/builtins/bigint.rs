@@ -54,7 +54,7 @@ pub fn init_bigint(ctx: &mut JSContext) {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "bigint_constructor",
-        HostFunction::new("BigInt", 1, bigint_constructor),
+        HostFunction::ctor("BigInt", 1, bigint_constructor),
     );
     ctx.register_builtin(
         "bigint_as_int_n",
@@ -66,7 +66,7 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "bigint_to_string",
-        HostFunction::new("toString", 1, bigint_to_string),
+        HostFunction::method("toString", 1, bigint_to_string),
     );
 }
 

@@ -16,7 +16,7 @@
 
 No external C libraries or system dependencies for the above — everything is implemented from scratch in Rust.
 
-## Benchmarks (2026-05-24)
+## Benchmarks (2026-05-26)
 
 V8 benchmark suite comparison (higher is better):
 
@@ -30,43 +30,43 @@ V8 benchmark suite comparison (higher is better):
 | RegExp                 |   330 |  12703 |  41.6 |   977 | +196.1% |
 | Splay                  |  2428 |  48609 |   536 |  2901 | +19.5% |
 | NavierStokes           |  1807 |  56392 |   288 |  1610 | -10.9% |
-| **SCORE (total)**      | **1208** | **53836** | **184** | **1254** | **+3.8%** |
+| **SCORE (total)**      | **1208** | **53836** | **184** | **1269** | **+5.0%** |
 
-Ranking: **#1 node** (53836) · **#2 pipa** (1254) · **#3 qjs** (1208) · **#4 boa** (184)
+Ranking: **#1 node** (53836) · **#2 pipa** (1269) · **#3 qjs** (1208) · **#4 boa** (184)
 
-Ranking: **#1 node** (53836) · **#2 pipa** (1254) · **#3 qjs** (1208) · **#4 boa** (184)
+## test262 Compatibility (2026-05-26)
 
-## test262 Compatibility (2026-05-24)
+Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl402`).
 
-Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl402` and `annexB`).
+| Category | Tests | Pass Rate | Notes |
+|----------|-------|-----------|-------|
+| **Core Builtins** | | | |
+| Math | 324 | **98.8%** (320/324) | 4 edge cases in `sumPrecise` |
+| Boolean | 50 | **98.0%** (49/50) | 1 cross-realm test skipped |
+| Object.is | 21 | **100%** (21/21) | |
+| Object.defineProperty | 1131 | **98.8%** (1118/1131) | |
+| Object.create | 320 | **99.4%** (318/320) | |
+| Object.getPrototypeOf | 39 | **100%** (39/39) | |
+| Date | 594 | **31.8%** (189/594) | Partial date support |
+| global | 29 | **96.6%** (28/29) | |
+| Infinity | 6 | **100%** (6/6) | |
+| eval | 10 | **80.0%** (8/10) | |
+| URI encode/decode | 118 | **77.9%** (92/118) | |
+| **Expressions** | | | |
+| Addition | 48 | **97.9%** (47/48) | |
+| Bitwise ops | 47 | **76.6%** (36/47) | |
+| **Other Builtins** | | | |
+| JSON | 165 | **42.4%** (70/165) | |
+| Symbol | 98 | **30.6%** (30/98) | |
+| Error | 92 | **26.1%** (24/92) | |
+| Reflect | 153 | **20.9%** (32/153) | |
+| Map | 203 | **21.2%** (43/203) | |
+| Set | 382 | **18.3%** (70/382) | |
+| BigInt | 77 | **23.4%** (18/77) | |
+| Promise | 676 | **5.5%** (37/676) | Limited async support |
+| Proxy | 311 | **0%** (0/311) | Not yet implemented |
 
-| Category | Pass Rate | Notes |
-|----------|-----------|-------|
-| **Core Operators** | | |
-| Addition, Coalesce, Comma, Grouping, Logical-And/Or, Strict-Equals/Not-Equals, Void, Bitwise-Not, Relational | **100%** | Fully compliant |
-| Subtraction, Division, Multiplication, Modulus, Exponentiation | **64–82%** | Mostly compliant |
-| **Control Flow** | | |
-| `if` | **100%** (69/69) | ✅ |
-| `switch` | **100%** (111/111) | ✅ |
-| `while` | **100%** (38/38) | ✅ |
-| `do-while` | **100%** (36/36) | ✅ |
-| `for-in` | **98%** (113/115) | ✅ `let` as identifier, TDZ, completion values, enumeration order, `Object.defineProperty` attribute preservation, MemberExpression targets, per-iteration binding, scopes<br>⏳ 1 scope test (destructuring + closure before let) |
-| `for` | **~100%** | ✅ |
-| `try/catch/finally` | **~97%** | ✅ completion values, break/continue through finally<br>⏳ 5 tests (throw through finally, catch parameter scope)
-| `const`/`let` | **73–74%** | |
-| **Functions** | | |
-| Function declarations/expressions | **66–73%** | |
-| Arrow functions | **80%** | |
-| Generators | **65–67%** | |
-| **Builtins** | | |
-| Math | **49%** | |
-| JSON | **23%** | |
-| Boolean | **59%** | |
-| Promise | **7%** | Limited async support |
-| Proxy/Reflect | **0–19%** | Not yet implemented |
-| Set/Map/WeakMap/WeakSet | **6–23%** | Partial implementation |
-
-**Overall sampled pass rate: ~52%** (5327 tests sampled across all categories above)
+**Sampled pass rate: ~55%** (across categories tested above, weighted by test count)
 
 ## Usage
 
