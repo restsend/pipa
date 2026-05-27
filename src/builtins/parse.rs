@@ -29,44 +29,50 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         "undefined".to_string()
     } else if input_val.is_object() {
         let obj = input_val.as_object();
+        let mut prim = None;
         if let Some(to_str) = obj.get(ctx.intern("toString")) {
             if to_str.is_function() {
                 if let Some(ptr) = ctx.get_register_vm_ptr() {
                     let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
                     match vm.call_function_with_this(ctx, to_str, *input_val, &[]) {
                         Ok(result) if result.is_string() => {
-                            ctx.get_atom_str(result.get_atom()).to_string()
+                            prim = Some(ctx.get_atom_str(result.get_atom()).to_string());
                         }
-                        Ok(result) if result.is_int() => result.get_int().to_string(),
-                        Ok(result) if result.is_float() => result.get_float().to_string(),
-                        _ => return JSValue::new_float(f64::NAN),
-                    }
-                } else {
-                    return JSValue::new_float(f64::NAN);
-                }
-            } else {
-                return JSValue::new_float(f64::NAN);
-            }
-        } else if let Some(val_of) = obj.get(ctx.intern("valueOf")) {
-            if val_of.is_function() {
-                if let Some(ptr) = ctx.get_register_vm_ptr() {
-                    let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
-                    match vm.call_function_with_this(ctx, val_of, *input_val, &[]) {
-                        Ok(result) if result.is_string() => {
-                            ctx.get_atom_str(result.get_atom()).to_string()
+                        Ok(result) if result.is_int() => {
+                            prim = Some(result.get_int().to_string());
                         }
-                        Ok(result) if result.is_int() => result.get_int().to_string(),
-                        Ok(result) if result.is_float() => result.get_float().to_string(),
-                        _ => return JSValue::new_float(f64::NAN),
+                        Ok(result) if result.is_float() => {
+                            prim = Some(result.get_float().to_string());
+                        }
+                        _ => {}
                     }
-                } else {
-                    return JSValue::new_float(f64::NAN);
                 }
-            } else {
-                return JSValue::new_float(f64::NAN);
             }
-        } else {
-            return JSValue::new_float(f64::NAN);
+        }
+        if prim.is_none() {
+            if let Some(val_of) = obj.get(ctx.intern("valueOf")) {
+                if val_of.is_function() {
+                    if let Some(ptr) = ctx.get_register_vm_ptr() {
+                        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                        match vm.call_function_with_this(ctx, val_of, *input_val, &[]) {
+                            Ok(result) if result.is_string() => {
+                                prim = Some(ctx.get_atom_str(result.get_atom()).to_string());
+                            }
+                            Ok(result) if result.is_int() => {
+                                prim = Some(result.get_int().to_string());
+                            }
+                            Ok(result) if result.is_float() => {
+                                prim = Some(result.get_float().to_string());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        match prim {
+            Some(s) => s,
+            None => return JSValue::new_float(f64::NAN),
         }
     } else {
         return JSValue::new_float(f64::NAN);
@@ -95,19 +101,42 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             0.0
         } else if ra.is_string() {
             let s = ctx.get_atom_str(ra.get_atom());
-            match s.trim().parse::<f64>() {
-                Ok(v) => v,
-                Err(_) => return JSValue::new_float(f64::NAN),
+            if s.trim().is_empty() {
+                0.0
+            } else {
+                match s.trim().parse::<f64>() {
+                    Ok(v) if v.is_nan() => 0.0,
+                    Ok(v) => v,
+                    Err(_) => 0.0,
+                }
             }
         } else if ra.is_object() {
-            return JSValue::new_float(f64::NAN);
+            let obj = ra.as_object();
+            if let Some(val_of) = obj.get(ctx.intern("valueOf")) {
+                if val_of.is_function() {
+                    if let Some(ptr) = ctx.get_register_vm_ptr() {
+                        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                        match vm.call_function_with_this(ctx, val_of, *ra, &[]) {
+                            Ok(result) if result.is_int() => result.get_int() as f64,
+                            Ok(result) if result.is_float() => result.get_float(),
+                            _ => 0.0,
+                        }
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
         } else {
-            return JSValue::new_float(f64::NAN);
+            0.0
         };
-        if n.is_nan() {
+        if n.is_nan() || n.is_infinite() {
             0
         } else {
-            let r = n.trunc() as i32;
+            let r = (n.trunc() as i64 & 0xFFFFFFFF) as i32;
             if r == 1 { return JSValue::new_float(f64::NAN); }
             r
         }
