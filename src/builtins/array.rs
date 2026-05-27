@@ -850,8 +850,30 @@ fn array_join(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len(obj, length_atom) as usize;
 
-    let separator = if args.len() > 1 && args[1].is_string() {
-        ctx.get_atom_str(args[1].get_atom()).to_string()
+    let separator = if args.len() > 1 {
+        let sep = &args[1];
+        if sep.is_undefined() {
+            ",".to_string()
+        } else if sep.is_string() {
+            ctx.get_atom_str(sep.get_atom()).to_string()
+        } else if sep.is_bool() {
+            sep.get_bool().to_string()
+        } else if sep.is_int() {
+            sep.get_int().to_string()
+        } else if sep.is_float() {
+            let f = sep.get_float();
+            if f.is_nan() {
+                "NaN".to_string()
+            } else if f.is_infinite() {
+                "Infinity".to_string()
+            } else {
+                f.to_string()
+            }
+        } else if sep.is_null() {
+            "null".to_string()
+        } else {
+            ",".to_string()
+        }
     } else {
         ",".to_string()
     };

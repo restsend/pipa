@@ -107,14 +107,106 @@ pub fn global_parsefloat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_float(f64::NAN);
     }
-    let s = if args[0].is_string() {
-        ctx.get_atom_str(args[0].get_atom())
-    } else if args[0].is_float() || args[0].is_int() {
-        return args[0];
+
+    let input = &args[0];
+
+    if input.is_float() {
+        return *input;
+    }
+    if input.is_int() {
+        return *input;
+    }
+
+    let s = if input.is_string() {
+        ctx.get_atom_str(input.get_atom()).to_string()
+    } else if input.is_object() {
+        let obj = input.as_object();
+        if let Some(to_str) = obj.get(ctx.intern("toString")) {
+            if to_str.is_function() {
+                if let Some(ptr) = ctx.get_register_vm_ptr() {
+                    let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                    match vm.call_function_with_this(ctx, to_str, *input, &[]) {
+                        Ok(result) if result.is_string() => {
+                            ctx.get_atom_str(result.get_atom()).to_string()
+                        }
+                        _ => return JSValue::new_float(f64::NAN),
+                    }
+                } else {
+                    return JSValue::new_float(f64::NAN);
+                }
+            } else {
+                return JSValue::new_float(f64::NAN);
+            }
+        } else {
+            return JSValue::new_float(f64::NAN);
+        }
     } else {
         return JSValue::new_float(f64::NAN);
     };
-    match s.trim().parse::<f64>() {
+
+    let trimmed = s.trim_start();
+
+    if trimmed.is_empty() {
+        return JSValue::new_float(f64::NAN);
+    }
+
+    let bytes = trimmed.as_bytes();
+    let mut pos = 0;
+
+    if pos < bytes.len() && (bytes[pos] == b'+' || bytes[pos] == b'-') {
+        pos += 1;
+    }
+
+    let start_num = pos;
+
+    while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+        pos += 1;
+    }
+
+    if pos < bytes.len() && bytes[pos] == b'.' {
+        pos += 1;
+        while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+            pos += 1;
+        }
+    }
+
+    if pos < bytes.len() && (bytes[pos] == b'e' || bytes[pos] == b'E') {
+        let e_pos = pos;
+        pos += 1;
+        if pos < bytes.len() && (bytes[pos] == b'+' || bytes[pos] == b'-') {
+            pos += 1;
+        }
+        if pos < bytes.len() && bytes[pos].is_ascii_digit() {
+            while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+                pos += 1;
+            }
+        } else {
+            pos = e_pos;
+        }
+    }
+
+    if pos == start_num {
+        let rest = trimmed;
+        if rest.starts_with("Infinity") || rest.starts_with("+Infinity") {
+            return JSValue::new_float(f64::INFINITY);
+        }
+        if rest.starts_with("-Infinity") {
+            return JSValue::new_float(f64::NEG_INFINITY);
+        }
+        return JSValue::new_float(f64::NAN);
+    }
+
+    let num_str = &trimmed[..pos];
+
+    if num_str == "Infinity" || num_str == "+Infinity" {
+        return JSValue::new_float(f64::INFINITY);
+    }
+    if num_str == "-Infinity" {
+        return JSValue::new_float(f64::NEG_INFINITY);
+    }
+
+    match num_str.parse::<f64>() {
+        Ok(v) if v == 0.0 => JSValue::new_int(0),
         Ok(v) => JSValue::new_float(v),
         Err(_) => JSValue::new_float(f64::NAN),
     }
