@@ -848,11 +848,7 @@ fn array_join(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     let separator = if args.len() > 1 && args[1].is_string() {
         ctx.get_atom_str(args[1].get_atom()).to_string()
@@ -926,11 +922,7 @@ fn array_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
@@ -965,11 +957,7 @@ fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     let mut result = new_jsarray_with_proto(ctx);
 
@@ -1011,11 +999,7 @@ fn array_filter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     let mut result = new_jsarray_with_proto(ctx);
 
@@ -1051,11 +1035,7 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     if len == 0 {
         if args.len() > 2 {
@@ -1065,7 +1045,7 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let mut accumulator: JSValue;
-    let mut start_index: u32 = 0;
+    let mut start_index: usize = 0;
 
     if args.len() > 2 {
         accumulator = args[2];
@@ -1101,11 +1081,7 @@ fn array_every(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
@@ -1136,11 +1112,7 @@ fn array_some(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
@@ -1171,11 +1143,7 @@ fn array_find(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
@@ -1206,11 +1174,7 @@ fn array_find_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
@@ -1241,11 +1205,7 @@ fn array_reduce_right(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u32 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len(obj, length_atom) as usize;
 
     if len == 0 {
         if args.len() > 2 {
