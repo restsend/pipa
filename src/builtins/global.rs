@@ -553,7 +553,7 @@ fn init_reflect(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(reflect_atom, JSValue::new_object(reflect_ptr));
+        set_non_enumerable(global_obj, reflect_atom, JSValue::new_object(reflect_ptr));
     }
 }
 
@@ -660,7 +660,7 @@ fn init_console(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(console_atom, console_value);
+        set_non_enumerable(global_obj, console_atom, console_value);
     }
 }
 
@@ -910,7 +910,7 @@ fn init_json(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(json_atom, json_value);
+        set_non_enumerable(global_obj, json_atom, json_value);
     }
 }
 
@@ -1974,79 +1974,95 @@ fn init_global_funcs(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("isNaN"),
             create_builtin_function(ctx, "global_isnan"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("isFinite"),
             create_builtin_function(ctx, "global_isfinite"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("parseInt"),
             create_builtin_function(ctx, "global_parseint"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("parseFloat"),
             create_builtin_function(ctx, "global_parsefloat"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("eval"),
             create_builtin_function(ctx, "global_eval"),
         );
 
-        global_obj.set(ctx.intern("btoa"), create_builtin_function(ctx, "btoa"));
-        global_obj.set(ctx.intern("atob"), create_builtin_function(ctx, "atob"));
+        set_non_enumerable(global_obj, ctx.intern("btoa"), create_builtin_function(ctx, "btoa"));
+        set_non_enumerable(global_obj, ctx.intern("atob"), create_builtin_function(ctx, "atob"));
 
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("encodeURI"),
             create_builtin_function(ctx, "encodeURI"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("decodeURI"),
             create_builtin_function(ctx, "decodeURI"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("encodeURIComponent"),
             create_builtin_function(ctx, "encodeURIComponent"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("decodeURIComponent"),
             create_builtin_function(ctx, "decodeURIComponent"),
         );
 
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("setTimeout"),
             create_builtin_function(ctx, "setTimeout"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("setInterval"),
             create_builtin_function(ctx, "setInterval"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("clearTimeout"),
             create_builtin_function(ctx, "clearTimeout"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("clearInterval"),
             create_builtin_function(ctx, "clearInterval"),
         );
 
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("queueMicrotask"),
             create_builtin_function(ctx, "queueMicrotask"),
         );
 
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("requestAnimationFrame"),
             create_builtin_function(ctx, "requestAnimationFrame"),
         );
-        global_obj.set(
+        set_non_enumerable(
+            global_obj,
             ctx.intern("cancelAnimationFrame"),
             create_builtin_function(ctx, "cancelAnimationFrame"),
         );
 
-        global_obj.set(ctx.intern("globalThis"), global);
+        set_non_enumerable(global_obj, ctx.intern("globalThis"), global);
 
         global_obj.set(ctx.intern("import"), create_builtin_function(ctx, "import"));
         global_obj.set(
