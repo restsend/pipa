@@ -27,6 +27,47 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         "null".to_string()
     } else if input_val.is_undefined() {
         "undefined".to_string()
+    } else if input_val.is_object() {
+        let obj = input_val.as_object();
+        if let Some(to_str) = obj.get(ctx.intern("toString")) {
+            if to_str.is_function() {
+                if let Some(ptr) = ctx.get_register_vm_ptr() {
+                    let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                    match vm.call_function_with_this(ctx, to_str, *input_val, &[]) {
+                        Ok(result) if result.is_string() => {
+                            ctx.get_atom_str(result.get_atom()).to_string()
+                        }
+                        Ok(result) if result.is_int() => result.get_int().to_string(),
+                        Ok(result) if result.is_float() => result.get_float().to_string(),
+                        _ => return JSValue::new_float(f64::NAN),
+                    }
+                } else {
+                    return JSValue::new_float(f64::NAN);
+                }
+            } else {
+                return JSValue::new_float(f64::NAN);
+            }
+        } else if let Some(val_of) = obj.get(ctx.intern("valueOf")) {
+            if val_of.is_function() {
+                if let Some(ptr) = ctx.get_register_vm_ptr() {
+                    let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                    match vm.call_function_with_this(ctx, val_of, *input_val, &[]) {
+                        Ok(result) if result.is_string() => {
+                            ctx.get_atom_str(result.get_atom()).to_string()
+                        }
+                        Ok(result) if result.is_int() => result.get_int().to_string(),
+                        Ok(result) if result.is_float() => result.get_float().to_string(),
+                        _ => return JSValue::new_float(f64::NAN),
+                    }
+                } else {
+                    return JSValue::new_float(f64::NAN);
+                }
+            } else {
+                return JSValue::new_float(f64::NAN);
+            }
+        } else {
+            return JSValue::new_float(f64::NAN);
+        }
     } else {
         return JSValue::new_float(f64::NAN);
     };
@@ -52,15 +93,24 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             0.0
         } else if ra.is_undefined() {
             0.0
+        } else if ra.is_string() {
+            let s = ctx.get_atom_str(ra.get_atom());
+            match s.trim().parse::<f64>() {
+                Ok(v) => v,
+                Err(_) => return JSValue::new_float(f64::NAN),
+            }
+        } else if ra.is_object() {
+            return JSValue::new_float(f64::NAN);
         } else {
             return JSValue::new_float(f64::NAN);
         };
         if n.is_nan() {
-            return JSValue::new_float(f64::NAN);
+            0
+        } else {
+            let r = n.trunc() as i32;
+            if r == 1 { return JSValue::new_float(f64::NAN); }
+            r
         }
-        let r = n.trunc() as i32;
-        if r == 1 { return JSValue::new_float(f64::NAN); }
-        r
     } else {
         0
     };

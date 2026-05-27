@@ -1135,11 +1135,11 @@ fn init_number(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "number_toString",
-        HostFunction::new("toString", 1, number_to_string),
+        HostFunction::method("toString", 1, number_to_string),
     );
     ctx.register_builtin(
         "number_toLocaleString",
-        HostFunction::new("toLocaleString", 0, number_to_string),
+        HostFunction::method("toLocaleString", 0, number_to_string),
     );
     ctx.register_builtin(
         "number_valueOf",

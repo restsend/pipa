@@ -134,6 +134,38 @@ pub fn number_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else {
             format!("{}", f)
         }
+    } else if this.is_object() {
+        let obj = this.as_object();
+        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+            if v.is_int() {
+                let n = v.get_int();
+                if radix == 10 {
+                    n.to_string()
+                } else if n < 0 {
+                    format!("-{}", format_radix((-n) as u64, radix as u32))
+                } else {
+                    format_radix(n as u64, radix as u32)
+                }
+            } else if v.is_float() {
+                let f = v.get_float();
+                if f.is_nan() {
+                    "NaN".to_string()
+                } else if f.is_infinite() {
+                    if f.is_sign_positive() { "Infinity".to_string() } else { "-Infinity".to_string() }
+                } else if radix != 10 {
+                    let n = f as i64;
+                    if n < 0 { format!("-{}", format_radix((-n) as u64, radix as u32)) } else { format_radix(n as u64, radix as u32) }
+                } else if f == f.floor() && f.is_finite() && f.abs() < 1e15 {
+                    format!("{}", f as i64)
+                } else {
+                    format!("{}", f)
+                }
+            } else {
+                "NaN".to_string()
+            }
+        } else {
+            "NaN".to_string()
+        }
     } else {
         "NaN".to_string()
     };
