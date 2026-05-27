@@ -13,13 +13,13 @@
 
 | Module | Pass | Fail | Total | Pass Rate |
 |---|---|---|---|---|
-| Math | 282 | 42 | 324 | 87.0% |
+| Math | 282 | 42 | 324 | 86.7% |
 | Number | 321 | 18 | 339 | 94.7% |
-| Boolean | 47 | 3 | 50 | 94.0% |
-| parseInt | 39 | 16 | 55 | 70.9% |
-| parseFloat | 23 | 31 | 54 | 42.6% |
+| Boolean | 48 | 2 | 50 | 96.0% |
+| parseInt | 49 | 6 | 55 | 89.1% |
+| parseFloat | 48 | 6 | 54 | 88.9% |
 | Symbol | 44 | 54 | 98 | 44.9% |
-| Error | 30 | 62 | 92 | 32.6% |
+| Error | 23 | 69 | 92 | 25.0% |
 | JSON | 73 | 92 | 165 | 44.2% |
 | Map | 44 | 159 | 203 | 21.7% |
 | Set | 72 | 310 | 382 | 18.8% |
@@ -30,7 +30,7 @@
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
-| String | 844 | 378 | 1222 | 69.1% |
+| String | 834 | 388 | 1222 | 68.2% |
 | Array | 804 | 1533 | 2337 | 34.4% |
 
 ### Slow (very large array operations, not hangs)
@@ -78,3 +78,7 @@ Fixes:
 - 2026-05-27: Fixed Array sort/reverse/all-iterable-methods hang on negative/huge length, bench-v8 score 1243
 - 2026-05-27: Fixed parseInt Infinity/bool/string-radix/large-number bugs (44/55 = 80%), bench-v8 score 1211
 - 2026-05-27: Fixed remaining array method length reads (forEach/every/some/map/filter/etc), bench-v8 score 1300
+- 2026-05-27: Fixed builtin needs_this: use HostFunction.needs_this instead of hardcoded list, bench-v8 1253
+- 2026-05-27: Fixed parseFloat proper string parsing (scientific notation, Infinity, ToPrimitive), bench-v8 1241
+- 2026-05-27: Fixed Number.prototype.toString for wrapper objects, Object.prototype.toString for Number/Boolean wrappers, parseInt/parseFloat ToPrimitive, bench-v8 1238
+- 2026-05-27: Fixed parseInt radix: object radix via valueOf/toString, empty string, Infinity, Int32 overflow, Boolean valueOf. parseInt 89.1%, parseFloat 88.9%, Boolean 96.0%, bench-v8 1246
