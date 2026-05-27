@@ -659,7 +659,16 @@ fn object_to_string(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 ObjectType::BigInt => tag = "BigInt",
                 ObjectType::Boolean => tag = "Boolean",
                 ObjectType::Promise => tag = "Promise",
-                _ => {}
+                _ => {
+                    if obj.get(_ctx.common_atoms.__value__).is_some() {
+                        let v = obj.get(_ctx.common_atoms.__value__).unwrap();
+                        if v.is_int() || v.is_float() {
+                            tag = "Number";
+                        } else if v.is_bool() {
+                            tag = "Boolean";
+                        }
+                    }
+                }
             }
         }
         if let Some(sym_tag_atom) = get_symbol_to_string_tag_atom(_ctx) {
