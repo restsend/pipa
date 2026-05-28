@@ -201,6 +201,10 @@ pub fn init_string(ctx: &mut JSContext) {
     let proto_atom = ctx.intern("StringPrototype");
     let mut proto_obj = JSObject::new();
     set_ne(&mut proto_obj,
+        ctx.intern("constructor"),
+        string_value,
+    );
+    set_ne(&mut proto_obj,
         ctx.intern("charAt"),
         create_builtin_function(ctx, "string_charAt"),
     );
@@ -1117,6 +1121,9 @@ fn string_starts_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         "undefined".to_string()
     };
+    if search.is_empty() {
+        return JSValue::bool(true);
+    }
     let pos = if args.len() > 2 {
         let idx = to_integer_index(&args[2], ctx);
         if idx < 0 { 0usize } else { idx as usize }
@@ -1139,6 +1146,9 @@ fn string_ends_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         "undefined".to_string()
     };
+    if search.is_empty() {
+        return JSValue::bool(true);
+    }
     let len = s.len();
     let end_pos = if args.len() > 2 {
         let idx = to_integer_index(&args[2], ctx);

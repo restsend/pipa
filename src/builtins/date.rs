@@ -244,6 +244,11 @@ pub fn init_date(ctx: &mut JSContext) {
     }
 
     set_ne(&mut proto_obj,
+        ctx.intern("constructor"),
+        date_value,
+    );
+
+    set_ne(&mut proto_obj,
         ctx.intern("getTime"),
         create_builtin_function(ctx, "date_getTime"),
     );
