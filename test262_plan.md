@@ -32,6 +32,7 @@
 | Object | 2025 | 554 | 2579 | 78.5% |
 | String | 899 | 323 | 1222 | 73.6% |
 | Array | 804 | 1533 | 2337 | 34.4% |
+| Function | 388 | 119 | 507 | 76.9% |
 
 ### Slow (very large array operations, not hangs)
 
@@ -85,3 +86,4 @@ Fixes:
 - 2026-05-27: Added not-a-constructor check for builtins in CallNew, made global builtins non-enumerable. parseInt 92.7%, parseFloat 94.4%, Number 97.3%, Boolean 98.0%, Math 97.8%, String 70.9%, bench-v8 1275
 - 2026-05-27: Fixed String.fromCodePoint range/integer validation. bench-v8 1235
 - 2026-05-28: Fixed Function.prototype.call/apply to propagate exceptions from builtins. Number 98.5%, String 73.2%, bench-v8 1229
+- 2026-05-28: Made all 34 global constructors non-enumerable (Object, Function, Array, Date, RegExp, Error subtypes, Symbol, Map, Set, Promise, ArrayBuffer, typed arrays, etc). Math 97.8%, bench-v8 1279
