@@ -679,6 +679,20 @@ fn object_to_string(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                             tag = "Boolean";
                         }
                     }
+                    if tag == "Number" || tag == "Boolean" {
+                        if let Some(date_proto) = _ctx.get_date_prototype() {
+                            let mut p = obj.prototype;
+                            while let Some(pp) = p {
+                                if pp == date_proto {
+                                    tag = "Date";
+                                    break;
+                                }
+                                unsafe {
+                                    p = (*pp).prototype;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

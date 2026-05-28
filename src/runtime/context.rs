@@ -260,6 +260,7 @@ pub struct JSContext {
     number_prototype: Option<usize>,
     array_prototype: Option<usize>,
     regexp_prototype: Option<usize>,
+    date_prototype: Option<usize>,
     object_prototype: Option<usize>,
     function_prototype: Option<usize>,
     map_prototype: Option<usize>,
@@ -331,6 +332,7 @@ impl JSContext {
             number_prototype: None,
             array_prototype: None,
             regexp_prototype: None,
+            date_prototype: None,
             object_prototype: None,
             function_prototype: None,
             map_prototype: None,
@@ -612,6 +614,14 @@ impl JSContext {
 
     pub fn get_object_prototype(&self) -> Option<*mut JSObject> {
         self.object_prototype.map(|p| p as *mut JSObject)
+    }
+
+    pub fn set_date_prototype(&mut self, ptr: usize) {
+        self.date_prototype = Some(ptr);
+    }
+
+    pub fn get_date_prototype(&self) -> Option<*mut JSObject> {
+        self.date_prototype.map(|p| p as *mut JSObject)
     }
 
     pub fn get_function_prototype(&self) -> Option<*mut JSObject> {

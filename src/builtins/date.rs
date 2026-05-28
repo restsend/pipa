@@ -350,6 +350,7 @@ pub fn init_date(ctx: &mut JSContext) {
 
     let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
+    ctx.set_date_prototype(proto_ptr);
     let proto_value = JSValue::new_object(proto_ptr);
 
     if global.is_object() {
