@@ -154,7 +154,17 @@ pub fn init_string(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(string_atom, string_value);
+        global_obj.define_property(
+            string_atom,
+            crate::object::object::PropertyDescriptor {
+                value: Some(string_value),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let proto_atom = ctx.intern("StringPrototype");
