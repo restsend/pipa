@@ -19,7 +19,7 @@
 | parseInt | 51 | 4 | 55 | 92.7% |
 | parseFloat | 51 | 3 | 54 | 94.4% |
 | Symbol | 44 | 54 | 98 | 44.9% |
-| Error | 29 | 63 | 92 | 31.5% |
+| Error | 30 | 62 | 92 | 32.6% |
 | JSON | 73 | 92 | 165 | 44.2% |
 | Map | 44 | 159 | 203 | 21.7% |
 | Set | 72 | 310 | 382 | 18.8% |
@@ -88,3 +88,4 @@ Fixes:
 - 2026-05-28: Fixed Function.prototype.call/apply to propagate exceptions from builtins. Number 98.5%, String 73.2%, bench-v8 1229
 - 2026-05-28: Made all 34 global constructors non-enumerable. Math 97.8%, bench-v8 1279
 - 2026-05-28: Made all prototype methods non-enumerable (Array 33, String 34, Object 6, Date 16, Error 4, RegExp 13). String 74.5%, Error 31.5%, Date 34.5%, bench-v8 1289
+- 2026-05-28: Fixed Error.prototype descriptor { writable: false, enumerable: false, configurable: false }. Error 32.6%, bench-v8 1230
