@@ -3,6 +3,17 @@ use crate::object::object::JSObject;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
+fn set_ctor_prototype(obj: &mut JSObject, key: crate::runtime::atom::Atom, val: JSValue) {
+    obj.define_property(key, crate::object::object::PropertyDescriptor {
+        value: Some(val),
+        writable: false,
+        enumerable: false,
+        configurable: false,
+        get: None,
+        set: None,
+    });
+}
+
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     let arity = ctx.get_builtin_arity(name).unwrap_or(1);
     let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
@@ -57,7 +68,7 @@ pub fn init_error(ctx: &mut JSContext) {
     let proto_value = JSValue::new_object(proto_ptr);
     if ctx.get_builtin_func("error_constructor").is_some() {
         let f = unsafe { JSValue::function_from_ptr_mut(error_ptr) };
-        f.base.set(ctx.intern("prototype"), proto_value);
+        set_ctor_prototype(&mut f.base, ctx.intern("prototype"), proto_value);
     }
 
     let proto_atom = ctx.intern("ErrorPrototype");
@@ -114,7 +125,7 @@ fn init_type_error(ctx: &mut JSContext) {
     let proto_value = JSValue::new_object(proto_ptr);
     ctx.set_type_error_prototype(proto_ptr);
     let ctor = unsafe { JSValue::function_from_ptr_mut(ptr) };
-    ctor.base.set(ctx.intern("prototype"), proto_value);
+    set_ctor_prototype(&mut ctor.base, ctx.intern("prototype"), proto_value);
 }
 
 fn init_reference_error(ctx: &mut JSContext) {
@@ -152,7 +163,7 @@ fn init_reference_error(ctx: &mut JSContext) {
     let proto_value = JSValue::new_object(proto_ptr);
     ctx.set_reference_error_prototype(proto_ptr);
     let ctor = unsafe { JSValue::function_from_ptr_mut(ptr) };
-    ctor.base.set(ctx.intern("prototype"), proto_value);
+    set_ctor_prototype(&mut ctor.base, ctx.intern("prototype"), proto_value);
 
     let global = ctx.global();
     if global.is_object() {
@@ -196,7 +207,7 @@ fn init_syntax_error(ctx: &mut JSContext) {
     let proto_value = JSValue::new_object(proto_ptr);
     ctx.set_syntax_error_prototype(proto_ptr);
     let ctor = unsafe { JSValue::function_from_ptr_mut(ptr) };
-    ctor.base.set(ctx.intern("prototype"), proto_value);
+    set_ctor_prototype(&mut ctor.base, ctx.intern("prototype"), proto_value);
 
     let global = ctx.global();
     if global.is_object() {
@@ -240,7 +251,7 @@ fn init_range_error(ctx: &mut JSContext) {
     let proto_value = JSValue::new_object(proto_ptr);
     ctx.set_range_error_prototype(proto_ptr);
     let ctor = unsafe { JSValue::function_from_ptr_mut(ptr) };
-    ctor.base.set(ctx.intern("prototype"), proto_value);
+    set_ctor_prototype(&mut ctor.base, ctx.intern("prototype"), proto_value);
 
     let global = ctx.global();
     if global.is_object() {
