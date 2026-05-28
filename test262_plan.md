@@ -30,7 +30,7 @@
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
-| String | 894 | 328 | 1222 | 73.2% |
+| String | 899 | 323 | 1222 | 73.6% |
 | Array | 804 | 1533 | 2337 | 34.4% |
 
 ### Slow (very large array operations, not hangs)
