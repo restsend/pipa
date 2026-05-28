@@ -505,9 +505,27 @@ fn string_char_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let atom = ctx.intern(&s);
 
     let index = if args.len() > 1 {
-        args[1].get_int() as usize
+        let pos = &args[1];
+        let idx = if pos.is_int() {
+            pos.get_int()
+        } else if pos.is_float() {
+            pos.get_float().trunc() as i64
+        } else if pos.is_undefined() || pos.is_null() {
+            0
+        } else if pos.is_bool() {
+            if pos.get_bool() { 1 } else { 0 }
+        } else if pos.is_string() {
+            let s = ctx.get_atom_str(pos.get_atom());
+            match s.trim().parse::<f64>() {
+                Ok(v) if !v.is_nan() => v.trunc() as i64,
+                _ => 0
+            }
+        } else {
+            0
+        };
+        if idx < 0 { 0usize } else { idx as usize }
     } else {
-        0
+        0usize
     };
 
     if index >= ctx.string_char_count(atom) {
@@ -1351,7 +1369,28 @@ fn string_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len();
-    let idx = if args.len() > 1 { args[1].get_int() } else { 0 };
+    let idx = if args.len() > 1 {
+        let pos = &args[1];
+        if pos.is_int() {
+            pos.get_int()
+        } else if pos.is_float() {
+            pos.get_float().trunc() as i64
+        } else if pos.is_undefined() || pos.is_null() {
+            0
+        } else if pos.is_bool() {
+            if pos.get_bool() { 1 } else { 0 }
+        } else if pos.is_string() {
+            let s = ctx.get_atom_str(pos.get_atom());
+            match s.trim().parse::<f64>() {
+                Ok(v) if !v.is_nan() => v.trunc() as i64,
+                _ => 0
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    };
     let actual_idx = if idx < 0 { len as i64 + idx } else { idx };
     if actual_idx < 0 || actual_idx as usize >= len {
         return JSValue::undefined();
