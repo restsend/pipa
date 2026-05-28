@@ -122,6 +122,8 @@ pub struct VM {
 
     pub(crate) pending_throw: Option<JSValue>,
 
+    pub(crate) last_caught_exception: Option<JSValue>,
+
     finally_rethrow: Option<JSValue>,
     pending_finally_rethrow: Option<JSValue>,
     pending_finally_return: Option<JSValue>,
@@ -164,6 +166,7 @@ impl VM {
             cached_upvalues_len: 0,
             exception_handlers: Vec::new(),
             pending_throw: None,
+            last_caught_exception: None,
             finally_rethrow: None,
             pending_finally_rethrow: None,
             pending_finally_return: None,
@@ -1670,6 +1673,7 @@ impl VM {
                     } else {
                         "builtin error".to_string()
                     };
+                    self.last_caught_exception = Some(exc);
                     return Err(msg);
                 }
                 return Ok(result);
@@ -1695,6 +1699,7 @@ impl VM {
                     } else {
                         "builtin error".to_string()
                     };
+                    self.last_caught_exception = Some(exc);
                     return Err(msg);
                 }
                 return Ok(result);
@@ -1746,6 +1751,7 @@ impl VM {
 
             // If the call threw, redispatch the exception with the restored handlers
             if let Some(exc) = pending_exc {
+                self.last_caught_exception = Some(exc.clone());
                 self.pending_throw = Some(exc);
                 let exc_val = self.pending_throw.take().unwrap();
                 match self.dispatch_throw_value(ctx, exc_val) {

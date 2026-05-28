@@ -934,7 +934,7 @@ pub fn throw_type_error_if_no_exception(ctx: &mut JSContext, msg: &str) -> JSVal
     throw_type_error(ctx, msg)
 }
 
-fn js_to_primitive_number(ctx: &mut JSContext, v: &JSValue) -> Option<JSValue> {
+ fn js_to_primitive_number(ctx: &mut JSContext, v: &JSValue) -> Option<JSValue> {
     if !v.is_object() {
         return Some(v.clone());
     }
