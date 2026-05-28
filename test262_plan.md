@@ -19,7 +19,7 @@
 | parseInt | 51 | 4 | 55 | 92.7% |
 | parseFloat | 51 | 3 | 54 | 94.4% |
 | Symbol | 44 | 54 | 98 | 44.9% |
-| Error | 30 | 62 | 92 | 32.6% |
+| Error | 32 | 60 | 92 | 34.8% |
 | JSON | 73 | 92 | 165 | 44.2% |
 | Map | 44 | 159 | 203 | 21.7% |
 | Set | 72 | 310 | 382 | 18.8% |
@@ -30,7 +30,7 @@
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
-| String | 911 | 311 | 1222 | 74.5% |
+| String | 921 | 301 | 1222 | 75.4% |
 | Array | 804 | 1533 | 2337 | 34.4% |
 | Function | 392 | 115 | 507 | 77.3% |
 
@@ -93,3 +93,6 @@ Fixes:
 - 2026-05-28: Fixed Function.prototype.apply/call TypeError for non-function this and non-object argArray. Function 76.9% -> 77.3%, bench-v8 1234
 - 2026-05-28: Set own 'length' property on String wrapper objects in CallNew. bench-v8 1250
 - 2026-05-28: Added last_caught_exception to VM for preserving exception objects across call_function_with_this. bench-v8 1240
+- 2026-05-28: Fixed String method position coercion (includes/indexOf/substring/slice/repeat/codePointAt). String 74.5% -> 75.2%
+- 2026-05-28: Fixed String.prototype.split: handle undefined separator and limit argument. String 75.2% -> 75.4%
+- 2026-05-28: Fixed Error constructor property descriptors: message/name/cause now non-enumerable. Error 32.6% -> 34.8%
