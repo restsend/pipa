@@ -1006,6 +1006,20 @@ impl VM {
                         this_val
                             .as_object_mut()
                             .set(ctx.common_atoms.__value__, result);
+                        if result.is_string() {
+                            let s = ctx.get_atom_str(result.get_atom());
+                            this_val.as_object_mut().define_property(
+                                ctx.common_atoms.length,
+                                crate::object::object::PropertyDescriptor {
+                                    value: Some(JSValue::new_int(s.chars().count() as i64)),
+                                    writable: false,
+                                    enumerable: false,
+                                    configurable: false,
+                                    get: None,
+                                    set: None,
+                                },
+                            );
+                        }
                     }
                     self.set_reg(dst, this_val);
                 } else {
