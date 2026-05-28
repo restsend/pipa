@@ -25,12 +25,12 @@
 | Set | 72 | 310 | 382 | 18.8% |
 | Reflect | 33 | 120 | 153 | 21.6% |
 | Proxy | 0 | 311 | 311 | 0.0% |
-| Date | 219 | 375 | 594 | 36.9% |
+| Date | 231 | 363 | 594 | 38.9% |
 | Iterator | 52 | 461 | 513 | 10.1% |
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
-| String | 921 | 301 | 1222 | 75.4% |
+| String | 929 | 293 | 1222 | 76.0% |
 | Array | 804 | 1533 | 2337 | 34.4% |
 | Function | 392 | 115 | 507 | 77.3% |
 
@@ -96,3 +96,5 @@ Fixes:
 - 2026-05-28: Fixed String method position coercion (includes/indexOf/substring/slice/repeat/codePointAt). String 74.5% -> 75.2%
 - 2026-05-28: Fixed String.prototype.split: handle undefined separator and limit argument. String 75.2% -> 75.4%
 - 2026-05-28: Fixed Error constructor property descriptors: message/name/cause now non-enumerable. Error 32.6% -> 34.8%
+- 2026-05-28: Fixed String method position coercion, split limit, startsWith/endsWith, constructor prop. String 75.4% -> 76.0%
+- 2026-05-28: Added Date.prototype.constructor and toJSON. Date 36.9% -> 38.9%
