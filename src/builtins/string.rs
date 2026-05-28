@@ -910,9 +910,21 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         None
     };
 
-    let s = ctx.get_atom_str(s_atom);
+    let s_owned = ctx.get_atom_str(s_atom).to_string();
+    let s = s_owned.as_str();
 
     if args.len() <= 1 || args[1].is_undefined() {
+        let limit = if args.len() > 2 && !args[2].is_undefined() {
+            to_integer_index(&args[2], ctx).max(0) as usize
+        } else {
+            usize::MAX
+        };
+        if limit == 0 {
+            let mut result = JSObject::new_array();
+            result.set(length_atom, JSValue::new_int(0));
+            let ptr = Box::into_raw(Box::new(result)) as usize;
+            return JSValue::new_object(ptr);
+        }
         let mut result = JSObject::new_array();
         result.set(ctx.int_atom_mut(0), JSValue::new_string(s_atom));
         result.set(length_atom, JSValue::new_int(1));
@@ -920,27 +932,43 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_object(ptr);
     }
 
-    let separator = sep_atom.map(|a| ctx.get_atom_str(a)).unwrap_or("");
+    let limit = if args.len() > 2 && !args[2].is_undefined() {
+        to_integer_index(&args[2], ctx).max(0) as usize
+    } else {
+        usize::MAX
+    };
+
+    let separator = sep_atom.map(|a| ctx.get_atom_str(a).to_string()).unwrap_or_default();
+    let s = s.to_string();
+
+    if limit == 0 {
+        let mut result = JSObject::new_array();
+        result.set(length_atom, JSValue::new_int(0));
+        let ptr = Box::into_raw(Box::new(result)) as usize;
+        return JSValue::new_object(ptr);
+    }
 
     let mut result = JSObject::new_array();
 
     if separator.is_empty() {
         let chars: Vec<char> = s.chars().collect();
-        for (i, c) in chars.iter().enumerate() {
+        let count = chars.len().min(limit);
+        for i in 0..count {
             let key = ctx.int_atom_mut(i);
-            let c_str = c.to_string();
+            let c_str = chars[i].to_string();
             let c_atom = ctx.intern(&c_str);
             result.set(key, JSValue::new_string(c_atom));
         }
-        result.set(length_atom, JSValue::new_int(chars.len() as i64));
+        result.set(length_atom, JSValue::new_int(count as i64));
     } else {
-        let parts: Vec<String> = s.split(separator).map(|s| s.to_string()).collect();
-        for (i, part) in parts.iter().enumerate() {
+        let parts: Vec<String> = s.split(separator.as_str()).map(|s| s.to_string()).collect();
+        let count = parts.len().min(limit);
+        for i in 0..count {
             let key = ctx.int_atom_mut(i);
-            let part_atom = ctx.intern(part);
+            let part_atom = ctx.intern(&parts[i]);
             result.set(key, JSValue::new_string(part_atom));
         }
-        result.set(length_atom, JSValue::new_int(parts.len() as i64));
+        result.set(length_atom, JSValue::new_int(count as i64));
     }
 
     let ptr = Box::into_raw(Box::new(result)) as usize;
@@ -1410,6 +1438,16 @@ fn string_replace_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         String::new()
     };
+
+    if search.is_empty() {
+        let mut result = String::new();
+        for c in s.chars() {
+            result.push_str(&replacement);
+            result.push(c);
+        }
+        result.push_str(&replacement);
+        return JSValue::new_string(ctx.intern(&result));
+    }
 
     let result = s.replace(&search as &str, &replacement as &str);
     JSValue::new_string(ctx.intern(&result))
