@@ -3,6 +3,26 @@ use crate::object::object::JSObject;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
+fn to_integer_index(val: &JSValue, ctx: &mut JSContext) -> i64 {
+    if val.is_int() {
+        val.get_int()
+    } else if val.is_float() {
+        val.get_float().trunc() as i64
+    } else if val.is_undefined() || val.is_null() {
+        0
+    } else if val.is_bool() {
+        if val.get_bool() { 1 } else { 0 }
+    } else if val.is_string() {
+        let s = ctx.get_atom_str(val.get_atom());
+        match s.trim().parse::<f64>() {
+            Ok(v) if !v.is_nan() => v.trunc() as i64,
+            _ => 0
+        }
+    } else {
+        0
+    }
+}
+
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     let arity = ctx.get_builtin_arity(name).unwrap_or(1);
     let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
@@ -516,24 +536,7 @@ fn string_char_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let atom = ctx.intern(&s);
 
     let index = if args.len() > 1 {
-        let pos = &args[1];
-        let idx = if pos.is_int() {
-            pos.get_int()
-        } else if pos.is_float() {
-            pos.get_float().trunc() as i64
-        } else if pos.is_undefined() || pos.is_null() {
-            0
-        } else if pos.is_bool() {
-            if pos.get_bool() { 1 } else { 0 }
-        } else if pos.is_string() {
-            let s = ctx.get_atom_str(pos.get_atom());
-            match s.trim().parse::<f64>() {
-                Ok(v) if !v.is_nan() => v.trunc() as i64,
-                _ => 0
-            }
-        } else {
-            0
-        };
+        let idx = to_integer_index(&args[1], ctx);
         if idx < 0 { 0usize } else { idx as usize }
     } else {
         0usize
@@ -631,9 +634,27 @@ fn string_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     let from_index = if args.len() > 2 {
-        args[2].get_int().max(0) as usize
+        let p = &args[2];
+        let idx = if p.is_int() {
+            p.get_int()
+        } else if p.is_float() {
+            p.get_float().trunc() as i64
+        } else if p.is_undefined() || p.is_null() {
+            0
+        } else if p.is_bool() {
+            if p.get_bool() { 1 } else { 0 }
+        } else if p.is_string() {
+            let ps = ctx.get_atom_str(p.get_atom());
+            match ps.trim().parse::<f64>() {
+                Ok(v) if !v.is_nan() => v.trunc() as i64,
+                _ => 0
+            }
+        } else {
+            0
+        };
+        if idx < 0 { 0usize } else { idx as usize }
     } else {
-        0
+        0usize
     };
 
     let s_char_len = char_count(&s);
@@ -688,14 +709,14 @@ fn string_substring(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let len = char_count(&s);
     let start = if args.len() > 1 {
-        let v = args[1].get_int().max(0) as usize;
+        let v = to_integer_index(&args[1], ctx).max(0) as usize;
         v.min(len)
     } else {
         0
     };
 
     let end = if args.len() > 2 {
-        let v = args[2].get_int().max(0) as usize;
+        let v = to_integer_index(&args[2], ctx).max(0) as usize;
         v.min(len)
     } else {
         len
@@ -723,7 +744,7 @@ fn string_slice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let len = char_count(&s);
     let start = if args.len() > 1 {
-        let v = args[1].get_int();
+        let v = to_integer_index(&args[1], ctx);
         if v < 0 {
             (len as i64 + v).max(0) as usize
         } else {
@@ -734,7 +755,7 @@ fn string_slice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     let end = if args.len() > 2 {
-        let v = args[2].get_int();
+        let v = to_integer_index(&args[2], ctx);
         if v < 0 {
             (len as i64 + v).max(0) as usize
         } else {
@@ -879,11 +900,26 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let sep_atom = if args.len() > 1 && args[1].is_string() {
         Some(args[1].get_atom())
+    } else if args.len() > 1 && !args[1].is_undefined() {
+        let s = match this_to_string(ctx, &args[1]) {
+            Some(s) => s,
+            None => return JSValue::undefined(),
+        };
+        Some(ctx.intern(&s))
     } else {
         None
     };
 
     let s = ctx.get_atom_str(s_atom);
+
+    if args.len() <= 1 || args[1].is_undefined() {
+        let mut result = JSObject::new_array();
+        result.set(ctx.int_atom_mut(0), JSValue::new_string(s_atom));
+        result.set(length_atom, JSValue::new_int(1));
+        let ptr = Box::into_raw(Box::new(result)) as usize;
+        return JSValue::new_object(ptr);
+    }
+
     let separator = sep_atom.map(|a| ctx.get_atom_str(a)).unwrap_or("");
 
     let mut result = JSObject::new_array();
@@ -1062,7 +1098,7 @@ fn string_repeat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::new_string(ctx.intern(""));
     }
-    let count = args[1].get_int();
+    let count = to_integer_index(&args[1], ctx);
     if count < 0 {
         return JSValue::new_string(ctx.intern(""));
     }
@@ -1072,15 +1108,24 @@ fn string_repeat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn string_includes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::bool(false);
-    }
     let s = match this_to_string(ctx, &args[0]) {
         Some(s) => s,
         None => return JSValue::undefined(),
     };
+    if args.len() < 2 {
+        return JSValue::bool(s.contains("undefined"));
+    }
     let search = ctx.get_atom_str(args[1].get_atom()).to_string();
-    JSValue::bool(s.contains(&search))
+    let pos = if args.len() > 2 {
+        let idx = to_integer_index(&args[2], ctx);
+        if idx < 0 { 0usize } else { idx as usize }
+    } else {
+        0usize
+    };
+    if pos > s.len() {
+        return JSValue::bool(false);
+    }
+    JSValue::bool(s[pos..].contains(&search))
 }
 
 fn string_replace(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1443,7 +1488,7 @@ fn string_code_point_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let chars: Vec<char> = s.chars().collect();
     let len = chars.len();
     let index = if args.len() > 1 {
-        args[1].get_int() as i64
+        to_integer_index(&args[1], ctx)
     } else {
         0
     };
