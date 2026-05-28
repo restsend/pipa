@@ -289,6 +289,14 @@ pub fn init_string(ctx: &mut JSContext) {
         create_builtin_function(ctx, "string_includes"),
     );
     set_ne(&mut proto_obj,
+        ctx.intern("startsWith"),
+        create_builtin_function(ctx, "string_starts_with"),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("endsWith"),
+        create_builtin_function(ctx, "string_ends_with"),
+    );
+    set_ne(&mut proto_obj,
         ctx.intern("replace"),
         create_builtin_function(ctx, "string_replace"),
     );
@@ -436,6 +444,14 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "string_includes",
         HostFunction::method("includes", 1, string_includes),
+    );
+    ctx.register_builtin(
+        "string_starts_with",
+        HostFunction::method("startsWith", 1, string_starts_with),
+    );
+    ctx.register_builtin(
+        "string_ends_with",
+        HostFunction::method("endsWith", 1, string_ends_with),
     );
     ctx.register_builtin(
         "string_replace",
@@ -1092,27 +1108,45 @@ fn string_trim_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn string_starts_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::bool(false);
-    }
     let s = match this_to_string(ctx, &args[0]) {
         Some(s) => s,
         None => return JSValue::undefined(),
     };
-    let prefix = ctx.get_atom_str(args[1].get_atom()).to_string();
-    JSValue::bool(s.starts_with(&prefix))
+    let search = if args.len() > 1 {
+        ctx.get_atom_str(args[1].get_atom()).to_string()
+    } else {
+        "undefined".to_string()
+    };
+    let pos = if args.len() > 2 {
+        let idx = to_integer_index(&args[2], ctx);
+        if idx < 0 { 0usize } else { idx as usize }
+    } else {
+        0usize
+    };
+    if pos > s.len() {
+        return JSValue::bool(false);
+    }
+    JSValue::bool(s[pos..].starts_with(&search))
 }
 
 fn string_ends_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::bool(false);
-    }
     let s = match this_to_string(ctx, &args[0]) {
         Some(s) => s,
         None => return JSValue::undefined(),
     };
-    let suffix = ctx.get_atom_str(args[1].get_atom()).to_string();
-    JSValue::bool(s.ends_with(&suffix))
+    let search = if args.len() > 1 {
+        ctx.get_atom_str(args[1].get_atom()).to_string()
+    } else {
+        "undefined".to_string()
+    };
+    let len = s.len();
+    let end_pos = if args.len() > 2 {
+        let idx = to_integer_index(&args[2], ctx);
+        if idx < 0 { 0usize } else { (idx as usize).min(len) }
+    } else {
+        len
+    };
+    JSValue::bool(s[..end_pos].ends_with(&search))
 }
 
 fn string_repeat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
