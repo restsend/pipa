@@ -196,6 +196,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "date_valueOf",
         HostFunction::method("valueOf", 0, date_value_of),
     );
+    ctx.register_builtin(
+        "date_toJSON",
+        HostFunction::method("toJSON", 1, date_to_json),
+    );
 }
 
 pub fn init_date(ctx: &mut JSContext) {
@@ -351,6 +355,10 @@ pub fn init_date(ctx: &mut JSContext) {
     set_ne(&mut proto_obj,
         ctx.intern("valueOf"),
         create_builtin_function(ctx, "date_valueOf"),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("toJSON"),
+        create_builtin_function(ctx, "date_toJSON"),
     );
 
     let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
@@ -869,6 +877,31 @@ pub fn date_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return ts;
     }
     JSValue::new_float(f64::NAN)
+}
+
+fn date_to_json(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object() {
+        return JSValue::undefined();
+    }
+    let obj = args[0].as_object();
+    let to_iso = obj.get(ctx.intern("toISOString"));
+    if let Some(fn_val) = to_iso {
+        if fn_val.is_function() {
+            if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+                let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+                match vm.call_function_with_this(ctx, fn_val, args[0], &[]) {
+                    Ok(val) => return val,
+                    Err(_) => {
+                        if let Some(exc) = vm.last_caught_exception.take() {
+                            ctx.pending_exception = Some(exc);
+                        }
+                        return JSValue::undefined();
+                    }
+                }
+            }
+        }
+    }
+    JSValue::undefined()
 }
 
 pub fn init_date_to_primitive(ctx: &mut JSContext) {
