@@ -14,6 +14,17 @@ fn set_ctor_prototype(obj: &mut JSObject, key: crate::runtime::atom::Atom, val: 
     });
 }
 
+fn set_own_ne(obj: &mut JSObject, key: crate::runtime::atom::Atom, val: JSValue) {
+    obj.define_property(key, crate::object::object::PropertyDescriptor {
+        value: Some(val),
+        writable: true,
+        enumerable: false,
+        configurable: true,
+        get: None,
+        set: None,
+    });
+}
+
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     let arity = ctx.get_builtin_arity(name).unwrap_or(1);
     let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
@@ -260,150 +271,55 @@ fn init_range_error(ctx: &mut JSContext) {
     }
 }
 
-pub fn error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn build_error(ctx: &mut JSContext, name: &str, args: &[JSValue], proto: Option<*mut JSObject>) -> JSValue {
     let mut err = JSObject::new();
-    err.set(ctx.intern("name"), JSValue::new_string(ctx.intern("Error")));
-
+    set_own_ne(&mut err, ctx.intern("name"), JSValue::new_string(ctx.intern(name)));
     if !args.is_empty() && args[0].is_string() {
-        err.set(ctx.intern("message"), args[0]);
+        set_own_ne(&mut err, ctx.intern("message"), args[0]);
     } else {
-        err.set(ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+        set_own_ne(&mut err, ctx.intern("message"), JSValue::new_string(ctx.intern("")));
     }
-
     if args.len() > 1 && args[1].is_object() {
         let opts = args[1].as_object();
         if let Some(cause) = opts.get(ctx.intern("cause")) {
-            err.set(ctx.intern("cause"), cause);
+            set_own_ne(&mut err, ctx.intern("cause"), cause);
         }
     }
-
-    if let Some(proto) = ctx.get_error_prototype() {
-        err.prototype = Some(proto as *mut _);
+    if let Some(p) = proto {
+        err.prototype = Some(p);
     }
-
     let ptr = Box::into_raw(Box::new(err)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(ptr);
     JSValue::new_object(ptr)
+}
+
+pub fn error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let proto = ctx.get_error_prototype().map(|p| p as *mut _);
+    build_error(ctx, "Error", args, proto)
 }
 
 pub fn type_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let mut err = JSObject::new();
-    err.set(
-        ctx.intern("name"),
-        JSValue::new_string(ctx.intern("TypeError")),
-    );
-
-    if !args.is_empty() && args[0].is_string() {
-        err.set(ctx.intern("message"), args[0]);
-    } else {
-        err.set(ctx.intern("message"), JSValue::new_string(ctx.intern("")));
-    }
-
-    if args.len() > 1 && args[1].is_object() {
-        let opts = args[1].as_object();
-        if let Some(cause) = opts.get(ctx.intern("cause")) {
-            err.set(ctx.intern("cause"), cause);
-        }
-    }
-
-    if let Some(proto) = ctx.get_type_error_prototype() {
-        err.prototype = Some(proto as *mut _);
-    }
-
-    let ptr = Box::into_raw(Box::new(err)) as usize;
-    ctx.runtime_mut().gc_heap_mut().track(ptr);
-    JSValue::new_object(ptr)
+    let proto = ctx.get_type_error_prototype().map(|p| p as *mut _);
+    build_error(ctx, "TypeError", args, proto)
 }
 
 pub fn reference_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let mut err = JSObject::new();
-    err.set(
-        ctx.intern("name"),
-        JSValue::new_string(ctx.intern("ReferenceError")),
-    );
-
-    if !args.is_empty() && args[0].is_string() {
-        err.set(ctx.intern("message"), args[0]);
-    } else {
-        err.set(ctx.intern("message"), JSValue::new_string(ctx.intern("")));
-    }
-
-    if args.len() > 1 && args[1].is_object() {
-        let opts = args[1].as_object();
-        if let Some(cause) = opts.get(ctx.intern("cause")) {
-            err.set(ctx.intern("cause"), cause);
-        }
-    }
-
-    if let Some(proto) = ctx.get_reference_error_prototype() {
-        err.prototype = Some(proto as *mut _);
-    } else if let Some(proto) = ctx.get_error_prototype() {
-        err.prototype = Some(proto as *mut _);
-    }
-
-    let ptr = Box::into_raw(Box::new(err)) as usize;
-    ctx.runtime_mut().gc_heap_mut().track(ptr);
-    JSValue::new_object(ptr)
+    let proto = ctx.get_reference_error_prototype()
+        .or_else(|| ctx.get_error_prototype())
+        .map(|p| p as *mut _);
+    build_error(ctx, "ReferenceError", args, proto)
 }
 
 pub fn syntax_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let mut err = JSObject::new();
-    err.set(
-        ctx.intern("name"),
-        JSValue::new_string(ctx.intern("SyntaxError")),
-    );
-
-    if !args.is_empty() && args[0].is_string() {
-        err.set(ctx.intern("message"), args[0]);
-    } else {
-        err.set(ctx.intern("message"), JSValue::new_string(ctx.intern("")));
-    }
-
-    if args.len() > 1 && args[1].is_object() {
-        let opts = args[1].as_object();
-        if let Some(cause) = opts.get(ctx.intern("cause")) {
-            err.set(ctx.intern("cause"), cause);
-        }
-    }
-
-    if let Some(proto) = ctx.get_syntax_error_prototype() {
-        err.prototype = Some(proto as *mut _);
-    }
-
-    let ptr = Box::into_raw(Box::new(err)) as usize;
-    ctx.runtime_mut().gc_heap_mut().track(ptr);
-    JSValue::new_object(ptr)
+    let proto = ctx.get_syntax_error_prototype().map(|p| p as *mut _);
+    build_error(ctx, "SyntaxError", args, proto)
 }
 
 pub fn range_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let mut err = JSObject::new();
-    err.set(
-        ctx.intern("name"),
-        JSValue::new_string(ctx.intern("RangeError")),
-    );
-
-    if !args.is_empty() && args[0].is_string() {
-        err.set(ctx.intern("message"), args[0]);
-    } else {
-        err.set(ctx.intern("message"), JSValue::new_string(ctx.intern("")));
-    }
-
-    if args.len() > 1 && args[1].is_object() {
-        let opts = args[1].as_object();
-        if let Some(cause) = opts.get(ctx.intern("cause")) {
-            err.set(ctx.intern("cause"), cause);
-        }
-    }
-
-    if let Some(proto) = ctx.get_range_error_prototype() {
-        err.prototype = Some(proto as *mut _);
-    } else if let Some(proto) = ctx.get_error_prototype() {
-        err.prototype = Some(proto as *mut _);
-    }
-
-    let ptr = Box::into_raw(Box::new(err)) as usize;
-    ctx.runtime_mut().gc_heap_mut().track(ptr);
-    JSValue::new_object(ptr)
+    let proto = ctx.get_range_error_prototype()
+        .or_else(|| ctx.get_error_prototype())
+        .map(|p| p as *mut _);
+    build_error(ctx, "RangeError", args, proto)
 }
 
 fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
