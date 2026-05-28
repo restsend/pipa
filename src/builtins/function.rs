@@ -373,10 +373,33 @@ fn function_call(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
          let result = vm.call_function_with_this(ctx, *this_val, this_arg, &call_args);
          match result {
              Ok(val) => val,
-             Err(_) => {
-                 if let Some(exc) = ctx.pending_exception.take() {
-                     vm.pending_throw = Some(exc);
+             Err(msg) => {
+                 let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+                 let msg_only = if let Some(idx) = msg.find(": ") {
+                     msg[idx + 2..].to_string()
+                 } else {
+                     msg.clone()
+                 };
+                 err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(&msg_only)));
+                 if msg.contains("TypeError") {
+                     err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                     if let Some(proto) = ctx.get_type_error_prototype() {
+                         err.prototype = Some(proto);
+                     }
+                 } else if msg.contains("RangeError") {
+                     err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+                     if let Some(proto) = ctx.get_range_error_prototype() {
+                         err.prototype = Some(proto);
+                     }
+                 } else {
+                     err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("Error")));
+                     if let Some(proto) = ctx.get_error_prototype() {
+                         err.prototype = Some(proto);
+                     }
                  }
+                 let err_ptr = Box::into_raw(Box::new(err)) as usize;
+                 ctx.runtime_mut().gc_heap_mut().track(err_ptr);
+                 vm.pending_throw = Some(JSValue::new_object(err_ptr));
                  JSValue::undefined()
              }
          }
@@ -417,10 +440,33 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     let result = vm.call_function_with_this(ctx, *this_val, this_arg, call_args);
                     return match result {
                         Ok(val) => val,
-                        Err(_) => {
-                            if let Some(exc) = ctx.pending_exception.take() {
-                                vm.pending_throw = Some(exc);
+                        Err(msg) => {
+                            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+                            let msg_only = if let Some(idx) = msg.find(": ") {
+                                msg[idx + 2..].to_string()
+                            } else {
+                                msg.clone()
+                            };
+                            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(&msg_only)));
+                            if msg.contains("TypeError") {
+                                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                                if let Some(proto) = ctx.get_type_error_prototype() {
+                                    err.prototype = Some(proto);
+                                }
+                            } else if msg.contains("RangeError") {
+                                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+                                if let Some(proto) = ctx.get_range_error_prototype() {
+                                    err.prototype = Some(proto);
+                                }
+                            } else {
+                                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("Error")));
+                                if let Some(proto) = ctx.get_error_prototype() {
+                                    err.prototype = Some(proto);
+                                }
                             }
+                            let err_ptr = Box::into_raw(Box::new(err)) as usize;
+                            ctx.runtime_mut().gc_heap_mut().track(err_ptr);
+                            vm.pending_throw = Some(JSValue::new_object(err_ptr));
                             JSValue::undefined()
                         }
                     };

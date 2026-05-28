@@ -27,8 +27,39 @@ pub fn number_to_exponential(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         this.get_int() as f64
     } else if this.is_float() {
         this.get_float()
+    } else if this.is_object() {
+        let obj = this.as_object();
+        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+            if v.is_int() {
+                v.get_int() as f64
+            } else if v.is_float() {
+                v.get_float()
+            } else {
+                return JSValue::new_string(ctx.intern("NaN"));
+            }
+        } else {
+            let mut err = crate::object::object::JSObject::new();
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Number")));
+            if let Some(proto) = ctx.get_type_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
     } else {
-        return JSValue::new_string(ctx.intern("NaN"));
+        let mut err = crate::object::object::JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Number")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     };
 
     if val.is_nan() {
