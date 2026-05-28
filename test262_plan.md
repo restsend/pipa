@@ -14,7 +14,7 @@
 | Module | Pass | Fail | Total | Pass Rate |
 |---|---|---|---|---|
 | Math | 317 | 7 | 324 | 97.8% |
-| Number | 330 | 9 | 339 | 97.3% |
+| Number | 334 | 5 | 339 | 98.5% |
 | Boolean | 49 | 1 | 50 | 98.0% |
 | parseInt | 51 | 4 | 55 | 92.7% |
 | parseFloat | 51 | 3 | 54 | 94.4% |
@@ -30,7 +30,7 @@
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
-| String | 866 | 356 | 1222 | 70.9% |
+| String | 894 | 328 | 1222 | 73.2% |
 | Array | 804 | 1533 | 2337 | 34.4% |
 
 ### Slow (very large array operations, not hangs)
@@ -84,3 +84,4 @@ Fixes:
 - 2026-05-27: Fixed parseInt radix: object radix via valueOf/toString, empty string, Infinity, Int32 overflow, Boolean valueOf. parseInt 89.1%, parseFloat 88.9%, Boolean 96.0%, bench-v8 1246
 - 2026-05-27: Added not-a-constructor check for builtins in CallNew, made global builtins non-enumerable. parseInt 92.7%, parseFloat 94.4%, Number 97.3%, Boolean 98.0%, Math 97.8%, String 70.9%, bench-v8 1275
 - 2026-05-27: Fixed String.fromCodePoint range/integer validation. bench-v8 1235
+- 2026-05-28: Fixed Function.prototype.call/apply to propagate exceptions from builtins. Number 98.5%, String 73.2%, bench-v8 1229
