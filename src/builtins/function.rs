@@ -4,6 +4,21 @@ use crate::object::object::JSObject;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
+fn throw_type_error(ctx: &mut JSContext, message: &str) {
+    if let Some(ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+        let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(message)));
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let err_ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(err_ptr);
+        vm.pending_throw = Some(JSValue::new_object(err_ptr));
+    }
+}
+
 fn create_builtin_method(ctx: &mut JSContext, name: &str) -> JSValue {
     let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
     func.set_builtin_marker(ctx, name);
@@ -356,6 +371,7 @@ fn function_call(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let this_val = &args[0];
     if !this_val.is_function() {
+        throw_type_error(ctx, "this is not a function");
         return JSValue::undefined();
     }
     let this_arg = if args.len() > 1 {
@@ -414,6 +430,7 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let this_val = &args[0];
     if !this_val.is_function() {
+        throw_type_error(ctx, "this is not a function");
         return JSValue::undefined();
     }
 
@@ -580,6 +597,9 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else {
             call_args = &[];
         }
+    } else if args.len() > 2 && !args[2].is_null() && !args[2].is_undefined() && !args[2].is_object() {
+        throw_type_error(ctx, "CreateListFromArrayLike called on non-object");
+        return JSValue::undefined();
     } else {
         call_args = &[];
     }
