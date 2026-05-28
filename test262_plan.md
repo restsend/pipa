@@ -25,14 +25,14 @@
 | Set | 72 | 310 | 382 | 18.8% |
 | Reflect | 33 | 120 | 153 | 21.6% |
 | Proxy | 0 | 311 | 311 | 0.0% |
-| Date | 205 | 389 | 594 | 34.5% |
+| Date | 219 | 375 | 594 | 36.9% |
 | Iterator | 52 | 461 | 513 | 10.1% |
 | RegExp | 769 | 1109 | 1878 | 40.9% |
 | Promise | 50 | 626 | 676 | 7.4% |
 | Object | 2025 | 554 | 2579 | 78.5% |
 | String | 911 | 311 | 1222 | 74.5% |
 | Array | 804 | 1533 | 2337 | 34.4% |
-| Function | 388 | 119 | 507 | 76.9% |
+| Function | 392 | 115 | 507 | 77.3% |
 
 ### Slow (very large array operations, not hangs)
 
@@ -89,3 +89,7 @@ Fixes:
 - 2026-05-28: Made all 34 global constructors non-enumerable. Math 97.8%, bench-v8 1279
 - 2026-05-28: Made all prototype methods non-enumerable (Array 33, String 34, Object 6, Date 16, Error 4, RegExp 13). String 74.5%, Error 31.5%, Date 34.5%, bench-v8 1289
 - 2026-05-28: Fixed Error.prototype descriptor { writable: false, enumerable: false, configurable: false }. Error 32.6%, bench-v8 1230
+- 2026-05-28: Fixed Object.prototype.toString to identify Date wrapper objects via prototype chain. Date 34.5% -> 36.9%, bench-v8 1281
+- 2026-05-28: Fixed Function.prototype.apply/call TypeError for non-function this and non-object argArray. Function 76.9% -> 77.3%, bench-v8 1234
+- 2026-05-28: Set own 'length' property on String wrapper objects in CallNew. bench-v8 1250
+- 2026-05-28: Added last_caught_exception to VM for preserving exception objects across call_function_with_this. bench-v8 1240
