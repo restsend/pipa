@@ -332,7 +332,7 @@ pub fn init_symbol(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(symbol_atom, symbol_ctor_val);
+        crate::builtins::global::set_non_enumerable(global_obj, symbol_atom, symbol_ctor_val);
     }
 }
 

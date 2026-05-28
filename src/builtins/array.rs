@@ -85,7 +85,7 @@ pub fn init_array(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(array_atom, array_value);
+        crate::builtins::global::set_non_enumerable(global_obj, array_atom, array_value);
     }
 
     let proto_atom = ctx.intern("ArrayPrototype");

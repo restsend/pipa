@@ -222,7 +222,7 @@ pub fn init_date(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(date_atom, date_value);
+        crate::builtins::global::set_non_enumerable(global_obj, date_atom, date_value);
     }
 
     let proto_atom = ctx.intern("DatePrototype");
@@ -343,7 +343,7 @@ pub fn init_date(ctx: &mut JSContext) {
 
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(proto_atom, proto_value);
+        crate::builtins::global::set_non_enumerable(global_obj, proto_atom, proto_value);
     }
 
     let date_func_ref = date_value.as_function_mut();

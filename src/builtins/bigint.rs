@@ -46,8 +46,8 @@ pub fn init_bigint(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(bigint_atom, bigint_value);
-        global_obj.set(proto_atom, proto_value);
+        crate::builtins::global::set_non_enumerable(global_obj, bigint_atom, bigint_value);
+        crate::builtins::global::set_non_enumerable(global_obj, proto_atom, proto_value);
     }
 }
 

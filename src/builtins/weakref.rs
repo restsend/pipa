@@ -54,7 +54,7 @@ pub fn init_weakref(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(weakref_atom, weakref_ctor);
+        crate::builtins::global::set_non_enumerable(global_obj, weakref_atom, weakref_ctor);
     }
 
     let mut fr_proto = JSObject::new();
@@ -79,7 +79,7 @@ pub fn init_weakref(ctx: &mut JSContext) {
     let fr_atom = ctx.intern("FinalizationRegistry");
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(fr_atom, fr_ctor);
+        crate::builtins::global::set_non_enumerable(global_obj, fr_atom, fr_ctor);
     }
 }
 

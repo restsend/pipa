@@ -2064,8 +2064,9 @@ fn init_global_funcs(ctx: &mut JSContext) {
 
         set_non_enumerable(global_obj, ctx.intern("globalThis"), global);
 
-        global_obj.set(ctx.intern("import"), create_builtin_function(ctx, "import"));
-        global_obj.set(
+        set_non_enumerable(global_obj, ctx.intern("import"), create_builtin_function(ctx, "import"));
+        set_non_enumerable(
+            global_obj,
             ctx.intern("disassemble"),
             create_builtin_function(ctx, "disassemble"),
         );
@@ -2106,12 +2107,14 @@ fn init_global_funcs(ctx: &mut JSContext) {
         );
         #[cfg(feature = "fetch")]
         {
-            global_obj.set(ctx.intern("fetch"), create_builtin_function(ctx, "fetch"));
-            global_obj.set(
+            set_non_enumerable(global_obj, ctx.intern("fetch"), create_builtin_function(ctx, "fetch"));
+            set_non_enumerable(
+                global_obj,
                 ctx.intern("WebSocket"),
                 create_builtin_function(ctx, "WebSocket"),
             );
-            global_obj.set(
+            set_non_enumerable(
+                global_obj,
                 ctx.intern("EventSource"),
                 create_builtin_function(ctx, "EventSource"),
             );

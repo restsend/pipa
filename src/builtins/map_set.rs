@@ -850,7 +850,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(map_atom, map_ctor);
+        crate::builtins::global::set_non_enumerable(global_obj, map_atom, map_ctor);
     }
 
     let mut set_proto = JSObject::new();
@@ -897,7 +897,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(set_atom, set_ctor);
+        crate::builtins::global::set_non_enumerable(global_obj, set_atom, set_ctor);
     }
 
     let mut weakmap_proto = JSObject::new();
@@ -930,7 +930,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
     let weakmap_atom = ctx.intern("WeakMap");
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(weakmap_atom, weakmap_ctor);
+        crate::builtins::global::set_non_enumerable(global_obj, weakmap_atom, weakmap_ctor);
     }
 
     let mut weakset_proto = JSObject::new();
@@ -959,7 +959,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
     let weakset_atom = ctx.intern("WeakSet");
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(weakset_atom, weakset_ctor);
+        crate::builtins::global::set_non_enumerable(global_obj, weakset_atom, weakset_ctor);
     }
 }
 

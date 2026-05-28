@@ -745,7 +745,7 @@ pub fn init_promise(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(promise_atom, promise_value);
+        crate::builtins::global::set_non_enumerable(global_obj, promise_atom, promise_value);
     }
 }
 

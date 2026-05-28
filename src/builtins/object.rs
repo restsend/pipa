@@ -217,8 +217,8 @@ pub fn init_object(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(object_atom, object_value);
-        global_obj.set(proto_atom, proto_value);
+        crate::builtins::global::set_non_enumerable(global_obj, object_atom, object_value);
+        crate::builtins::global::set_non_enumerable(global_obj, proto_atom, proto_value);
     }
 }
 

@@ -149,8 +149,8 @@ pub fn init_function(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(ctx.common_atoms.function, function_value);
-        global_obj.set(ctx.intern("FunctionPrototype"), proto_value);
+        crate::builtins::global::set_non_enumerable(global_obj, ctx.common_atoms.function, function_value);
+        crate::builtins::global::set_non_enumerable(global_obj, ctx.intern("FunctionPrototype"), proto_value);
     }
 }
 

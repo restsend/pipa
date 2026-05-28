@@ -24,7 +24,7 @@ pub fn init_error(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(error_atom, error_value);
+        crate::builtins::global::set_non_enumerable(global_obj, error_atom, error_value);
     }
 
     let mut proto_obj = JSObject::new();
@@ -52,7 +52,7 @@ pub fn init_error(ctx: &mut JSContext) {
     let proto_atom = ctx.intern("ErrorPrototype");
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(proto_atom, proto_value);
+        crate::builtins::global::set_non_enumerable(global_obj, proto_atom, proto_value);
     }
 
     init_type_error(ctx);
@@ -72,7 +72,7 @@ fn init_type_error(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(atom, value);
+        crate::builtins::global::set_non_enumerable(global_obj, atom, value);
     }
 
     let mut proto = JSObject::new();
@@ -124,7 +124,7 @@ fn init_reference_error(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(atom, value);
+        crate::builtins::global::set_non_enumerable(global_obj, atom, value);
     }
 }
 
@@ -157,7 +157,7 @@ fn init_syntax_error(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(atom, value);
+        crate::builtins::global::set_non_enumerable(global_obj, atom, value);
     }
 }
 
@@ -190,7 +190,7 @@ fn init_range_error(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        global_obj.set(atom, value);
+        crate::builtins::global::set_non_enumerable(global_obj, atom, value);
     }
 }
 

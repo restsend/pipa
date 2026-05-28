@@ -468,57 +468,70 @@ pub fn init_typed_array(ctx: &mut JSContext) {
     }
     let global_obj = global.as_object_mut();
 
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("ArrayBuffer"),
         create_builtin_function(ctx, "ArrayBuffer"),
     );
 
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("DataView"),
         create_builtin_function(ctx, "DataView"),
     );
 
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Int8Array"),
         create_builtin_function(ctx, "Int8Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Uint8Array"),
         create_builtin_function(ctx, "Uint8Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Uint8ClampedArray"),
         create_builtin_function(ctx, "Uint8ClampedArray"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Int16Array"),
         create_builtin_function(ctx, "Int16Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Uint16Array"),
         create_builtin_function(ctx, "Uint16Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Int32Array"),
         create_builtin_function(ctx, "Int32Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Uint32Array"),
         create_builtin_function(ctx, "Uint32Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Float32Array"),
         create_builtin_function(ctx, "Float32Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("Float64Array"),
         create_builtin_function(ctx, "Float64Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("BigInt64Array"),
         create_builtin_function(ctx, "BigInt64Array"),
     );
-    global_obj.set(
+    crate::builtins::global::set_non_enumerable(
+        global_obj,
         ctx.intern("BigUint64Array"),
         create_builtin_function(ctx, "BigUint64Array"),
     );

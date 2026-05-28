@@ -16,7 +16,7 @@ pub fn init_regexp(ctx: &mut JSContext) {
         let regexp_atom = ctx.common_atoms.regexp;
 
         let regexp_func = create_builtin_function(ctx, "regexp_constructor");
-        global_obj.set(regexp_atom, regexp_func);
+        crate::builtins::global::set_non_enumerable(global_obj, regexp_atom, regexp_func);
     }
 
     let proto_atom = ctx.intern("RegExpPrototype");
