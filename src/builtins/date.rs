@@ -199,6 +199,17 @@ pub fn register_builtins(ctx: &mut JSContext) {
 }
 
 pub fn init_date(ctx: &mut JSContext) {
+    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
+        obj.define_property(key, crate::object::object::PropertyDescriptor {
+            value: Some(val),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        });
+    }
+
     let date_atom = ctx.intern("Date");
 
     let mut date_func = JSFunction::new_builtin(date_atom, 7);
@@ -232,107 +243,107 @@ pub fn init_date(ctx: &mut JSContext) {
         proto_obj.prototype = Some(obj_proto_ptr);
     }
 
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getTime"),
         create_builtin_function(ctx, "date_getTime"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getFullYear"),
         create_builtin_function(ctx, "date_getFullYear"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getMonth"),
         create_builtin_function(ctx, "date_getMonth"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getDate"),
         create_builtin_function(ctx, "date_getDate"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getDay"),
         create_builtin_function(ctx, "date_getDay"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getHours"),
         create_builtin_function(ctx, "date_getHours"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getMinutes"),
         create_builtin_function(ctx, "date_getMinutes"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getSeconds"),
         create_builtin_function(ctx, "date_getSeconds"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getMilliseconds"),
         create_builtin_function(ctx, "date_getMilliseconds"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("getTimezoneOffset"),
         create_builtin_function(ctx, "date_getTimezoneOffset"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCFullYear"),
         create_builtin_function(ctx, "date_getUTCFullYear"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCMonth"),
         create_builtin_function(ctx, "date_getUTCMonth"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCDate"),
         create_builtin_function(ctx, "date_getUTCDate"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCDay"),
         create_builtin_function(ctx, "date_getUTCDay"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCHours"),
         create_builtin_function(ctx, "date_getUTCHours"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCMinutes"),
         create_builtin_function(ctx, "date_getUTCMinutes"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCSeconds"),
         create_builtin_function(ctx, "date_getUTCSeconds"),
     );
-    set_non_enumerable(
+    set_ne(
         &mut proto_obj,
         ctx.intern("getUTCMilliseconds"),
         create_builtin_function(ctx, "date_getUTCMilliseconds"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toString"),
         create_builtin_function(ctx, "date_toString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toISOString"),
         create_builtin_function(ctx, "date_toISOString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toUTCString"),
         create_builtin_function(ctx, "date_toUTCString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toDateString"),
         create_builtin_function(ctx, "date_toDateString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toTimeString"),
         create_builtin_function(ctx, "date_toTimeString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("valueOf"),
         create_builtin_function(ctx, "date_valueOf"),
     );

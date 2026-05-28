@@ -72,31 +72,42 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 }
 
 pub fn init_object(ctx: &mut JSContext) {
+    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
+        obj.define_property(key, crate::object::object::PropertyDescriptor {
+            value: Some(val),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        });
+    }
+
     let object_atom = ctx.common_atoms.object;
 
     let proto_atom = ctx.intern("ObjectPrototype");
     let mut proto_obj = JSObject::new();
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.common_atoms.has_own_property,
         create_builtin_function(ctx, "object_hasOwnProperty"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.common_atoms.value_of,
         create_builtin_function(ctx, "object_valueOf"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.common_atoms.to_string,
         create_builtin_function(ctx, "object_toString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.common_atoms.is_prototype_of,
         create_builtin_function(ctx, "object_isPrototypeOf"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.common_atoms.property_is_enumerable,
         create_builtin_function(ctx, "object_property_is_enumerable"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.common_atoms.to_locale_string,
         create_builtin_function(ctx, "object_to_locale_string"),
     );

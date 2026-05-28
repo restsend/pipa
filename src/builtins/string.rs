@@ -120,6 +120,17 @@ fn require_string_coercible(ctx: &mut JSContext, this: &JSValue) -> Option<Strin
 }
 
 pub fn init_string(ctx: &mut JSContext) {
+    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
+        obj.define_property(key, crate::object::object::PropertyDescriptor {
+            value: Some(val),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        });
+    }
+
     let string_atom = ctx.common_atoms.string;
 
     let mut string_func = crate::object::function::JSFunction::new_builtin(string_atom, 1);
@@ -169,136 +180,136 @@ pub fn init_string(ctx: &mut JSContext) {
 
     let proto_atom = ctx.intern("StringPrototype");
     let mut proto_obj = JSObject::new();
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("charAt"),
         create_builtin_function(ctx, "string_charAt"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("charCodeAt"),
         create_builtin_function(ctx, "string_charCodeAt"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("concat"),
         create_builtin_function(ctx, "string_concat"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("indexOf"),
         create_builtin_function(ctx, "string_indexOf"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("lastIndexOf"),
         create_builtin_function(ctx, "string_lastIndexOf"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("slice"),
         create_builtin_function(ctx, "string_slice"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("substring"),
         create_builtin_function(ctx, "string_substring"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toString"),
         create_builtin_function(ctx, "string_toString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("valueOf"),
         create_builtin_function(ctx, "string_toString"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toLowerCase"),
         create_builtin_function(ctx, "string_toLowerCase"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toUpperCase"),
         create_builtin_function(ctx, "string_toUpperCase"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("split"),
         create_builtin_function(ctx, "string_split"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.common_atoms.length,
         create_builtin_function(ctx, "string_length"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("trim"),
         create_builtin_function(ctx, "string_trim"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("trimStart"),
         create_builtin_function(ctx, "string_trimStart"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("trimLeft"),
         create_builtin_function(ctx, "string_trimStart"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("trimEnd"),
         create_builtin_function(ctx, "string_trimEnd"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("trimRight"),
         create_builtin_function(ctx, "string_trimEnd"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("startsWith"),
         create_builtin_function(ctx, "string_startsWith"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("endsWith"),
         create_builtin_function(ctx, "string_endsWith"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("repeat"),
         create_builtin_function(ctx, "string_repeat"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("includes"),
         create_builtin_function(ctx, "string_includes"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("replace"),
         create_builtin_function(ctx, "string_replace"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("padStart"),
         create_builtin_function(ctx, "string_padStart"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("padEnd"),
         create_builtin_function(ctx, "string_padEnd"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("replaceAll"),
         create_builtin_function(ctx, "string_replaceAll"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("search"),
         create_builtin_function(ctx, "string_search"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("match"),
         create_builtin_function(ctx, "string_match"),
     );
-    proto_obj.set(ctx.intern("at"), create_builtin_function(ctx, "string_at"));
-    proto_obj.set(
+    set_ne(&mut proto_obj,ctx.intern("at"), create_builtin_function(ctx, "string_at"));
+    set_ne(&mut proto_obj,
         ctx.intern("isWellFormed"),
         create_builtin_function(ctx, "string_isWellFormed"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("toWellFormed"),
         create_builtin_function(ctx, "string_toWellFormed"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("codePointAt"),
         create_builtin_function(ctx, "string_codePointAt"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("matchAll"),
         create_builtin_function(ctx, "string_matchAll"),
     );
-    proto_obj.set(
+    set_ne(&mut proto_obj,
         ctx.intern("substr"),
         create_builtin_function(ctx, "string_substr"),
     );
