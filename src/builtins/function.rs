@@ -20,7 +20,7 @@ fn throw_type_error(ctx: &mut JSContext, message: &str) {
     }
 }
 
-fn create_builtin_method(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
+fn create_builtin_method(ctx: &mut JSContext, name: &str, arity: u32, display_name: &str) -> JSValue {
     let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
     func.set_builtin_marker(ctx, name);
     if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
@@ -40,7 +40,7 @@ fn create_builtin_method(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue
         );
     }
     {
-        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(ctx.intern(name)));
+        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(ctx.intern(display_name)));
         desc.writable = false;
         desc.enumerable = false;
         desc.configurable = true;
@@ -78,19 +78,19 @@ pub fn init_function(ctx: &mut JSContext) {
     }
     proto_obj.set(
         ctx.common_atoms.bind,
-        create_builtin_method(ctx, "function_bind", 1),
+        create_builtin_method(ctx, "function_bind", 1, "bind"),
     );
     proto_obj.set(
         ctx.common_atoms.call,
-        create_builtin_method(ctx, "function_call", 1),
+        create_builtin_method(ctx, "function_call", 1, "call"),
     );
     proto_obj.set(
         ctx.common_atoms.apply,
-        create_builtin_method(ctx, "function_apply", 2),
+        create_builtin_method(ctx, "function_apply", 2, "apply"),
     );
     proto_obj.set(
         ctx.common_atoms.to_string,
-        create_builtin_method(ctx, "function_toString", 0),
+        create_builtin_method(ctx, "function_toString", 0, "toString"),
     );
     {
         let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_int(0));
@@ -401,8 +401,32 @@ fn function_bind(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let this_val = &args[0];
-    if !this_val.is_function() {
+    if !this_val.is_function() && !this_val.is_object() {
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a function")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
+    }
+
+    let is_bound = this_val.is_object() && !this_val.is_function();
+    if is_bound {
+        let obj = this_val.as_object();
+        if obj.get(ctx.common_atoms.__boundFn).is_none() {
+            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            if let Some(proto) = ctx.get_type_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a function")));
+            let eptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(eptr);
+            ctx.pending_exception = Some(JSValue::new_object(eptr));
+            return JSValue::undefined();
+        }
     }
 
     let this_arg = if args.len() > 1 {
@@ -436,6 +460,52 @@ fn function_bind(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let args_ptr = Box::into_raw(boxed_args_arr) as usize;
     ctx.runtime_mut().gc_heap_mut().track(args_ptr);
     wrapper.set(ctx.common_atoms.__boundArgs, JSValue::new_object(args_ptr));
+
+    let target_length = if this_val.is_function() {
+        this_val.as_function().arity as i64
+    } else {
+        let obj = this_val.as_object();
+        if let Some(len) = obj.get(ctx.common_atoms.length) {
+            if len.is_int() { len.get_int() } else { 0 }
+        } else {
+            0
+        }
+    };
+    let bound_length = 0i64.max(target_length - bound_count);
+    wrapper.define_property(
+        ctx.common_atoms.length,
+        crate::object::object::PropertyDescriptor {
+            value: Some(JSValue::new_int(bound_length)),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+
+    let target_name = if this_val.is_function() {
+        ctx.get_atom_str(this_val.as_function().name).to_string()
+    } else {
+        let obj = this_val.as_object();
+        if let Some(n) = obj.get(ctx.common_atoms.name) {
+            if n.is_string() { ctx.get_atom_str(n.get_atom()).to_string() } else { String::new() }
+        } else {
+            String::new()
+        }
+    };
+    let bound_name = format!("bound {}", target_name);
+    wrapper.define_property(
+        ctx.common_atoms.name,
+        crate::object::object::PropertyDescriptor {
+            value: Some(JSValue::new_string(ctx.intern(&bound_name))),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
 
     let boxed_wrapper = Box::new(wrapper);
     let ptr = Box::into_raw(boxed_wrapper) as usize;
