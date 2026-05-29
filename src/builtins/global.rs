@@ -202,13 +202,43 @@ pub fn init_globals(ctx: &mut JSContext) {
             }
             func.builtin_atom = Some(ctx.intern("function_has_instance"));
             func.builtin_func = ctx.get_builtin_func("function_has_instance");
+            {
+                let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_int(1));
+                desc.writable = false;
+                desc.enumerable = false;
+                desc.configurable = true;
+                func.base.define_property_ext(
+                    ctx.common_atoms.length,
+                    desc,
+                    true,
+                    true,
+                    true,
+                );
+            }
+            {
+                let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(ctx.intern("[Symbol.hasInstance]")));
+                desc.writable = false;
+                desc.enumerable = false;
+                desc.configurable = true;
+                func.base.define_property_ext(
+                    ctx.common_atoms.name,
+                    desc,
+                    true,
+                    true,
+                    true,
+                );
+            }
             let ptr = Box::into_raw(Box::new(func)) as usize;
             ctx.runtime_mut().gc_heap_mut().track_function(ptr);
             JSValue::new_function(ptr)
         };
         if has_instance_sym.is_symbol() {
             let sym_key = crate::runtime::atom::Atom(0x40000000 | has_instance_sym.get_symbol_id());
-            fn_proto.set_cached(sym_key, hi_value, ctx.shape_cache_mut());
+            let mut desc = crate::object::object::PropertyDescriptor::new_data(hi_value);
+            desc.writable = false;
+            desc.enumerable = false;
+            desc.configurable = false;
+            fn_proto.define_property_ext(sym_key, desc, true, true, true);
         }
     }
 }

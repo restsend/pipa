@@ -5084,6 +5084,10 @@ impl CodeGenerator {
                 self.suppress_ref_error = true;
             }
         }
+        if matches!(unary.op, UnaryOp::Delete) {
+            self.suppress_ref_error = saved;
+            return self.gen_delete_expression(0, &unary.argument, ctx);
+        }
         let arg = self.gen_expression(&unary.argument, ctx)?;
         self.suppress_ref_error = saved;
         match unary.op {

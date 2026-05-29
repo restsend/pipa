@@ -2,6 +2,7 @@ use crate::host::HostFunction;
 use crate::object::function::JSFunction;
 use crate::object::object::JSObject;
 use crate::runtime::context::JSContext;
+use crate::util::FxHashMap;
 use crate::value::JSValue;
 
 fn throw_type_error(ctx: &mut JSContext, message: &str) {
@@ -19,11 +20,37 @@ fn throw_type_error(ctx: &mut JSContext, message: &str) {
     }
 }
 
-fn create_builtin_method(ctx: &mut JSContext, name: &str) -> JSValue {
+fn create_builtin_method(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
     let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
     func.set_builtin_marker(ctx, name);
     if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
         func.base.set_prototype_raw(fn_proto_ptr);
+    }
+    {
+        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_int(arity as i64));
+        desc.writable = false;
+        desc.enumerable = false;
+        desc.configurable = true;
+        func.base.define_property_ext(
+            ctx.common_atoms.length,
+            desc,
+            true,
+            true,
+            true,
+        );
+    }
+    {
+        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(ctx.intern(name)));
+        desc.writable = false;
+        desc.enumerable = false;
+        desc.configurable = true;
+        func.base.define_property_ext(
+            ctx.common_atoms.name,
+            desc,
+            true,
+            true,
+            true,
+        );
     }
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -51,56 +78,79 @@ pub fn init_function(ctx: &mut JSContext) {
     }
     proto_obj.set(
         ctx.common_atoms.bind,
-        create_builtin_method(ctx, "function_bind"),
+        create_builtin_method(ctx, "function_bind", 1),
     );
     proto_obj.set(
         ctx.common_atoms.call,
-        create_builtin_method(ctx, "function_call"),
+        create_builtin_method(ctx, "function_call", 1),
     );
     proto_obj.set(
         ctx.common_atoms.apply,
-        create_builtin_method(ctx, "function_apply"),
+        create_builtin_method(ctx, "function_apply", 2),
     );
     proto_obj.set(
         ctx.common_atoms.to_string,
-        create_builtin_method(ctx, "function_toString"),
+        create_builtin_method(ctx, "function_toString", 0),
     );
-    proto_obj.define_accessor(
-        ctx.common_atoms.length,
-        Some(create_builtin_method(ctx, "function_length")),
-        None,
-    );
-    proto_obj.define_accessor(
-        ctx.common_atoms.name,
-        Some(create_builtin_method(ctx, "function_name")),
-        None,
-    );
+    {
+        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_int(0));
+        desc.writable = false;
+        desc.enumerable = false;
+        desc.configurable = true;
+        proto_obj.define_property_ext(
+            ctx.common_atoms.length,
+            desc,
+            true,
+            true,
+            true,
+        );
+    }
+    {
+        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(ctx.intern("")));
+        desc.writable = false;
+        desc.enumerable = false;
+        desc.configurable = true;
+        proto_obj.define_property_ext(
+            ctx.common_atoms.name,
+            desc,
+            true,
+            true,
+            true,
+        );
+    }
     // Throw TypeError accessors for .caller and .arguments.
     // Per spec, bound and strict mode functions throw when accessing these.
-    let caller_getter = {
-        let mut f = JSFunction::new_builtin(ctx.intern("caller"), 0);
+    let throw_type_error_fn = {
+        let mut f = JSFunction::new_builtin(ctx.intern("ThrowTypeError"), 0);
         f.set_builtin_marker(ctx, "throw_type_error_caller");
         let ptr = Box::into_raw(Box::new(f)) as usize;
         ctx.runtime_mut().gc_heap_mut().track_function(ptr);
         JSValue::new_function(ptr)
     };
-    let args_getter = {
-        let mut f = JSFunction::new_builtin(ctx.intern("arguments"), 0);
-        f.set_builtin_marker(ctx, "throw_type_error_caller");
-        let ptr = Box::into_raw(Box::new(f)) as usize;
-        ctx.runtime_mut().gc_heap_mut().track_function(ptr);
-        JSValue::new_function(ptr)
-    };
-    proto_obj.define_non_enumerable_accessor(
-        ctx.intern("caller"),
-        Some(caller_getter),
-        Some(caller_getter),
-    );
-    proto_obj.define_non_enumerable_accessor(
-        ctx.intern("arguments"),
-        Some(args_getter),
-        Some(args_getter),
-    );
+    {
+        let entry = crate::object::object::AccessorEntry {
+            get: Some(throw_type_error_fn.clone()),
+            set: Some(throw_type_error_fn.clone()),
+            enumerable: false,
+            configurable: true,
+        };
+        proto_obj.ensure_extra()
+            .accessors
+            .get_or_insert_with(|| Box::new(FxHashMap::default()))
+            .insert(ctx.intern("caller"), entry);
+    }
+    {
+        let entry = crate::object::object::AccessorEntry {
+            get: Some(throw_type_error_fn.clone()),
+            set: Some(throw_type_error_fn.clone()),
+            enumerable: false,
+            configurable: true,
+        };
+        proto_obj.ensure_extra()
+            .accessors
+            .get_or_insert_with(|| Box::new(FxHashMap::default()))
+            .insert(ctx.intern("arguments"), entry);
+    }
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto_obj.prototype = Some(obj_proto_ptr);
