@@ -286,14 +286,150 @@ fn init_range_error(ctx: &mut JSContext) {
     }
 }
 
+fn get_property(ctx: &mut JSContext, obj: &crate::object::object::JSObject, prop: crate::runtime::atom::Atom, this: &JSValue) -> Option<JSValue> {
+    if let Some(val) = obj.get_own_accessor_value(prop) {
+        if val.is_function() {
+            if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+                let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+                let saved_exception = ctx.pending_exception.take();
+                let result = vm.call_function_with_this(ctx, val, this.clone(), &[]);
+                if result.is_err() {
+                    let exc = ctx.pending_exception.take()
+                        .or_else(|| vm.last_caught_exception.take())
+                        .or(saved_exception);
+                    if let Some(e) = exc {
+                        ctx.pending_exception = Some(e);
+                    }
+                    return None;
+                }
+                ctx.pending_exception = saved_exception;
+                return result.ok();
+            }
+        }
+        return Some(val);
+    }
+    obj.get(prop)
+}
+
+fn js_to_string_value(ctx: &mut JSContext, val: &JSValue) -> Result<String, ()> {
+    if val.is_string() {
+        return Ok(ctx.get_atom_str(val.get_atom()).to_string());
+    }
+    if val.is_undefined() {
+        return Ok("undefined".to_string());
+    }
+    if val.is_null() {
+        return Ok("null".to_string());
+    }
+    if val.is_bool() {
+        if val.is_truthy() {
+            return Ok("true".to_string());
+        }
+        return Ok("false".to_string());
+    }
+    if val.is_int() {
+        let n = val.get_int();
+        return Ok(format!("{}", n));
+    }
+    if val.is_float() {
+        let n = val.to_number();
+        if n == n.floor() && n.is_finite() && n.abs() < 1e15 {
+            return Ok(format!("{}", n as i64));
+        }
+        return Ok(format!("{}", n));
+    }
+    if val.is_symbol() {
+        let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert a Symbol value to a string")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return Err(());
+    }
+    if val.is_object() {
+        let obj = val.as_object();
+        if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+            let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+            let to_string_atom = ctx.intern("toString");
+            let value_of_atom = ctx.intern("valueOf");
+            let hint_string = ctx.intern("string");
+            if let Some(to_prim) = obj.get(ctx.intern("__toPrimitive__hook__")) {
+                drop(obj);
+                if to_prim.is_function() {
+                    let result = vm.call_function_with_this(ctx, to_prim, val.clone(), &[JSValue::new_string(hint_string)]);
+                    if ctx.pending_exception.is_some() {
+                        return Err(());
+                    }
+                    if let Ok(prim) = result {
+                        if !prim.is_object() {
+                            return js_to_string_value(ctx, &prim);
+                        }
+                    }
+                }
+            }
+            let to_string_fn = obj.get(to_string_atom);
+            drop(obj);
+            if let Some(fn_val) = to_string_fn {
+                if fn_val.is_function() {
+                    let result = vm.call_function_with_this(ctx, fn_val, val.clone(), &[]);
+                    if ctx.pending_exception.is_some() {
+                        return Err(());
+                    }
+                    if let Ok(r) = result {
+                        if !r.is_object() {
+                            return js_to_string_value(ctx, &r);
+                        }
+                    }
+                }
+            }
+            if ctx.pending_exception.is_some() {
+                return Err(());
+            }
+            let obj2 = val.as_object();
+            let value_of_fn = obj2.get(value_of_atom);
+            drop(obj2);
+            if let Some(fn_val) = value_of_fn {
+                if fn_val.is_function() {
+                    let result = vm.call_function_with_this(ctx, fn_val, val.clone(), &[]);
+                    if ctx.pending_exception.is_some() {
+                        return Err(());
+                    }
+                    if let Ok(r) = result {
+                        if !r.is_object() {
+                            return js_to_string_value(ctx, &r);
+                        }
+                    }
+                }
+            }
+            if ctx.pending_exception.is_some() {
+                return Err(());
+            }
+        }
+        let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert object to primitive value")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return Err(());
+    }
+    Ok(String::new())
+}
+
 fn build_error(ctx: &mut JSContext, name: &str, args: &[JSValue], proto: Option<*mut JSObject>) -> JSValue {
     let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
     set_own_ne(&mut err, ctx.intern("name"), JSValue::new_string(ctx.intern(name)));
     if !args.is_empty() && !args[0].is_undefined() {
-        if args[0].is_string() {
-            set_own_ne(&mut err, ctx.intern("message"), args[0]);
-        } else {
-            set_own_ne(&mut err, ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+        match js_to_string_value(ctx, &args[0]) {
+            Ok(s) => {
+                set_own_ne(&mut err, ctx.intern("message"), JSValue::new_string(ctx.intern(&s)));
+            }
+            Err(()) => return JSValue::undefined(),
         }
     }
     if args.len() > 1 && args[1].is_object() {
@@ -365,35 +501,59 @@ fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let obj = this.as_object();
-
-    let name = if let Some(n) = obj.get(ctx.intern("name")) {
-        if n.is_undefined() {
-            "Error".to_string()
-        } else if n.is_string() {
-            ctx.get_atom_str(n.get_atom()).to_string()
-        } else {
-            "Error".to_string()
+    let name_atom = ctx.intern("name");
+    let name_val = get_property(ctx, &obj, name_atom, this);
+    drop(obj);
+    if ctx.pending_exception.is_some() {
+        return JSValue::undefined();
+    }
+    let name: Result<String, ()> = match name_val {
+        Some(n) => {
+            if n.is_undefined() {
+                Ok("Error".to_string())
+            } else {
+                match js_to_string_value(ctx, &n) {
+                    Ok(s) => Ok(s),
+                    Err(()) => return JSValue::undefined(),
+                }
+            }
         }
-    } else {
-        "Error".to_string()
+        None => Ok("Error".to_string()),
+    };
+    if ctx.pending_exception.is_some() {
+        return JSValue::undefined();
+    }
+
+    let obj2 = this.as_object();
+    let msg_atom = ctx.intern("message");
+    let message_val = get_property(ctx, &obj2, msg_atom, this);
+    drop(obj2);
+    if ctx.pending_exception.is_some() {
+        return JSValue::undefined();
+    }
+    let message: Result<String, ()> = match message_val {
+        Some(m) => {
+            if m.is_undefined() {
+                Ok(String::new())
+            } else {
+                match js_to_string_value(ctx, &m) {
+                    Ok(s) => Ok(s),
+                    Err(()) => return JSValue::undefined(),
+                }
+            }
+        }
+        None => Ok(String::new()),
     };
 
-    let message = if let Some(m) = obj.get(ctx.intern("message")) {
-        if m.is_undefined() {
-            String::new()
-        } else if m.is_string() {
-            ctx.get_atom_str(m.get_atom()).to_string()
-        } else {
-            String::new()
+    match (name, message) {
+        (Ok(n), Ok(m)) => {
+            if m.is_empty() {
+                JSValue::new_string(ctx.intern(&n))
+            } else {
+                JSValue::new_string(ctx.intern(&format!("{}: {}", n, m)))
+            }
         }
-    } else {
-        String::new()
-    };
-
-    if message.is_empty() {
-        JSValue::new_string(ctx.intern(&name))
-    } else {
-        JSValue::new_string(ctx.intern(&format!("{}: {}", name, message)))
+        _ => JSValue::undefined(),
     }
 }
 
