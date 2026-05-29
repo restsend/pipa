@@ -50,6 +50,9 @@ pub fn init_error(ctx: &mut JSContext) {
 
     let mut error_func = crate::object::function::JSFunction::new_builtin(error_atom, 1);
     error_func.set_builtin_marker(ctx, "error_constructor");
+    if let Some(func_proto) = ctx.get_function_prototype() {
+        error_func.base.prototype = Some(func_proto);
+    }
     let error_ptr = Box::into_raw(Box::new(error_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(error_ptr);
     let error_value = JSValue::new_function(error_ptr);
@@ -109,6 +112,9 @@ fn init_type_error(ctx: &mut JSContext) {
     let atom = ctx.intern("TypeError");
     let mut ctor = crate::object::function::JSFunction::new_builtin(atom, 1);
     ctor.set_builtin_marker(ctx, "type_error_constructor");
+    if let Some(func_proto) = ctx.get_function_prototype() {
+        ctor.base.prototype = Some(func_proto);
+    }
     let ptr = Box::into_raw(Box::new(ctor)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     let value = JSValue::new_function(ptr);
@@ -154,6 +160,9 @@ fn init_reference_error(ctx: &mut JSContext) {
     let atom = ctx.intern("ReferenceError");
     let mut ctor = crate::object::function::JSFunction::new_builtin(atom, 1);
     ctor.set_builtin_marker(ctx, "reference_error_constructor");
+    if let Some(func_proto) = ctx.get_function_prototype() {
+        ctor.base.prototype = Some(func_proto);
+    }
     let ptr = Box::into_raw(Box::new(ctor)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     let value = JSValue::new_function(ptr);
@@ -198,6 +207,9 @@ fn init_syntax_error(ctx: &mut JSContext) {
     let atom = ctx.intern("SyntaxError");
     let mut ctor = crate::object::function::JSFunction::new_builtin(atom, 1);
     ctor.set_builtin_marker(ctx, "syntax_error_constructor");
+    if let Some(func_proto) = ctx.get_function_prototype() {
+        ctor.base.prototype = Some(func_proto);
+    }
     let ptr = Box::into_raw(Box::new(ctor)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     let value = JSValue::new_function(ptr);
@@ -242,6 +254,9 @@ fn init_range_error(ctx: &mut JSContext) {
     let atom = ctx.intern("RangeError");
     let mut ctor = crate::object::function::JSFunction::new_builtin(atom, 1);
     ctor.set_builtin_marker(ctx, "range_error_constructor");
+    if let Some(func_proto) = ctx.get_function_prototype() {
+        ctor.base.prototype = Some(func_proto);
+    }
     let ptr = Box::into_raw(Box::new(ctor)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     let value = JSValue::new_function(ptr);
