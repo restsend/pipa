@@ -2643,28 +2643,40 @@ impl VM {
                     let a = self.get_reg(a_reg);
                     let b_reg = self.read_u16_pc();
                     let b = self.get_reg(b_reg);
-                    let bv = a.to_number();
-                    let ev = b.to_number();
-                    let result = if ev == 2.0 {
-                        bv * bv
-                    } else if ev == 0.5 {
-                        bv.sqrt()
-                    } else if ev >= 2.0 && ev <= 8.0 && ev == ev.floor() {
-                        let mut r = bv;
-                        let mut n = ev as i32 - 1;
-                        while n > 0 {
-                            r *= bv;
-                            n -= 1;
+                    let result = if a.is_bigint() && b.is_bigint() {
+                        let a_int = Self::get_bigint_int(&a).unwrap_or(0);
+                        let b_int = Self::get_bigint_int(&b).unwrap_or(0);
+                        if b_int < 0 {
+                            self.set_pending_type_error(ctx, "BigInt exponent must be non-negative");
+                            JSValue::undefined()
+                        } else {
+                            Self::create_bigint(a_int.pow(b_int as u32))
                         }
-                        r
-                    } else if ev == -1.0 {
-                        1.0 / bv
-                    } else if ev == 1.0 {
-                        bv
                     } else {
-                        bv.powf(ev)
+                        let bv = a.to_number();
+                        let ev = b.to_number();
+                        let r = if ev == 2.0 {
+                            bv * bv
+                        } else if ev == 0.5 {
+                            bv.sqrt()
+                        } else if ev >= 2.0 && ev <= 8.0 && ev == ev.floor() {
+                            let mut r = bv;
+                            let mut n = ev as i32 - 1;
+                            while n > 0 {
+                                r *= bv;
+                                n -= 1;
+                            }
+                            r
+                        } else if ev == -1.0 {
+                            1.0 / bv
+                        } else if ev == 1.0 {
+                            bv
+                        } else {
+                            bv.powf(ev)
+                        };
+                        JSValue::new_float(r)
                     };
-                    self.set_reg(dst, JSValue::new_float(result));
+                    self.set_reg(dst, result);
                 }
                 Opcode::BitAnd => {
                     let dst = self.read_u16_pc();
