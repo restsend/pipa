@@ -3191,7 +3191,11 @@ impl VM {
                     } else {
                         Self::js_to_number(&exp, ctx)
                     };
-                    let result = if e == 2.0 {
+                    let result = if e.is_nan() {
+                        f64::NAN
+                    } else if b.abs() == 1.0 && e.is_infinite() {
+                        f64::NAN
+                    } else if e == 2.0 {
                         b * b
                     } else if e == 0.5 {
                         b.sqrt()
@@ -3233,9 +3237,17 @@ impl VM {
                         Self::js_to_number(&b, ctx)
                     };
                     let result = if op == Opcode::MathMin {
-                        fa.min(fb)
+                        if fa == 0.0 && fb == 0.0 {
+                            if fa.is_sign_negative() { fa } else { fb }
+                        } else {
+                            fa.min(fb)
+                        }
                     } else {
-                        fa.max(fb)
+                        if fa == 0.0 && fb == 0.0 {
+                            if fb.is_sign_positive() { fb } else { fa }
+                        } else {
+                            fa.max(fb)
+                        }
                     };
                     self.set_reg(dst, JSValue::new_float(result));
                 }
@@ -4800,6 +4812,9 @@ impl VM {
                     }
                     let atom = if key_val.is_string() {
                         Some(key_val.get_atom())
+                    } else if key_val.is_symbol() {
+                        let sym_id = key_val.get_symbol_id();
+                        Some(crate::runtime::atom::Atom(0x40000000 | sym_id))
                     } else if key_val.is_int() && (obj_val.is_object() || obj_val.is_function()) {
                         Some(self.int_atom(key_val.get_int() as usize, ctx))
                     } else if key_val.is_float() && (obj_val.is_object() || obj_val.is_function()) {
