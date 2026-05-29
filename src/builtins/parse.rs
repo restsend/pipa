@@ -79,7 +79,7 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
         match prim {
             Some(Some(s)) => s,
-            _ => return JSValue::new_float(f64::NAN),
+            _ => return crate::builtins::global::throw_type_error(ctx, "Cannot convert object to primitive value"),
         }
     } else {
         return JSValue::new_float(f64::NAN);
@@ -132,6 +132,9 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                             }
                             _ => {}
                         }
+                        if ctx.pending_exception.is_some() {
+                            return JSValue::undefined();
+                        }
                     }
                 }
             }
@@ -155,7 +158,13 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     }
                 }
             }
-            radix_num.unwrap_or(0.0)
+            if ctx.pending_exception.is_some() {
+                return JSValue::undefined();
+            }
+            match radix_num {
+                Some(v) => v,
+                None => return crate::builtins::global::throw_type_error(ctx, "Cannot convert object to primitive value"),
+            }
         } else {
             0.0
         };
