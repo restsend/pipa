@@ -699,8 +699,17 @@ fn math_sum_precise(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
         let next_atom = ctx.intern("next");
         let next_fn = {
-            let obj = unsafe { &*(iterator.get_ptr() as *const crate::object::JSObject) };
-            match obj.get(next_atom) {
+            let mut next_val = None;
+            let mut current: Option<*const crate::object::JSObject> = Some(iterator.get_ptr() as *const _);
+            while let Some(ptr) = current {
+                let obj = unsafe { &*ptr };
+                if let Some(v) = obj.get(next_atom) {
+                    next_val = Some(v);
+                    break;
+                }
+                current = obj.prototype.map(|p| p as *const _);
+            }
+            match next_val {
                 Some(v) if v.is_function() => v,
                 _ => return throw_type_error_math(ctx, "iterator has no next method"),
             }

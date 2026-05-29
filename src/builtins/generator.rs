@@ -11,7 +11,7 @@ pub fn init_generator(ctx: &mut JSContext) {
 
     ctx.register_builtin(
         "generator_next",
-        HostFunction::new("next", 1, generator_next),
+        HostFunction::method("next", 1, generator_next),
     );
 
     let next_func = create_builtin_function(ctx, "generator_next");
@@ -30,7 +30,7 @@ pub fn init_generator(ctx: &mut JSContext) {
     // Generator.prototype[Symbol.iterator] = function() { return this; }
     ctx.register_builtin(
         "generator_symbol_iterator",
-        HostFunction::new("[Symbol.iterator]", 0, generator_symbol_iterator),
+        HostFunction::method("[Symbol.iterator]", 0, generator_symbol_iterator),
     );
     let sym_iter_func = create_builtin_function(ctx, "generator_symbol_iterator");
     let sym_iter_val = crate::builtins::symbol::get_symbol_iterator(ctx);
