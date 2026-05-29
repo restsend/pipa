@@ -270,8 +270,22 @@ fn function_has_instance(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn function_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return match crate::eval(ctx, "(function(){})") {
-            Ok(val) => val,
+        return match crate::eval(ctx, "(function anonymous() {})") {
+            Ok(val) => {
+                if val.is_function() {
+                    val.as_function_mut().name = ctx.intern("anonymous");
+                    let name_atom = ctx.intern("name");
+                    let obj = val.as_object_mut();
+                    let mut desc = crate::object::object::PropertyDescriptor::new_data(
+                        JSValue::new_string(ctx.intern("anonymous")),
+                    );
+                    desc.writable = false;
+                    desc.enumerable = false;
+                    desc.configurable = true;
+                    obj.define_property_ext(name_atom, desc, true, true, true);
+                }
+                val
+            }
             Err(_) => JSValue::undefined(),
         };
     }
@@ -296,9 +310,23 @@ fn function_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     }
     let params_str = params.join(",");
-    let source = format!("(function({}){{{}}})", params_str, body_str);
+    let source = format!("(function anonymous({}){{{}}})", params_str, body_str);
     match crate::eval(ctx, &source) {
-        Ok(val) => val,
+        Ok(val) => {
+            if val.is_function() {
+                val.as_function_mut().name = ctx.intern("anonymous");
+                let name_atom = ctx.intern("name");
+                let obj = val.as_object_mut();
+                let mut desc = crate::object::object::PropertyDescriptor::new_data(
+                    JSValue::new_string(ctx.intern("anonymous")),
+                );
+                desc.writable = false;
+                desc.enumerable = false;
+                desc.configurable = true;
+                obj.define_property_ext(name_atom, desc, true, true, true);
+            }
+            val
+        }
         Err(e) => {
             let mut err = crate::object::object::JSObject::new();
             err.set(
