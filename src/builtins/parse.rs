@@ -208,7 +208,20 @@ pub fn global_parsefloat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let input = &args[0];
 
+    if input.is_symbol() {
+        if let Some(ptr) = ctx.get_register_vm_ptr() {
+            let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+            let msg_atom = ctx.intern("TypeError: Cannot convert Symbol to string");
+            vm.pending_throw = Some(JSValue::new_string(msg_atom));
+        }
+        return JSValue::undefined();
+    }
+
     if input.is_float() {
+        let f = input.get_float();
+        if f == 0.0 {
+            return JSValue::new_int(0);
+        }
         return *input;
     }
     if input.is_int() {
@@ -219,24 +232,64 @@ pub fn global_parsefloat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         ctx.get_atom_str(input.get_atom()).to_string()
     } else if input.is_object() {
         let obj = input.as_object();
+        let mut result_str: Option<String> = None;
         if let Some(to_str) = obj.get(ctx.intern("toString")) {
             if to_str.is_function() {
                 if let Some(ptr) = ctx.get_register_vm_ptr() {
                     let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
                     match vm.call_function_with_this(ctx, to_str, *input, &[]) {
-                        Ok(result) if result.is_string() => {
-                            ctx.get_atom_str(result.get_atom()).to_string()
+                        Ok(result) => {
+                            if result.is_string() {
+                                result_str = Some(ctx.get_atom_str(result.get_atom()).to_string());
+                            } else if result.is_int() {
+                                result_str = Some(result.get_int().to_string());
+                            } else if result.is_float() {
+                                result_str = Some(result.get_float().to_string());
+                            }
                         }
-                        _ => return JSValue::new_float(f64::NAN),
+                        _ => {}
                     }
-                } else {
-                    return JSValue::new_float(f64::NAN);
                 }
-            } else {
-                return JSValue::new_float(f64::NAN);
             }
-        } else {
-            return JSValue::new_float(f64::NAN);
+        }
+        if result_str.is_none() {
+            if let Some(value_of) = obj.get(ctx.intern("valueOf")) {
+                if value_of.is_function() {
+                    if let Some(ptr) = ctx.get_register_vm_ptr() {
+                        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                        match vm.call_function_with_this(ctx, value_of, *input, &[]) {
+                            Ok(result) => {
+                                if result.is_string() {
+                                    result_str = Some(ctx.get_atom_str(result.get_atom()).to_string());
+                                } else if result.is_int() {
+                                    result_str = Some(result.get_int().to_string());
+                                } else if result.is_float() {
+                                    result_str = Some(result.get_float().to_string());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        match result_str {
+            Some(s) => s,
+            None => {
+                if let Some(ptr) = ctx.get_register_vm_ptr() {
+                    let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                    let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+                    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert object to primitive value")));
+                    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                    if let Some(proto) = ctx.get_type_error_prototype() {
+                        err.prototype = Some(proto);
+                    }
+                    let err_ptr = Box::into_raw(Box::new(err)) as usize;
+                    ctx.runtime_mut().gc_heap_mut().track(err_ptr);
+                    vm.pending_throw = Some(JSValue::new_object(err_ptr));
+                }
+                return JSValue::undefined();
+            }
         }
     } else {
         return JSValue::new_float(f64::NAN);
