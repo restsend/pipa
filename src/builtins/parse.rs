@@ -29,40 +29,47 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         "undefined".to_string()
     } else if input_val.is_object() {
         let obj = input_val.as_object();
-        let mut prim = None;
+        let mut prim: Option<Option<String>> = None;
         if let Some(to_str) = obj.get(ctx.intern("toString")) {
             if to_str.is_function() {
                 if let Some(ptr) = ctx.get_register_vm_ptr() {
                     let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
                     match vm.call_function_with_this(ctx, to_str, *input_val, &[]) {
                         Ok(result) if result.is_string() => {
-                            prim = Some(ctx.get_atom_str(result.get_atom()).to_string());
+                            prim = Some(Some(ctx.get_atom_str(result.get_atom()).to_string()));
                         }
                         Ok(result) if result.is_int() => {
-                            prim = Some(result.get_int().to_string());
+                            prim = Some(Some(result.get_int().to_string()));
                         }
                         Ok(result) if result.is_float() => {
-                            prim = Some(result.get_float().to_string());
+                            prim = Some(Some(result.get_float().to_string()));
+                        }
+                        Ok(_) => {
+                            prim = Some(None);
                         }
                         _ => {}
                     }
                 }
             }
         }
-        if prim.is_none() {
+        if let Some(Some(_)) = prim {
+        } else {
             if let Some(val_of) = obj.get(ctx.intern("valueOf")) {
                 if val_of.is_function() {
                     if let Some(ptr) = ctx.get_register_vm_ptr() {
                         let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
                         match vm.call_function_with_this(ctx, val_of, *input_val, &[]) {
                             Ok(result) if result.is_string() => {
-                                prim = Some(ctx.get_atom_str(result.get_atom()).to_string());
+                                prim = Some(Some(ctx.get_atom_str(result.get_atom()).to_string()));
                             }
                             Ok(result) if result.is_int() => {
-                                prim = Some(result.get_int().to_string());
+                                prim = Some(Some(result.get_int().to_string()));
                             }
                             Ok(result) if result.is_float() => {
-                                prim = Some(result.get_float().to_string());
+                                prim = Some(Some(result.get_float().to_string()));
+                            }
+                            Ok(_) => {
+                                prim = Some(None);
                             }
                             _ => {}
                         }
@@ -71,8 +78,8 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
         }
         match prim {
-            Some(s) => s,
-            None => return JSValue::new_float(f64::NAN),
+            Some(Some(s)) => s,
+            _ => return JSValue::new_float(f64::NAN),
         }
     } else {
         return JSValue::new_float(f64::NAN);
