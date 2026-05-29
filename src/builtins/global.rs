@@ -923,10 +923,10 @@ fn init_math(ctx: &mut JSContext) {
 }
 
 fn init_json(ctx: &mut JSContext) {
-    ctx.register_builtin("json_parse", HostFunction::new("parse", 1, json_parse));
+    ctx.register_builtin("json_parse", HostFunction::new("parse", 2, json_parse));
     ctx.register_builtin(
         "json_stringify",
-        HostFunction::new("stringify", 1, json_stringify),
+        HostFunction::new("stringify", 3, json_stringify),
     );
 
     let json_atom = ctx.intern("JSON");
@@ -938,6 +938,17 @@ fn init_json(ctx: &mut JSContext) {
     json_obj.set(
         ctx.intern("stringify"),
         create_builtin_function(ctx, "json_stringify"),
+    );
+    json_obj.define_property(
+        ctx.common_atoms.to_string_tag,
+        PropertyDescriptor {
+            value: Some(JSValue::new_string(ctx.intern("JSON"))),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
     );
     let json_ptr = Box::into_raw(Box::new(json_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(json_ptr);

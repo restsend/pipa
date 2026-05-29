@@ -3,6 +3,40 @@ use crate::object::object::JSObject;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
+fn unwrap_wrapper_object(ctx: &mut JSContext, obj: &JSObject) -> Option<JSValue> {
+    let v = obj.get(ctx.common_atoms.__value__);
+    if let Some(val) = v {
+        if val.is_bool() {
+            return Some(val);
+        }
+        if val.is_int() || val.is_float() {
+            let proto = obj.prototype;
+            if let Some(pp) = proto {
+                unsafe {
+                    if let Some(ntp) = ctx.get_number_prototype() {
+                        if pp == ntp as usize as *mut JSObject {
+                            return Some(val);
+                        }
+                    }
+                }
+            }
+        }
+        if val.is_string() {
+            let proto = obj.prototype;
+            if let Some(pp) = proto {
+                unsafe {
+                    if let Some(stp) = ctx.get_string_prototype() {
+                        if pp == stp as usize as *mut JSObject {
+                            return Some(val);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn json_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() || !args[0].is_string() {
         return JSValue::undefined();
@@ -25,6 +59,10 @@ pub fn json_stringify(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let value = &args[0];
     let replacer = args.get(1);
     let space = args.get(2);
+
+    if value.is_function() || value.is_symbol() || value.is_undefined() {
+        return JSValue::undefined();
+    }
 
     let json_str = jsvalue_to_json_with_options(ctx, value, replacer, space, &mut Vec::new());
 
@@ -186,11 +224,38 @@ fn jsvalue_to_json_internal(
         return "null".to_string();
     }
 
+    if value.is_bigint() {
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("BigInt value cannot be serialized in JSON")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return String::new();
+    }
+
     if value.is_object() {
+        let obj = value.as_object();
+
+        let unwrapped = unwrap_wrapper_object(ctx, obj);
+        if unwrapped.is_some() {
+            return jsvalue_to_json_internal(ctx, &unwrapped.unwrap(), replacer, seen);
+        }
+
         let ptr = value.get_ptr() as usize;
 
         if seen.contains(&ptr) {
-            return "null".to_string();
+            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            if let Some(proto) = ctx.get_type_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Converting circular structure to JSON")));
+            let eptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(eptr);
+            ctx.pending_exception = Some(JSValue::new_object(eptr));
+            return String::new();
         }
         seen.push(ptr);
 
