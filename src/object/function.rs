@@ -61,6 +61,7 @@ pub struct JSFunction {
 
     pub source_filename: String,
     pub line_number_table: Option<LineNumberTable>,
+    pub source_text: Option<String>,
 }
 
 impl JSFunction {
@@ -80,6 +81,7 @@ impl JSFunction {
             cached_prototype_ptr: std::ptr::null_mut(),
             source_filename: "<anonymous>".to_string(),
             line_number_table: None,
+            source_text: None,
         }
     }
 

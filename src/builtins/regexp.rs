@@ -453,17 +453,18 @@ fn match_pattern_with_len(
     };
 
     if start <= search_text.len() {
-        let max_start = if search_pattern.len() <= search_text.len() {
-            search_text.len() - search_pattern.len()
+        let search_bytes = search_pattern.as_bytes();
+        let text_bytes = search_text.as_bytes();
+        let max_start = if search_bytes.len() <= text_bytes.len() {
+            text_bytes.len() - search_bytes.len()
         } else {
             return None;
         };
 
         for i in start..=max_start {
-            if i + search_pattern.len() <= search_text.len() {
-                let slice = &search_text[i..i + search_pattern.len()];
-                if slice == search_pattern {
-                    return Some((i, search_pattern.len()));
+            if i + search_bytes.len() <= text_bytes.len() {
+                if &text_bytes[i..i + search_bytes.len()] == search_bytes {
+                    return Some((i, search_bytes.len()));
                 }
             }
         }

@@ -716,12 +716,12 @@ fn function_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         if js_func.is_builtin() {
             if func_name.is_empty() {
                 JSValue::new_string(
-                    ctx.intern(&format!("function({}) {{ [native code] }}", param_str)),
+                    ctx.intern(&format!("function() {{ [native code] }}")),
                 )
             } else {
                 JSValue::new_string(ctx.intern(&format!(
-                    "function {}({}) {{ [native code] }}",
-                    func_name, param_str
+                    "function {}() {{ [native code] }}",
+                    func_name
                 )))
             }
         } else {
@@ -729,13 +729,13 @@ fn function_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let suffix = if js_func.is_generator() { "*" } else { "" };
             if func_name.is_empty() {
                 JSValue::new_string(ctx.intern(&format!(
-                    "{}function{}({}) {{ [user code] }}",
-                    prefix, suffix, param_str
+                    "{}function{}() {{ [native code] }}",
+                    prefix, suffix
                 )))
             } else {
                 JSValue::new_string(ctx.intern(&format!(
-                    "{}function{} {}({}) {{ [user code] }}",
-                    prefix, suffix, func_name, param_str
+                    "{}function{} {}() {{ [native code] }}",
+                    prefix, suffix, func_name
                 )))
             }
         }

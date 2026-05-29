@@ -222,8 +222,7 @@ fn load_harness_file(harness_dir: &Path, filename: &str) -> Option<String> {
     }
 }
 
-fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta) -> TestOutcome {
-    // Skip pre-ES5 Sputnik tests (they test behavior incompatible with ES5+)
+fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta, harness_code: &str) -> TestOutcome {
     if meta.es5id {
         return TestOutcome::Passed;
     }
@@ -278,7 +277,7 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta) -> TestOutco
         }
     }
 
-    let prepared_code = if meta.flags.contains(&"onlyStrict".to_string()) {
+    let test_code = if meta.flags.contains(&"onlyStrict".to_string()) {
         if !code.trim_start().starts_with("\"use strict\"")
             && !code.trim_start().starts_with("'use strict'")
         {
@@ -290,7 +289,13 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta) -> TestOutco
         code.to_string()
     };
 
-    match eval(ctx, &prepared_code) {
+    let full_code = if harness_code.is_empty() {
+        test_code
+    } else {
+        format!("{}\n{}", harness_code, test_code)
+    };
+
+    match eval(ctx, &full_code) {
         Ok(_) => TestOutcome::Passed,
         Err(e) => TestOutcome::Failed(e),
     }
@@ -478,15 +483,7 @@ fn main() {
             }
         }
 
-        if !harness_code.is_empty() {
-            if let Err(e) = eval(&mut ctx, &harness_code) {
-                failed += 1;
-                println!("  ✗ {} - harness init failed: {}", test_path, e);
-                continue;
-            }
-        }
-
-        match run_test(&mut ctx, code, &meta) {
+        match run_test(&mut ctx, code, &meta, &harness_code) {
             TestOutcome::Passed => {
                 passed += 1;
                 if passed <= 50 || passed % 500 == 0 {

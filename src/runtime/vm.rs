@@ -6349,6 +6349,7 @@ impl VM {
                                             upvalue_count: upvalue_descs.len() as u32,
                                             upvalue_descs: upvalue_descs.clone(),
                                             func_name_atom,
+                                            source_text: None,
                                             ic_table: std::cell::UnsafeCell::new(
                                                 crate::compiler::InlineCacheTable::new(),
                                             ),
@@ -8059,7 +8060,7 @@ impl VM {
         } else if v.is_function() {
             let func = v.as_function();
 
-            if let Some(custom_fn) = func.base.get_own_value(ctx.common_atoms.value_of) {
+            if let Some(custom_fn) = func.base.get(ctx.common_atoms.value_of) {
                 if custom_fn.is_function() {
                     if let Ok(r) = self.call_function_with_this(ctx, custom_fn, *v, &[]) {
                         if !r.is_object() {
@@ -8069,7 +8070,7 @@ impl VM {
                 }
             }
 
-            if let Some(custom_fn) = func.base.get_own_value(ctx.common_atoms.to_string) {
+            if let Some(custom_fn) = func.base.get(ctx.common_atoms.to_string) {
                 if custom_fn.is_function() {
                     if let Ok(r) = self.call_function_with_this(ctx, custom_fn, *v, &[]) {
                         if !r.is_object() {

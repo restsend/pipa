@@ -399,6 +399,9 @@ fn parse_hex_escape_char(state: &mut ParseState, digits: usize) -> Result<Option
             .ok_or_else(|| format!("Invalid hex digit: {}", c))?;
         val = val * 16 + digit;
     }
+    if (0xD800..=0xDFFF).contains(&val) {
+        return Ok(Some('\u{FFFD}'));
+    }
     char::from_u32(val)
         .map(Some)
         .ok_or_else(|| "Invalid Unicode code point".to_string())

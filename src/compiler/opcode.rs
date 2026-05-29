@@ -505,6 +505,8 @@ pub struct NestedBytecode {
 
     pub func_name_atom: u32,
 
+    pub source_text: Option<String>,
+
     pub ic_table: std::cell::UnsafeCell<crate::compiler::InlineCacheTable>,
 }
 
