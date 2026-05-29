@@ -250,6 +250,41 @@ fn object_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             ctx.runtime_mut().gc_heap_mut().track(ptr);
             return JSValue::new_object(ptr);
         }
+
+        if arg.is_string() {
+            let mut obj = JSObject::new();
+            if let Some(proto_ptr) = ctx.get_string_prototype() {
+                obj.prototype = Some(proto_ptr);
+            }
+            obj.set(ctx.common_atoms.__value__, arg);
+            let s = ctx.get_atom_str(arg.get_atom());
+            obj.set(ctx.common_atoms.length, JSValue::new_int(s.len() as i64));
+            let ptr = Box::into_raw(Box::new(obj)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            return JSValue::new_object(ptr);
+        }
+
+        if arg.is_int() || arg.is_float() {
+            let mut obj = JSObject::new();
+            if let Some(proto_ptr) = ctx.get_number_prototype() {
+                obj.prototype = Some(proto_ptr);
+            }
+            obj.set(ctx.common_atoms.__value__, arg);
+            let ptr = Box::into_raw(Box::new(obj)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            return JSValue::new_object(ptr);
+        }
+
+        if arg.is_bool() {
+            let mut obj = JSObject::new();
+            if let Some(proto_ptr) = ctx.get_object_prototype() {
+                obj.prototype = Some(proto_ptr);
+            }
+            obj.set(ctx.common_atoms.__value__, arg);
+            let ptr = Box::into_raw(Box::new(obj)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            return JSValue::new_object(ptr);
+        }
     }
     let mut obj = JSObject::new();
     if let Some(proto_ptr) = ctx.get_object_prototype() {

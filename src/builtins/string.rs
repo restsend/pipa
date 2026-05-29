@@ -178,6 +178,17 @@ pub fn init_string(ctx: &mut JSContext) {
             set: None,
         },
     );
+    string_func.base.define_property(
+        ctx.intern("raw"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(create_builtin_function(ctx, "string_raw")),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
 
     let string_ptr = Box::into_raw(Box::new(string_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(string_ptr);
@@ -423,6 +434,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "string_fromCodePoint",
         HostFunction::new("fromCodePoint", 1, string_fromcodepoint),
+    );
+    ctx.register_builtin(
+        "string_raw",
+        HostFunction::new("raw", 1, string_raw),
     );
     ctx.register_builtin("string_trim", HostFunction::method("trim", 0, string_trim));
     ctx.register_builtin(
@@ -1876,19 +1891,16 @@ fn string_match(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn string_substr(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() {
-        return JSValue::new_string(ctx.intern(""));
-    }
-    let s = match require_string_coercible(ctx, &args[0]) {
+    let this_str = match this_to_string(ctx, &args[0]) {
         Some(s) => s,
-        None => return JSValue::undefined(),
+        None => return JSValue::new_string(ctx.intern("")),
     };
-    let len = char_count(&s);
-
+    let s = &this_str;
+    let len = s.chars().count();
     let start = if args.len() > 1 {
         let v = args[1].get_int();
         if v < 0 {
-            (len as i64 + v).max(0) as usize
+            ((len as i64) + v).max(0) as usize
         } else {
             (v as usize).min(len)
         }
@@ -1908,4 +1920,106 @@ fn string_substr(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let start_b = byte_index_for_char_pos(&s, start);
     let end_b = byte_index_for_char_pos(&s, end);
     JSValue::new_string(ctx.intern(&s[start_b..end_b]))
+}
+
+fn string_raw(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw requires a template")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let template = &args[0];
+    if !template.is_object() {
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw requires template to be an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let obj = template.as_object();
+    let raw_atom = ctx.intern("raw");
+    let raw_val = match obj.get(raw_atom) {
+        Some(v) => v,
+        None => {
+            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw template has no raw property")));
+            if let Some(proto) = ctx.get_type_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+    };
+    if !raw_val.is_object() {
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw template.raw is not an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let raw_obj = raw_val.as_object();
+    let length_atom = ctx.common_atoms.length;
+    let len_val = raw_obj.get(length_atom).unwrap_or(JSValue::new_int(0));
+    let len = if len_val.is_int() {
+        len_val.get_int() as usize
+    } else if len_val.is_float() {
+        len_val.get_float() as usize
+    } else {
+        0
+    };
+    if len == 0 {
+        return JSValue::new_string(ctx.intern(""));
+    }
+    let substitutions = if args.len() > 1 { &args[1..] } else { &[] };
+    let mut result = String::new();
+    let mut i = 0usize;
+    while i < len {
+        let key = ctx.int_atom_mut(i);
+        let raw_str_val = if raw_obj.is_dense_array() {
+            let arr_ptr = raw_obj as *const _ as usize;
+            let arr = unsafe { &*(arr_ptr as *const crate::object::array_obj::JSArrayObject) };
+            arr.get(i).unwrap_or(JSValue::new_string(ctx.intern("")))
+        } else {
+            raw_obj.get(key).unwrap_or(JSValue::new_string(ctx.intern("")))
+        };
+        let raw_str = if raw_str_val.is_string() {
+            ctx.get_atom_str(raw_str_val.get_atom()).to_string()
+        } else {
+            js_to_string_arg(&raw_str_val, ctx)
+        };
+        result.push_str(&raw_str);
+        if i + 1 < len {
+            if i < substitutions.len() {
+                let sub = &substitutions[i];
+                let sub_str = if sub.is_string() {
+                    ctx.get_atom_str(sub.get_atom()).to_string()
+                } else {
+                    js_to_string_arg(sub, ctx)
+                };
+                result.push_str(&sub_str);
+            }
+        }
+        i += 1;
+    }
+    JSValue::new_string(ctx.intern(&result))
 }
