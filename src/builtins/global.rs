@@ -932,22 +932,41 @@ fn init_json(ctx: &mut JSContext) {
     let json_atom = ctx.intern("JSON");
     let tag_key = symbol::get_symbol_to_string_tag_prop_key(ctx);
     let mut json_obj = JSObject::new();
-    json_obj.set(
-        ctx.intern("parse"),
-        create_builtin_function(ctx, "json_parse"),
-    );
-    json_obj.set(
-        ctx.intern("stringify"),
-        create_builtin_function(ctx, "json_stringify"),
-    );
+    let parse_fn = create_builtin_function(ctx, "json_parse");
+    let stringify_fn = create_builtin_function(ctx, "json_stringify");
+    json_obj.set(ctx.intern("parse"), parse_fn);
+    json_obj.set(ctx.intern("stringify"), stringify_fn);
     let json_ptr = Box::into_raw(Box::new(json_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(json_ptr);
     let json_value = JSValue::new_object(json_ptr);
-    json_value.as_object_mut().define_property(
+    let json_mut = json_value.as_object_mut();
+    json_mut.define_property(
         tag_key,
         PropertyDescriptor {
             value: Some(JSValue::new_string(ctx.intern("JSON"))),
             writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+    json_mut.define_property(
+        ctx.intern("parse"),
+        PropertyDescriptor {
+            value: Some(parse_fn),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+    json_mut.define_property(
+        ctx.intern("stringify"),
+        PropertyDescriptor {
+            value: Some(stringify_fn),
+            writable: true,
             enumerable: false,
             configurable: true,
             get: None,
