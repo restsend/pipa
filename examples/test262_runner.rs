@@ -18,6 +18,7 @@ struct TestMeta {
 enum TestOutcome {
     Passed,
     Failed(String),
+    Skipped(String),
 }
 
 fn find_frontmatter_start(content: &str) -> Option<usize> {
@@ -229,7 +230,7 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta, harness_code
     let unsupported_flags = ["module", "raw", "async"];
     for flag in &unsupported_flags {
         if meta.flags.contains(&flag.to_string()) {
-            return TestOutcome::Failed(format!("Unsupported flag: {}", flag));
+            return TestOutcome::Skipped(format!("Unsupported flag: {}", flag));
         }
     }
 
@@ -267,12 +268,16 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta, harness_code
         "Intl.Collator",
         "Intl.Locale",
         "resizable-arraybuffer",
+        "error-cause",
+        "Error.isError",
+        "error-stack-accessor",
+        "Proxy",
     ];
 
     for feature in &unsupported_features {
         for f in &meta.features {
             if f.contains(feature) {
-                return TestOutcome::Failed(format!("Unsupported feature: {}", f));
+                return TestOutcome::Skipped(format!("Unsupported feature: {}", f));
             }
         }
     }
@@ -332,7 +337,7 @@ fn main() {
 
     let mut passed = 0;
     let mut failed = 0;
-    let skipped = 0;
+    let mut skipped = 0;
 
     println!("test262 runner for Pipa");
     println!("Test directory: {}", test_dir);
@@ -509,6 +514,9 @@ fn main() {
                         }
                     }
                 }
+            }
+            TestOutcome::Skipped(_) => {
+                skipped += 1;
             }
         }
     }

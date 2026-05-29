@@ -287,12 +287,14 @@ fn init_range_error(ctx: &mut JSContext) {
 }
 
 fn build_error(ctx: &mut JSContext, name: &str, args: &[JSValue], proto: Option<*mut JSObject>) -> JSValue {
-    let mut err = JSObject::new();
+    let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
     set_own_ne(&mut err, ctx.intern("name"), JSValue::new_string(ctx.intern(name)));
-    if !args.is_empty() && args[0].is_string() {
-        set_own_ne(&mut err, ctx.intern("message"), args[0]);
-    } else {
-        set_own_ne(&mut err, ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+    if !args.is_empty() && !args[0].is_undefined() {
+        if args[0].is_string() {
+            set_own_ne(&mut err, ctx.intern("message"), args[0]);
+        } else {
+            set_own_ne(&mut err, ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+        }
     }
     if args.len() > 1 && args[1].is_object() {
         let opts = args[1].as_object();
@@ -339,17 +341,35 @@ pub fn range_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue
 
 fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return JSValue::new_string(ctx.intern("Error"));
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Error.prototype.toString called on undefined")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     }
     let this = &args[0];
     if !this.is_object() {
-        return JSValue::new_string(ctx.intern("Error"));
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Error.prototype.toString called on non-object")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     }
 
     let obj = this.as_object();
 
     let name = if let Some(n) = obj.get(ctx.intern("name")) {
-        if n.is_string() {
+        if n.is_undefined() {
+            "Error".to_string()
+        } else if n.is_string() {
             ctx.get_atom_str(n.get_atom()).to_string()
         } else {
             "Error".to_string()
@@ -359,7 +379,9 @@ fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     let message = if let Some(m) = obj.get(ctx.intern("message")) {
-        if m.is_string() {
+        if m.is_undefined() {
+            String::new()
+        } else if m.is_string() {
             ctx.get_atom_str(m.get_atom()).to_string()
         } else {
             String::new()
