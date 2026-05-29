@@ -252,58 +252,185 @@ pub fn init_symbol(ctx: &mut JSContext) {
     let for_func = create_builtin_function(ctx, "symbol_for");
     let key_for_func = create_builtin_function(ctx, "symbol_keyFor");
 
-    symbol_ctor.base.set(ctx.intern("for"), for_func);
-    symbol_ctor.base.set(ctx.intern("keyFor"), key_for_func);
+    symbol_ctor.base.define_property(
+        ctx.intern("for"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(for_func),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+    symbol_ctor.base.define_property(
+        ctx.intern("keyFor"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(key_for_func),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_iter = get_or_create_well_known_symbol(ctx, SYMBOL_ITERATOR_DESC);
-    symbol_ctor.base.set(ctx.intern("iterator"), symbol_iter);
+    symbol_ctor.base.define_property(
+        ctx.intern("iterator"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_iter),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_to_string_tag = get_or_create_well_known_symbol(ctx, SYMBOL_TO_STRING_TAG_DESC);
-    symbol_ctor
-        .base
-        .set(ctx.intern("toStringTag"), symbol_to_string_tag);
+    symbol_ctor.base.define_property(
+        ctx.intern("toStringTag"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_to_string_tag),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_species = get_or_create_well_known_symbol(ctx, SYMBOL_SPECIES_DESC);
-    symbol_ctor.base.set(ctx.intern("species"), symbol_species);
+    symbol_ctor.base.define_property(
+        ctx.intern("species"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_species),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_to_primitive = get_or_create_well_known_symbol(ctx, SYMBOL_TO_PRIMITIVE_DESC);
-    symbol_ctor
-        .base
-        .set(ctx.intern("toPrimitive"), symbol_to_primitive);
+    symbol_ctor.base.define_property(
+        ctx.intern("toPrimitive"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_to_primitive),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_is_concat_spreadable =
         get_or_create_well_known_symbol(ctx, SYMBOL_IS_CONCAT_SPREADABLE_DESC);
-    symbol_ctor.base.set(
+    symbol_ctor.base.define_property(
         ctx.intern("isConcatSpreadable"),
-        symbol_is_concat_spreadable,
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_is_concat_spreadable),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
     );
 
     let symbol_match = get_or_create_well_known_symbol(ctx, SYMBOL_MATCH_DESC);
-    symbol_ctor.base.set(ctx.intern("match"), symbol_match);
+    symbol_ctor.base.define_property(
+        ctx.intern("match"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_match),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_replace = get_or_create_well_known_symbol(ctx, SYMBOL_REPLACE_DESC);
-    symbol_ctor.base.set(ctx.intern("replace"), symbol_replace);
+    symbol_ctor.base.define_property(
+        ctx.intern("replace"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_replace),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_search = get_or_create_well_known_symbol(ctx, SYMBOL_SEARCH_DESC);
-    symbol_ctor.base.set(ctx.intern("search"), symbol_search);
+    symbol_ctor.base.define_property(
+        ctx.intern("search"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_search),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_split = get_or_create_well_known_symbol(ctx, SYMBOL_SPLIT_DESC);
-    symbol_ctor.base.set(ctx.intern("split"), symbol_split);
+    symbol_ctor.base.define_property(
+        ctx.intern("split"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_split),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_unscopables = get_or_create_well_known_symbol(ctx, SYMBOL_UNSCOPABLES_DESC);
-    symbol_ctor
-        .base
-        .set(ctx.intern("unscopables"), symbol_unscopables);
+    symbol_ctor.base.define_property(
+        ctx.intern("unscopables"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_unscopables),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_has_instance = get_or_create_well_known_symbol(ctx, SYMBOL_HAS_INSTANCE_DESC);
-    symbol_ctor
-        .base
-        .set(ctx.intern("hasInstance"), symbol_has_instance);
+    symbol_ctor.base.define_property(
+        ctx.intern("hasInstance"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_has_instance),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_async_iterator = get_or_create_well_known_symbol(ctx, SYMBOL_ASYNC_ITERATOR_DESC);
-    symbol_ctor
-        .base
-        .set(ctx.intern("asyncIterator"), symbol_async_iterator);
+    symbol_ctor.base.define_property(
+        ctx.intern("asyncIterator"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_async_iterator),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 
     let mut sym_proto = JSObject::new();
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
