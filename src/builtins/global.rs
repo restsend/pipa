@@ -146,6 +146,11 @@ pub fn init_globals(ctx: &mut JSContext) {
     init_global_funcs(ctx);
 
     object::init_object(ctx);
+
+    if let Some(obj_proto) = ctx.get_object_prototype() {
+        ctx.global().as_object_mut().prototype = Some(obj_proto);
+    }
+
     init_math(ctx);
     array::init_array(ctx);
     string::init_string(ctx);

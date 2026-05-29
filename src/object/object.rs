@@ -522,7 +522,9 @@ impl JSObject {
         Self::new_typed(ObjectType::Ordinary)
     }
     pub fn new_global() -> Self {
-        Self::new()
+        let mut obj = Self::new();
+        obj.prototype = None;
+        obj
     }
     pub fn new_array() -> Self {
         Self::new_typed(ObjectType::Array)
