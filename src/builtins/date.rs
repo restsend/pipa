@@ -84,8 +84,8 @@ fn parse_date_string(s: &str) -> f64 {
         (h, mi, sec, msec, tz)
     };
 
-    let ts = date_to_timestamp(year, month, day.max(1), hour, minute, second);
-    ts as f64 + ms as f64 - (tz_offset as f64 * 60000.0)
+    let ts = make_day_from_parts(year, month, day.max(1), hour, minute, second, ms);
+    ts - (tz_offset as f64 * 60000.0)
 }
 
 fn parse_tz_offset(s: &str, sign: i64) -> i64 {
@@ -459,17 +459,17 @@ pub fn date_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     if let Ok(ts) = parse_iso_date(&date_str) {
-        return JSValue::new_int(ts);
+        return JSValue::new_float(ts);
     }
 
     if let Ok(ts) = parse_common_date(&date_str) {
-        return JSValue::new_int(ts);
+        return JSValue::new_float(ts);
     }
 
     JSValue::new_float(f64::NAN)
 }
 
-fn parse_iso_date(s: &str) -> Result<i64, ()> {
+fn parse_iso_date(s: &str) -> Result<f64, ()> {
     let s = s.trim();
     let parts: Vec<&str> = s.split('T').collect();
     let date_part = parts[0];
@@ -501,10 +501,10 @@ fn parse_iso_date(s: &str) -> Result<i64, ()> {
         }
     }
 
-    Ok(date_to_timestamp(year, month, day, hour, minute, second))
+    Ok(make_day_from_parts(year, month, day, hour, minute, second, 0))
 }
 
-fn parse_common_date(s: &str) -> Result<i64, ()> {
+fn parse_common_date(s: &str) -> Result<f64, ()> {
     let s = s.trim();
     let parts: Vec<&str> = s.split_whitespace().collect();
 
@@ -533,7 +533,7 @@ fn parse_common_date(s: &str) -> Result<i64, ()> {
         }
 
         if year > 0 && month > 0 && day > 0 {
-            return Ok(date_to_timestamp(year, month, day, hour, minute, second));
+            return Ok(make_day_from_parts(year, month, day, hour, minute, second, 0));
         }
     }
 
@@ -558,38 +558,130 @@ fn month_from_name(name: &str) -> u32 {
     }
 }
 
-fn date_to_timestamp(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> i64 {
-    let mut days: i64 = 0;
+fn day_from_year(y: i64) -> i64 {
+    365 * (y - 1970) + (y - 1969) / 4 - (y - 1901) / 100 + (y - 1601) / 400
+}
 
-    let month = month.clamp(1, 12);
-    let day = day.max(1);
-    let hour = hour.min(23);
-    let minute = minute.min(59);
-    let second = second.min(59);
+fn time_within_day(ms: i64) -> i64 {
+    ms % (24 * 60 * 60 * 1000)
+}
 
-    for y in 1970..year {
-        days += if is_leap_year(y) { 366 } else { 365 };
-    }
-    for y in year..1970 {
-        days -= if is_leap_year(y) { 366 } else { 365 };
-    }
+fn day_from_time(ms: i64) -> i64 {
+    ms / (24 * 60 * 60 * 1000)
+}
 
-    let days_in_months = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    for m in 1..month {
-        days += days_in_months[(m - 1) as usize] as i64;
-        if m == 2 && is_leap_year(year) {
-            days += 1;
+fn days_in_year(y: i32) -> i32 {
+    if is_leap_year(y) { 366 } else { 365 }
+}
+
+fn day_within_year(y: i32, day: i64) -> i64 {
+    day - day_from_year(y as i64)
+}
+
+fn month_from_time(ms: i64) -> u32 {
+    let day = day_from_time(ms);
+    let year = year_from_time(ms);
+    let dwy = day_within_year(year, day);
+    let leap = is_leap_year(year);
+    let month_days: [i64; 12] = if leap {
+        [31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366]
+    } else {
+        [31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
+    };
+    for (i, &d) in month_days.iter().enumerate() {
+        if dwy < d {
+            return i as u32;
         }
     }
+    11
+}
 
-    days += (day - 1) as i64;
+fn year_from_time(ms: i64) -> i32 {
+    let day = day_from_time(ms);
+    let mut y = (day / 365).abs() + 1970;
+    if day < 0 {
+        y = 1970 - ((-day) / 365 + 1);
+    }
+    loop {
+        let dy = day_from_year(y as i64);
+        let dy_next = day_from_year((y + 1) as i64);
+        if dy <= day && day < dy_next {
+            return y as i32;
+        }
+        if day < dy {
+            y -= 1;
+        } else {
+            y += 1;
+        }
+    }
+}
 
-    let ms = days * 24 * 60 * 60 * 1000
-        + hour as i64 * 60 * 60 * 1000
-        + minute as i64 * 60 * 1000
-        + second as i64 * 1000;
+fn make_day(year: f64, month: f64, date: f64) -> f64 {
+    if year.is_nan() || month.is_nan() || date.is_nan() {
+        return f64::NAN;
+    }
+    let y = year as i64;
+    let m = month as i64;
+    let d = date as i64;
+    let ym = y + m / 12;
+    let mn = m % 12;
+    let mn = if mn < 0 { mn + 12 } else { mn };
+    let day = day_from_year(ym) + month_to_day_in_year(mn as i32, is_leap_year(ym as i32)) as i64 + d - 1;
+    day as f64
+}
 
-    ms
+fn month_to_day_in_year(month: i32, leap: bool) -> i32 {
+    let days: [i32; 12] = if leap {
+        [0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
+    } else {
+        [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+    };
+    if month < 12 && month >= 0 { days[month as usize] } else { 0 }
+}
+
+fn make_date(day: f64, time: f64) -> f64 {
+    if day.is_nan() || time.is_nan() {
+        return f64::NAN;
+    }
+    day * 24.0 * 60.0 * 60.0 * 1000.0 + time
+}
+
+fn make_time(hour: f64, min: f64, sec: f64, ms: f64) -> f64 {
+    if hour.is_nan() || min.is_nan() || sec.is_nan() || ms.is_nan() {
+        return f64::NAN;
+    }
+    if !hour.is_finite() || !min.is_finite() || !sec.is_finite() || !ms.is_finite() {
+        return f64::NAN;
+    }
+    let h = hour as i64;
+    let m = min as i64;
+    let s = sec as i64;
+    let milli = ms as i64;
+    (h * 3600000 + m * 60000 + s * 1000 + milli) as f64
+}
+
+fn date_to_timestamp_fast(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32, ms: u32) -> f64 {
+    let mut days: i64 = 0;
+    if year >= 1970 {
+        for y in 1970..year {
+            days += days_in_year(y) as i64;
+        }
+    } else {
+        for y in year..1970 {
+            days -= days_in_year(y) as i64;
+        }
+    }
+    let days_in_months = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    days += days_in_months[(month.saturating_sub(1)).min(11) as usize] as i64;
+    if month > 2 && is_leap_year(year) {
+        days += 1;
+    }
+    days += (day.saturating_sub(1)) as i64;
+    (days * 24 * 60 * 60 * 1000
+        + hour as i64 * 3600000
+        + minute as i64 * 60000
+        + second as i64 * 1000
+        + ms as i64) as f64
 }
 
 fn is_leap_year(year: i32) -> bool {
@@ -629,14 +721,7 @@ pub fn date_utc(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         0.0
     };
 
-    JSValue::new_float(date_to_timestamp(
-        year,
-        month + 1,
-        day,
-        hour,
-        minute,
-        second,
-    ) as f64 + ms)
+    JSValue::new_float(make_day_from_parts(year, month + 1, day, hour, minute, second, ms as u32))
 }
 
 pub fn date_get_time(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -906,10 +991,12 @@ fn coerce_arg(ctx: &mut JSContext, val: Option<&JSValue>) -> Result<Option<f64>,
     match val {
         None => Ok(None),
         Some(v) => {
-            if v.is_undefined() {
-                return Ok(None);
+            let n = to_number_arg(ctx, v)?;
+            if n.is_nan() {
+                Ok(Some(f64::NAN))
+            } else {
+                Ok(Some(n))
             }
-            to_number_arg(ctx, v).map(Some)
         }
     }
 }
@@ -959,8 +1046,7 @@ pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => ts % 1000.0,
         Err(()) => return JSValue::undefined(),
     };
-    let (y, mo, d, h, mi, _, _) = timestamp_to_date(ts);
-    let new_ts = date_to_timestamp(y, mo, d, h, mi, sec as u32) as f64 + ms;
+    let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, (ts as i64 / 60000 % 60) as f64, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -978,7 +1064,7 @@ pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let sec = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => ((ts / 1000.0) % 60.0).floor(),
+        Ok(None) => ((ts as i64 / 1000) % 60) as f64,
         Err(()) => return JSValue::undefined(),
     };
     let ms = match coerce_arg(ctx, args.get(3)) {
@@ -986,8 +1072,7 @@ pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => ts % 1000.0,
         Err(()) => return JSValue::undefined(),
     };
-    let (y, mo, d, h, _, _, _) = timestamp_to_date(ts);
-    let new_ts = date_to_timestamp(y, mo, d, h, min as u32, sec as u32) as f64 + ms;
+    let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, min, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1005,12 +1090,12 @@ pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let min = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => ((ts / 60000.0) % 60.0).floor(),
+        Ok(None) => ((ts as i64 / 60000) % 60) as f64,
         Err(()) => return JSValue::undefined(),
     };
     let sec = match coerce_arg(ctx, args.get(3)) {
         Ok(Some(n)) => n,
-        Ok(None) => ((ts / 1000.0) % 60.0).floor(),
+        Ok(None) => ((ts as i64 / 1000) % 60) as f64,
         Err(()) => return JSValue::undefined(),
     };
     let ms = match coerce_arg(ctx, args.get(4)) {
@@ -1018,8 +1103,7 @@ pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => ts % 1000.0,
         Err(()) => return JSValue::undefined(),
     };
-    let (y, mo, d, _, _, _, _) = timestamp_to_date(ts);
-    let new_ts = date_to_timestamp(y, mo, d, hr as u32, min as u32, sec as u32) as f64 + ms;
+    let new_ts = make_date(day_from_time(ts as i64) as f64, make_time(hr, min, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1035,8 +1119,10 @@ pub fn date_set_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => f64::NAN,
         Err(()) => return JSValue::undefined(),
     };
-    let (y, mo, _, h, mi, s, _) = timestamp_to_date(ts);
-    let new_ts = date_to_timestamp(y, mo, d as u32, h, mi, s) as f64 + ts % 1000.0;
+    let tsi = ts as i64;
+    let year = year_from_time(tsi);
+    let month = month_from_time(tsi);
+    let new_ts = make_date(make_day(year as f64, month as f64, d), time_within_day(tsi) as f64);
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1053,13 +1139,14 @@ pub fn date_set_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Err(()) => return JSValue::undefined(),
     };
     let d_val = coerce_arg(ctx, args.get(2));
-    let (y, _, day, h, mi, s, _) = timestamp_to_date(ts);
-    let day = match d_val {
-        Ok(Some(n)) => n as u32,
-        Ok(None) => day,
+    let tsi = ts as i64;
+    let year = year_from_time(tsi);
+    let dt = match d_val {
+        Ok(Some(n)) => n,
+        Ok(None) => (day_within_year(year, day_from_time(tsi)) - month_to_day_in_year(month_from_time(tsi) as i32, is_leap_year(year)) as i64 + 1) as f64,
         Err(()) => return JSValue::undefined(),
     };
-    let new_ts = date_to_timestamp(y, (mo as u32) + 1, day, h, mi, s) as f64 + ts % 1000.0;
+    let new_ts = make_date(make_day(year as f64, mo, dt), time_within_day(tsi) as f64);
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1077,18 +1164,21 @@ pub fn date_set_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let mo_val = coerce_arg(ctx, args.get(2));
     let d_val = coerce_arg(ctx, args.get(3));
-    let (_, month, day, h, mi, s, _) = timestamp_to_date(ts);
-    let month = match mo_val {
-        Ok(Some(n)) => n as u32,
-        Ok(None) => month - 1,
+    let tsi = ts as i64;
+    let year = year_from_time(tsi);
+    let month = month_from_time(tsi);
+    let dt_from_ts = (day_within_year(year, day_from_time(tsi)) - month_to_day_in_year(month as i32, is_leap_year(year)) as i64 + 1) as f64;
+    let mo = match mo_val {
+        Ok(Some(n)) => n,
+        Ok(None) => month as f64,
         Err(()) => return JSValue::undefined(),
     };
-    let day = match d_val {
-        Ok(Some(n)) => n as u32,
-        Ok(None) => day,
+    let dt = match d_val {
+        Ok(Some(n)) => n,
+        Ok(None) => dt_from_ts,
         Err(()) => return JSValue::undefined(),
     };
-    let new_ts = date_to_timestamp(y as i32, month + 1, day, h, mi, s) as f64 + ts % 1000.0;
+    let new_ts = make_date(make_day(y, mo, dt), time_within_day(tsi) as f64);
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1352,14 +1442,14 @@ fn timestamp_to_date(ms: f64) -> (i32, u32, u32, u32, u32, u32, u32) {
     let mut remaining_days = total_days;
 
     if remaining_days >= 0 {
-        while remaining_days >= days_in_year(year) {
-            remaining_days -= days_in_year(year);
+        while remaining_days >= days_in_year(year) as i64 {
+            remaining_days -= days_in_year(year) as i64;
             year += 1;
         }
     } else {
         while remaining_days < 0 {
             year -= 1;
-            remaining_days += days_in_year(year);
+            remaining_days += days_in_year(year) as i64;
         }
     }
 
@@ -1387,8 +1477,8 @@ fn timestamp_to_date(ms: f64) -> (i32, u32, u32, u32, u32, u32, u32) {
     (year, month, day, hour, minute, second, weekday)
 }
 
-fn days_in_year(year: i32) -> i64 {
-    if is_leap_year(year) { 366 } else { 365 }
+fn make_day_from_parts(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32, ms: u32) -> f64 {
+    date_to_timestamp_fast(year, month, day, hour, minute, second, ms)
 }
 
 fn time_clip(t: f64) -> f64 {
@@ -1458,7 +1548,7 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             Err(()) => return JSValue::undefined(),
         };
 
-        date_to_timestamp(year, month + 1, day.max(1), hour, minute, second) as f64 + ms
+        make_day_from_parts(year, month + 1, day.max(1), hour, minute, second, ms as u32)
     };
 
     if timestamp.is_nan() {
