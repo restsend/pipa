@@ -221,14 +221,14 @@ pub fn init_date(ctx: &mut JSContext) {
 
     date_func
         .base
-        .set(ctx.intern("now"), create_builtin_function(ctx, "date_now"));
+        .set(ctx.intern("now"), create_builtin_function(ctx, "date_now", 0));
     date_func.base.set(
         ctx.intern("parse"),
-        create_builtin_function(ctx, "date_parse"),
+        create_builtin_function(ctx, "date_parse", 1),
     );
     date_func
         .base
-        .set(ctx.intern("UTC"), create_builtin_function(ctx, "date_utc"));
+        .set(ctx.intern("UTC"), create_builtin_function(ctx, "date_utc", 7));
 
     let date_ptr = Box::into_raw(Box::new(date_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(date_ptr);
@@ -254,111 +254,171 @@ pub fn init_date(ctx: &mut JSContext) {
 
     set_ne(&mut proto_obj,
         ctx.intern("getTime"),
-        create_builtin_function(ctx, "date_getTime"),
+        create_builtin_function(ctx, "date_getTime", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getFullYear"),
-        create_builtin_function(ctx, "date_getFullYear"),
+        create_builtin_function(ctx, "date_getFullYear", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getMonth"),
-        create_builtin_function(ctx, "date_getMonth"),
+        create_builtin_function(ctx, "date_getMonth", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getDate"),
-        create_builtin_function(ctx, "date_getDate"),
+        create_builtin_function(ctx, "date_getDate", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getDay"),
-        create_builtin_function(ctx, "date_getDay"),
+        create_builtin_function(ctx, "date_getDay", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getHours"),
-        create_builtin_function(ctx, "date_getHours"),
+        create_builtin_function(ctx, "date_getHours", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getMinutes"),
-        create_builtin_function(ctx, "date_getMinutes"),
+        create_builtin_function(ctx, "date_getMinutes", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getSeconds"),
-        create_builtin_function(ctx, "date_getSeconds"),
+        create_builtin_function(ctx, "date_getSeconds", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getMilliseconds"),
-        create_builtin_function(ctx, "date_getMilliseconds"),
+        create_builtin_function(ctx, "date_getMilliseconds", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("getTimezoneOffset"),
-        create_builtin_function(ctx, "date_getTimezoneOffset"),
+        create_builtin_function(ctx, "date_getTimezoneOffset", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCFullYear"),
-        create_builtin_function(ctx, "date_getUTCFullYear"),
+        create_builtin_function(ctx, "date_getUTCFullYear", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCMonth"),
-        create_builtin_function(ctx, "date_getUTCMonth"),
+        create_builtin_function(ctx, "date_getUTCMonth", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCDate"),
-        create_builtin_function(ctx, "date_getUTCDate"),
+        create_builtin_function(ctx, "date_getUTCDate", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCDay"),
-        create_builtin_function(ctx, "date_getUTCDay"),
+        create_builtin_function(ctx, "date_getUTCDay", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCHours"),
-        create_builtin_function(ctx, "date_getUTCHours"),
+        create_builtin_function(ctx, "date_getUTCHours", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCMinutes"),
-        create_builtin_function(ctx, "date_getUTCMinutes"),
+        create_builtin_function(ctx, "date_getUTCMinutes", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCSeconds"),
-        create_builtin_function(ctx, "date_getUTCSeconds"),
+        create_builtin_function(ctx, "date_getUTCSeconds", 0),
     );
     set_ne(
         &mut proto_obj,
         ctx.intern("getUTCMilliseconds"),
-        create_builtin_function(ctx, "date_getUTCMilliseconds"),
+        create_builtin_function(ctx, "date_getUTCMilliseconds", 0),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setTime"),
+        create_builtin_function(ctx, "date_setTime", 1),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setMilliseconds"),
+        create_builtin_function(ctx, "date_setMilliseconds", 1),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setSeconds"),
+        create_builtin_function(ctx, "date_setSeconds", 2),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setMinutes"),
+        create_builtin_function(ctx, "date_setMinutes", 3),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setHours"),
+        create_builtin_function(ctx, "date_setHours", 4),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setDate"),
+        create_builtin_function(ctx, "date_setDate", 1),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setMonth"),
+        create_builtin_function(ctx, "date_setMonth", 2),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setFullYear"),
+        create_builtin_function(ctx, "date_setFullYear", 3),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setUTCMilliseconds"),
+        create_builtin_function(ctx, "date_setUTCMilliseconds", 1),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setUTCSeconds"),
+        create_builtin_function(ctx, "date_setUTCSeconds", 2),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setUTCMinutes"),
+        create_builtin_function(ctx, "date_setUTCMinutes", 3),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setUTCHours"),
+        create_builtin_function(ctx, "date_setUTCHours", 4),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setUTCDate"),
+        create_builtin_function(ctx, "date_setUTCDate", 1),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setUTCMonth"),
+        create_builtin_function(ctx, "date_setUTCMonth", 2),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("setUTCFullYear"),
+        create_builtin_function(ctx, "date_setUTCFullYear", 3),
     );
     set_ne(&mut proto_obj,
         ctx.intern("toString"),
-        create_builtin_function(ctx, "date_toString"),
+        create_builtin_function(ctx, "date_toString", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("toISOString"),
-        create_builtin_function(ctx, "date_toISOString"),
+        create_builtin_function(ctx, "date_toISOString", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("toUTCString"),
-        create_builtin_function(ctx, "date_toUTCString"),
+        create_builtin_function(ctx, "date_toUTCString", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("toDateString"),
-        create_builtin_function(ctx, "date_toDateString"),
+        create_builtin_function(ctx, "date_toDateString", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("toTimeString"),
-        create_builtin_function(ctx, "date_toTimeString"),
+        create_builtin_function(ctx, "date_toTimeString", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("valueOf"),
-        create_builtin_function(ctx, "date_valueOf"),
+        create_builtin_function(ctx, "date_valueOf", 0),
     );
     set_ne(&mut proto_obj,
         ctx.intern("toJSON"),
-        create_builtin_function(ctx, "date_toJSON"),
+        create_builtin_function(ctx, "date_toJSON", 1),
     );
 
     let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
@@ -375,8 +435,8 @@ pub fn init_date(ctx: &mut JSContext) {
     date_func_ref.base.set(ctx.intern("prototype"), proto_value);
 }
 
-fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), 0);
+fn create_builtin_function(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
+    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -563,20 +623,29 @@ pub fn date_utc(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         0
     };
+    let ms = if args.len() > 6 {
+        args[6].get_int() as f64
+    } else {
+        0.0
+    };
 
-    JSValue::new_int(date_to_timestamp(
+    JSValue::new_float(date_to_timestamp(
         year,
         month + 1,
         day,
         hour,
         minute,
         second,
-    ))
+    ) as f64 + ms)
 }
 
 pub fn date_get_time(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_float(f64::NAN);
+    }
+
+    if let Some(_) = require_date_this(ctx, &args[0]) {
+        return JSValue::undefined();
     }
 
     if args[0].is_object() {
@@ -594,11 +663,12 @@ pub fn date_get_time(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_float(f64::NAN)
 }
 
-pub fn date_get_full_year(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -607,11 +677,12 @@ pub fn date_get_full_year(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_int(year as i64)
 }
 
-pub fn date_get_month(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -620,11 +691,12 @@ pub fn date_get_month(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_int(month as i64 - 1)
 }
 
-pub fn date_get_date(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -633,11 +705,12 @@ pub fn date_get_date(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_int(day as i64)
 }
 
-pub fn date_get_day(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_day(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -646,11 +719,12 @@ pub fn date_get_day(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_int(weekday as i64)
 }
 
-pub fn date_get_hours(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -659,11 +733,12 @@ pub fn date_get_hours(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_int(hour as i64)
 }
 
-pub fn date_get_minutes(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -672,11 +747,12 @@ pub fn date_get_minutes(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_int(minute as i64)
 }
 
-pub fn date_get_seconds(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -685,11 +761,12 @@ pub fn date_get_seconds(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_int(second as i64)
 }
 
-pub fn date_get_milliseconds(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        _ctx,
-    );
+pub fn date_get_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
@@ -698,7 +775,11 @@ pub fn date_get_milliseconds(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue 
     JSValue::new_int(ms as i64)
 }
 
-pub fn date_get_timezone_offset(_ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
+pub fn date_get_timezone_offset(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, &this) {
+        return JSValue::undefined();
+    }
     JSValue::new_int(0)
 }
 
@@ -769,11 +850,180 @@ pub fn date_get_utc_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSVal
     JSValue::new_int(ms as i64)
 }
 
+fn set_date_timestamp(ctx: &mut JSContext, this: &JSValue, ts: f64) -> JSValue {
+    if this.is_object() {
+        let obj = this.as_object_mut();
+        obj.set(ctx.common_atoms.__value__, JSValue::new_float(ts));
+    }
+    JSValue::new_float(ts)
+}
+
+fn arg_to_number(ctx: &mut JSContext, val: &JSValue) -> Option<f64> {
+    if val.is_int() {
+        return Some(val.get_int() as f64);
+    }
+    if val.is_float() {
+        return Some(val.get_float());
+    }
+    if val.is_undefined() {
+        return None;
+    }
+    if val.is_null() {
+        return Some(0.0);
+    }
+    if val.is_bool() {
+        if val.is_truthy() {
+            return Some(1.0);
+        }
+        return Some(0.0);
+    }
+    None
+}
+
+pub fn date_set_time(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let t = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    set_date_timestamp(ctx, this, t)
+}
+
+pub fn date_set_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    let ms = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let new_ts = (ts / 1000.0).floor() * 1000.0 + ms;
+    set_date_timestamp(ctx, this, new_ts)
+}
+
+pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    let sec = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let ms = args.get(2).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let (_, _, _, _, _, _, _) = if !ts.is_nan() { timestamp_to_date(ts) } else { return set_date_timestamp(ctx, this, f64::NAN) };
+    let (y, mo, d, h, mi, _, _) = timestamp_to_date(ts);
+    let new_ts = date_to_timestamp(y, mo, d, h, mi, sec as u32) as f64 + ms;
+    set_date_timestamp(ctx, this, new_ts)
+}
+
+pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    let min = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let sec = args.get(2).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let ms = args.get(3).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let (y, mo, d, h, _, _, _) = timestamp_to_date(ts);
+    let new_ts = date_to_timestamp(y, mo, d, h, min as u32, sec as u32) as f64 + ms;
+    set_date_timestamp(ctx, this, new_ts)
+}
+
+pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    let hr = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let min = args.get(2).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let sec = args.get(3).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let ms = args.get(4).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let (y, mo, d, _, _, _, _) = timestamp_to_date(ts);
+    let new_ts = date_to_timestamp(y, mo, d, hr as u32, min as u32, sec as u32) as f64 + ms;
+    set_date_timestamp(ctx, this, new_ts)
+}
+
+pub fn date_set_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    let d = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let (y, mo, _, h, mi, s, _) = timestamp_to_date(ts);
+    let new_ts = date_to_timestamp(y, mo, d as u32, h, mi, s) as f64 + ts % 1000.0;
+    set_date_timestamp(ctx, this, new_ts)
+}
+
+pub fn date_set_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    let mo = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let d = args.get(2).and_then(|v| arg_to_number(ctx, v));
+    let (y, _, day, h, mi, s, _) = timestamp_to_date(ts);
+    let day = d.unwrap_or(day as f64) as u32;
+    let new_ts = date_to_timestamp(y, (mo as u32) + 1, day, h, mi, s) as f64 + ts % 1000.0;
+    set_date_timestamp(ctx, this, new_ts)
+}
+
+pub fn date_set_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    let y = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let mo = args.get(2).and_then(|v| arg_to_number(ctx, v));
+    let d = args.get(3).and_then(|v| arg_to_number(ctx, v));
+    let (_, month, day, h, mi, s, _) = timestamp_to_date(ts);
+    let month = mo.unwrap_or(month as f64 - 1.0) as u32;
+    let day = d.unwrap_or(day as f64) as u32;
+    let new_ts = date_to_timestamp(y as i32, month + 1, day, h, mi, s) as f64 + ts % 1000.0;
+    set_date_timestamp(ctx, this, new_ts)
+}
+
+pub fn date_set_utc_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    date_set_milliseconds(ctx, args)
+}
+
+pub fn date_set_utc_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    date_set_seconds(ctx, args)
+}
+
+pub fn date_set_utc_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    date_set_minutes(ctx, args)
+}
+
+pub fn date_set_utc_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    date_set_hours(ctx, args)
+}
+
+pub fn date_set_utc_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    date_set_date(ctx, args)
+}
+
+pub fn date_set_utc_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    date_set_month(ctx, args)
+}
+
+pub fn date_set_utc_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    date_set_full_year(ctx, args)
+}
+
 pub fn date_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        ctx,
-    );
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_string(ctx.intern("Invalid Date"));
     }
@@ -799,10 +1049,11 @@ pub fn date_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 pub fn date_to_iso_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        ctx,
-    );
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_string(ctx.intern("Invalid Date"));
     }
@@ -822,10 +1073,11 @@ pub fn date_to_utc_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 pub fn date_to_date_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        ctx,
-    );
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_string(ctx.intern("Invalid Date"));
     }
@@ -848,10 +1100,11 @@ pub fn date_to_date_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 pub fn date_to_time_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let timestamp = get_date_timestamp_with_ctx(
-        &args.get(0).cloned().unwrap_or_else(JSValue::undefined),
-        ctx,
-    );
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         return JSValue::new_string(ctx.intern("Invalid Date"));
     }
@@ -864,10 +1117,14 @@ pub fn date_to_time_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 pub fn date_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() || !args[0].is_object() {
+    let this = args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, &this) {
+        return JSValue::undefined();
+    }
+    if !this.is_object() {
         return JSValue::new_float(f64::NAN);
     }
-    let obj = args[0].as_object();
+    let obj = this.as_object();
     let key = ctx.intern("__dateValue__");
     if let Some(ts) = obj.get(key) {
         return ts;
@@ -879,17 +1136,18 @@ pub fn date_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_float(f64::NAN)
 }
 
-fn date_to_json(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+pub fn date_to_json(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() || !args[0].is_object() {
         return JSValue::undefined();
     }
-    let obj = args[0].as_object();
+    let this_val = &args[0];
+    let obj = this_val.as_object();
     let to_iso = obj.get(ctx.intern("toISOString"));
     if let Some(fn_val) = to_iso {
         if fn_val.is_function() {
             if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
                 let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
-                match vm.call_function_with_this(ctx, fn_val, args[0], &[]) {
+                match vm.call_function_with_this(ctx, fn_val, *this_val, &[]) {
                     Ok(val) => return val,
                     Err(_) => {
                         if let Some(exc) = vm.last_caught_exception.take() {
@@ -928,13 +1186,17 @@ pub fn init_date_to_primitive(ctx: &mut JSContext) {
     if let Some(pv) = proto_val {
         if pv.is_object() {
             pv.as_object_mut()
-                .set(sym_atom, create_builtin_function(ctx, "date_toPrimitive"));
+                .set(sym_atom, create_builtin_function(ctx, "date_toPrimitive", 1));
         }
     }
 }
 
 pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
+        return JSValue::undefined();
+    }
+    let this = &args[0];
+    if let Some(_) = require_date_this(ctx, this) {
         return JSValue::undefined();
     }
     let hint_val = &args[1];
@@ -1027,6 +1289,13 @@ fn days_in_year(year: i32) -> i64 {
     if is_leap_year(year) { 366 } else { 365 }
 }
 
+fn time_clip(t: f64) -> f64 {
+    if t.is_nan() || t.abs() > 8.64e15 {
+        return f64::NAN;
+    }
+    t
+}
+
 pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let timestamp = if args.is_empty() {
         current_timestamp_ms()
@@ -1042,7 +1311,10 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             return JSValue::new_float(f64::NAN);
         }
     } else {
-        let year = args[0].get_int() as i32;
+        let mut year = args[0].get_int() as i32;
+        if year >= 0 && year <= 99 {
+            year += 1900;
+        }
         let month = if args.len() > 1 {
             args[1].get_int() as u32
         } else {
@@ -1068,13 +1340,22 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else {
             0
         };
+        let ms = if args.len() > 6 {
+            args[6].get_int() as f64
+        } else {
+            0.0
+        };
 
-        date_to_timestamp(year, month + 1, day.max(1), hour, minute, second) as f64
+        date_to_timestamp(year, month + 1, day.max(1), hour, minute, second) as f64 + ms
     };
 
     if timestamp.is_nan() {
         return JSValue::new_float(f64::NAN);
     }
 
-    JSValue::new_float(timestamp)
+    let clipped = time_clip(timestamp);
+    if clipped == 0.0 && clipped.is_sign_positive() {
+        return JSValue::new_float(0.0);
+    }
+    JSValue::new_float(clipped)
 }

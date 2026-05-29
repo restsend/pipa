@@ -1990,6 +1990,102 @@ fn init_date(ctx: &mut JSContext) {
         "date_toPrimitive",
         HostFunction::method("toPrimitive", 1, date::date_to_primitive),
     );
+    ctx.register_builtin(
+        "date_getUTCFullYear",
+        HostFunction::method("getUTCFullYear", 0, date::date_get_utc_full_year),
+    );
+    ctx.register_builtin(
+        "date_getUTCMonth",
+        HostFunction::method("getUTCMonth", 0, date::date_get_utc_month),
+    );
+    ctx.register_builtin(
+        "date_getUTCDate",
+        HostFunction::method("getUTCDate", 0, date::date_get_utc_date),
+    );
+    ctx.register_builtin(
+        "date_getUTCDay",
+        HostFunction::method("getUTCDay", 0, date::date_get_utc_day),
+    );
+    ctx.register_builtin(
+        "date_getUTCHours",
+        HostFunction::method("getUTCHours", 0, date::date_get_utc_hours),
+    );
+    ctx.register_builtin(
+        "date_getUTCMinutes",
+        HostFunction::method("getUTCMinutes", 0, date::date_get_utc_minutes),
+    );
+    ctx.register_builtin(
+        "date_getUTCSeconds",
+        HostFunction::method("getUTCSeconds", 0, date::date_get_utc_seconds),
+    );
+    ctx.register_builtin(
+        "date_getUTCMilliseconds",
+        HostFunction::method("getUTCMilliseconds", 0, date::date_get_utc_milliseconds),
+    );
+    ctx.register_builtin(
+        "date_setTime",
+        HostFunction::method("setTime", 1, date::date_set_time),
+    );
+    ctx.register_builtin(
+        "date_setMilliseconds",
+        HostFunction::method("setMilliseconds", 1, date::date_set_milliseconds),
+    );
+    ctx.register_builtin(
+        "date_setSeconds",
+        HostFunction::method("setSeconds", 2, date::date_set_seconds),
+    );
+    ctx.register_builtin(
+        "date_setMinutes",
+        HostFunction::method("setMinutes", 3, date::date_set_minutes),
+    );
+    ctx.register_builtin(
+        "date_setHours",
+        HostFunction::method("setHours", 4, date::date_set_hours),
+    );
+    ctx.register_builtin(
+        "date_setDate",
+        HostFunction::method("setDate", 1, date::date_set_date),
+    );
+    ctx.register_builtin(
+        "date_setMonth",
+        HostFunction::method("setMonth", 2, date::date_set_month),
+    );
+    ctx.register_builtin(
+        "date_setFullYear",
+        HostFunction::method("setFullYear", 3, date::date_set_full_year),
+    );
+    ctx.register_builtin(
+        "date_setUTCMilliseconds",
+        HostFunction::method("setUTCMilliseconds", 1, date::date_set_utc_milliseconds),
+    );
+    ctx.register_builtin(
+        "date_setUTCSeconds",
+        HostFunction::method("setUTCSeconds", 2, date::date_set_utc_seconds),
+    );
+    ctx.register_builtin(
+        "date_setUTCMinutes",
+        HostFunction::method("setUTCMinutes", 3, date::date_set_utc_minutes),
+    );
+    ctx.register_builtin(
+        "date_setUTCHours",
+        HostFunction::method("setUTCHours", 4, date::date_set_utc_hours),
+    );
+    ctx.register_builtin(
+        "date_setUTCDate",
+        HostFunction::method("setUTCDate", 1, date::date_set_utc_date),
+    );
+    ctx.register_builtin(
+        "date_setUTCMonth",
+        HostFunction::method("setUTCMonth", 2, date::date_set_utc_month),
+    );
+    ctx.register_builtin(
+        "date_setUTCFullYear",
+        HostFunction::method("setUTCFullYear", 3, date::date_set_utc_full_year),
+    );
+    ctx.register_builtin(
+        "date_toJSON",
+        HostFunction::method("toJSON", 1, date::date_to_json),
+    );
 
     date::init_date(ctx);
 }
