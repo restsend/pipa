@@ -8541,10 +8541,31 @@ fn loose_equal_slow(ctx: &JSContext, a: JSValue, b: JSValue) -> bool {
         if (a.is_object() && b.is_object()) || (a.is_function() && b.is_function()) {
             return a.strict_eq(&b);
         }
-
+        if b.is_bool() {
+            return loose_equal(ctx, a, JSValue::new_int(if b.get_bool() { 1 } else { 0 }));
+        }
+        if b.is_string() || b.is_int() || b.is_float() {
+            let obj = a.as_object();
+            if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+                if !v.is_object() && !v.is_function() {
+                    return loose_equal(ctx, v, b);
+                }
+            }
+        }
         return false;
     }
     if b.is_object() || b.is_function() {
+        if a.is_bool() {
+            return loose_equal(ctx, JSValue::new_int(if a.get_bool() { 1 } else { 0 }), b);
+        }
+        if a.is_string() || a.is_int() || a.is_float() {
+            let obj = b.as_object();
+            if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+                if !v.is_object() && !v.is_function() {
+                    return loose_equal(ctx, a, v);
+                }
+            }
+        }
         return false;
     }
 
