@@ -38,16 +38,47 @@ fn unwrap_wrapper_object(ctx: &mut JSContext, obj: &JSObject) -> Option<JSValue>
 }
 
 pub fn json_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() || !args[0].is_string() {
+    let text = if args.is_empty() {
+        "undefined".to_string()
+    } else if args[0].is_string() {
+        ctx.get_atom_str(args[0].get_atom()).to_string()
+    } else if args[0].is_undefined() {
+        "undefined".to_string()
+    } else if args[0].is_null() {
+        "null".to_string()
+    } else if args[0].is_bool() {
+        if args[0].is_truthy() { "true".to_string() } else { "false".to_string() }
+    } else if args[0].is_int() {
+        format!("{}", args[0].get_int())
+    } else if args[0].is_float() {
+        format!("{}", args[0].to_number())
+    } else if args[0].is_symbol() {
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert a Symbol value to a string")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
-    }
+    } else {
+        String::new()
+    };
 
-    let atom = args[0].get_atom();
-    let s = ctx.get_atom_str(atom).to_string();
-
-    match super::json_parser::JsonParser::new(&s).parse_value(ctx) {
+    match super::json_parser::JsonParser::new(&text).parse_value(ctx) {
         Ok(v) => v,
-        Err(_) => JSValue::undefined(),
+        Err(_) => {
+            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            if let Some(proto) = ctx.get_syntax_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("JSON.parse: unexpected character")));
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            JSValue::undefined()
+        }
     }
 }
 
