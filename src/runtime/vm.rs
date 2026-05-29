@@ -1708,6 +1708,45 @@ impl VM {
         }
 
         if let Some(ref rb) = js_func.bytecode {
+            if js_func.is_generator() {
+                let snapshot_this =
+                    if !js_func.is_strict() && (this_value.is_undefined() || this_value.is_null()) {
+                        ctx.global()
+                    } else {
+                        this_value
+                    };
+                let min_slots = 1 + args.len();
+                let snapshot_len = (rb.locals_count as usize).max(min_slots);
+                let mut snapshot = vec![JSValue::undefined(); snapshot_len];
+                snapshot[0] = snapshot_this;
+                for (i, arg) in args.iter().enumerate() {
+                    snapshot[i + 1] = *arg;
+                }
+                let has_params = (args.len() as u32) < rb.param_count as u32;
+                let (result_snapshot, result_pc, result_done) = if has_params {
+                    match self.execute_generator_step(ctx, rb, &snapshot, 0) {
+                        Ok((_val, new_snapshot, new_pc, done)) => (new_snapshot, new_pc, done),
+                        Err(_) => (snapshot, 0, false),
+                    }
+                } else {
+                    (snapshot, 0, false)
+                };
+                let mut gen_obj = crate::object::object::JSObject::new();
+                gen_obj.set_is_generator(true);
+                if let Some(proto_ptr) = ctx.get_generator_prototype() {
+                    gen_obj.prototype = Some(proto_ptr);
+                }
+                gen_obj.set_generator_state(crate::object::object::GeneratorState {
+                    bytecode: Box::new((**rb).clone()),
+                    snapshot: result_snapshot,
+                    pc: result_pc,
+                    done: result_done,
+                });
+                let gen_ptr = Box::into_raw(Box::new(gen_obj)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(gen_ptr);
+                return Ok(JSValue::new_object(gen_ptr));
+            }
+
             let saved_frame_index = self.frame_index;
             let saved_pc = self.pc;
             let saved_r0 = self.get_reg(0);
@@ -3230,6 +3269,11 @@ impl VM {
                         a.get_int() as f64
                     } else if a.is_float() {
                         a.get_float()
+                    } else if a.is_object() || a.is_function() {
+                        match crate::builtins::global::js_to_number_value(ctx, &a) {
+                            Ok(v) => v,
+                            Err(()) => f64::NAN,
+                        }
                     } else {
                         Self::js_to_number(&a, ctx)
                     };
@@ -3237,6 +3281,11 @@ impl VM {
                         b.get_int() as f64
                     } else if b.is_float() {
                         b.get_float()
+                    } else if b.is_object() || b.is_function() {
+                        match crate::builtins::global::js_to_number_value(ctx, &b) {
+                            Ok(v) => v,
+                            Err(()) => f64::NAN,
+                        }
                     } else {
                         Self::js_to_number(&b, ctx)
                     };

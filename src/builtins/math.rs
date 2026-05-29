@@ -435,14 +435,19 @@ fn f16_to_f64(bits: u16) -> f64 {
     }
 }
 
-fn math_hypot(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn math_hypot(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_float(0.0);
     }
     let mut has_inf = false;
     let mut sum_squares = 0.0;
     for arg in args {
-        let v = arg.to_number();
+        let v = match crate::builtins::global::js_to_number_value(ctx, arg) {
+            Ok(v) => v,
+            Err(()) => {
+                return JSValue::new_float(f64::NAN);
+            }
+        };
         if v.is_infinite() {
             has_inf = true;
         }
