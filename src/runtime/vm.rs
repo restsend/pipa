@@ -1711,6 +1711,8 @@ impl VM {
             let saved_frame_index = self.frame_index;
             let saved_pc = self.pc;
             let saved_r0 = self.get_reg(0);
+            let saved_exception_handlers = self.exception_handlers.clone();
+            self.exception_handlers.clear();
 
             let fn_this =
                 if !js_func.is_strict() && (this_value.is_undefined() || this_value.is_null()) {
@@ -1738,30 +1740,20 @@ impl VM {
             let result = self.execute_inner(ctx, rb, false, 0, false);
             let return_value = self.get_reg(0);
 
-            // If the function threw and there's a pending exception value,
-            // save it so we can redispatch after restoring the frame
             let pending_exc = result.as_ref().err().and_then(|_| self.pending_throw.take());
 
             while self.frame_index > saved_frame_index {
                 self.pop_frame(JSValue::undefined());
             }
             self.pc = saved_pc;
+            self.exception_handlers = saved_exception_handlers;
             self.refresh_cache();
             self.set_reg(0, saved_r0);
 
-            // If the call threw, redispatch the exception with the restored handlers
             if let Some(exc) = pending_exc {
                 self.last_caught_exception = Some(exc.clone());
-                self.pending_throw = Some(exc);
-                let exc_val = self.pending_throw.take().unwrap();
-                match self.dispatch_throw_value(ctx, exc_val) {
-                    ThrowDispatch::Caught => return Ok(JSValue::undefined()),
-                    ThrowDispatch::Uncaught(e) => return Err(e),
-                    ThrowDispatch::AsyncComplete(o) => match o {
-                        ExecutionOutcome::Complete(v) => return Ok(v),
-                        ExecutionOutcome::Yield(v) => return Ok(v),
-                    },
-                }
+                ctx.pending_exception = Some(exc);
+                return Err("".to_string());
             }
 
             return match result {
