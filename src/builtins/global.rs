@@ -98,7 +98,7 @@ pub fn init_globals(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "global_parseint",
-        HostFunction::new("parseInt", 1, global_parseint),
+        HostFunction::new("parseInt", 2, global_parseint),
     );
     ctx.register_builtin(
         "global_parsefloat",
@@ -1115,7 +1115,7 @@ fn init_number(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "number_parseInt",
-        HostFunction::new("parseInt", 1, global_parseint),
+        HostFunction::new("parseInt", 2, global_parseint),
     );
     ctx.register_builtin(
         "number_parseFloat",
