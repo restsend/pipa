@@ -930,6 +930,7 @@ fn init_json(ctx: &mut JSContext) {
     );
 
     let json_atom = ctx.intern("JSON");
+    let tag_key = symbol::get_symbol_to_string_tag_prop_key(ctx);
     let mut json_obj = JSObject::new();
     json_obj.set(
         ctx.intern("parse"),
@@ -939,8 +940,11 @@ fn init_json(ctx: &mut JSContext) {
         ctx.intern("stringify"),
         create_builtin_function(ctx, "json_stringify"),
     );
-    json_obj.define_property(
-        ctx.common_atoms.to_string_tag,
+    let json_ptr = Box::into_raw(Box::new(json_obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(json_ptr);
+    let json_value = JSValue::new_object(json_ptr);
+    json_value.as_object_mut().define_property(
+        tag_key,
         PropertyDescriptor {
             value: Some(JSValue::new_string(ctx.intern("JSON"))),
             writable: false,
@@ -950,9 +954,6 @@ fn init_json(ctx: &mut JSContext) {
             set: None,
         },
     );
-    let json_ptr = Box::into_raw(Box::new(json_obj)) as usize;
-    ctx.runtime_mut().gc_heap_mut().track(json_ptr);
-    let json_value = JSValue::new_object(json_ptr);
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
