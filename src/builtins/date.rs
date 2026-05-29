@@ -596,35 +596,35 @@ fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-pub fn date_utc(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+pub fn date_utc(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 3 {
         return JSValue::new_float(f64::NAN);
     }
 
-    let year = args[0].get_int() as i32;
-    let month = args[1].get_int() as u32;
+    let year = match to_number_arg(ctx, &args[0]) { Ok(n) => n as i32, Err(_) => return JSValue::undefined() };
+    let month = match to_number_arg(ctx, &args[1]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() };
     let day = if args.len() > 2 {
-        args[2].get_int() as u32
+        match to_number_arg(ctx, &args[2]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
     } else {
         1
     };
     let hour = if args.len() > 3 {
-        args[3].get_int() as u32
+        match to_number_arg(ctx, &args[3]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
     } else {
         0
     };
     let minute = if args.len() > 4 {
-        args[4].get_int() as u32
+        match to_number_arg(ctx, &args[4]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
     } else {
         0
     };
     let second = if args.len() > 5 {
-        args[5].get_int() as u32
+        match to_number_arg(ctx, &args[5]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
     } else {
         0
     };
     let ms = if args.len() > 6 {
-        args[6].get_int() as f64
+        match to_number_arg(ctx, &args[6]) { Ok(n) => n, Err(_) => return JSValue::undefined() }
     } else {
         0.0
     };
@@ -858,26 +858,60 @@ fn set_date_timestamp(ctx: &mut JSContext, this: &JSValue, ts: f64) -> JSValue {
     JSValue::new_float(ts)
 }
 
-fn arg_to_number(ctx: &mut JSContext, val: &JSValue) -> Option<f64> {
+fn to_number_arg(ctx: &mut JSContext, val: &JSValue) -> Result<f64, ()> {
+    if ctx.pending_exception.is_some() {
+        return Err(());
+    }
     if val.is_int() {
-        return Some(val.get_int() as f64);
+        return Ok(val.get_int() as f64);
     }
     if val.is_float() {
-        return Some(val.get_float());
-    }
-    if val.is_undefined() {
-        return None;
+        return Ok(val.get_float());
     }
     if val.is_null() {
-        return Some(0.0);
+        return Ok(0.0);
     }
     if val.is_bool() {
-        if val.is_truthy() {
-            return Some(1.0);
-        }
-        return Some(0.0);
+        return Ok(if val.is_truthy() { 1.0 } else { 0.0 });
     }
-    None
+    if val.is_undefined() {
+        return Ok(f64::NAN);
+    }
+    if val.is_string() {
+        let s = ctx.get_atom_str(val.get_atom()).to_string();
+        let s = s.trim();
+        if s.is_empty() {
+            return Ok(0.0);
+        }
+        if let Ok(n) = s.parse::<i64>() {
+            return Ok(n as f64);
+        }
+        if let Ok(f) = s.parse::<f64>() {
+            return Ok(f);
+        }
+        return Ok(f64::NAN);
+    }
+    match crate::builtins::global::js_to_number_value(ctx, val) {
+        Ok(n) => {
+            if ctx.pending_exception.is_some() {
+                return Err(());
+            }
+            Ok(n)
+        }
+        Err(_) => Err(()),
+    }
+}
+
+fn coerce_arg(ctx: &mut JSContext, val: Option<&JSValue>) -> Result<Option<f64>, ()> {
+    match val {
+        None => Ok(None),
+        Some(v) => {
+            if v.is_undefined() {
+                return Ok(None);
+            }
+            to_number_arg(ctx, v).map(Some)
+        }
+    }
 }
 
 pub fn date_set_time(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -885,8 +919,12 @@ pub fn date_set_time(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if let Some(_) = require_date_this(ctx, this) {
         return JSValue::undefined();
     }
-    let t = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
-    set_date_timestamp(ctx, this, t)
+    let t = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
+    set_date_timestamp(ctx, this, time_clip(t))
 }
 
 pub fn date_set_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -895,9 +933,13 @@ pub fn date_set_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
-    let ms = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let ms = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
     let new_ts = (ts / 1000.0).floor() * 1000.0 + ms;
-    set_date_timestamp(ctx, this, new_ts)
+    set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
 pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -906,12 +948,20 @@ pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
-    let sec = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
-    let ms = args.get(2).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
-    let (_, _, _, _, _, _, _) = if !ts.is_nan() { timestamp_to_date(ts) } else { return set_date_timestamp(ctx, this, f64::NAN) };
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    let sec = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
+    let ms = match coerce_arg(ctx, args.get(2)) {
+        Ok(Some(n)) => n,
+        Ok(None) => ts % 1000.0,
+        Err(()) => return JSValue::undefined(),
+    };
     let (y, mo, d, h, mi, _, _) = timestamp_to_date(ts);
     let new_ts = date_to_timestamp(y, mo, d, h, mi, sec as u32) as f64 + ms;
-    set_date_timestamp(ctx, this, new_ts)
+    set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
 pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -921,12 +971,24 @@ pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
     if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
-    let min = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
-    let sec = args.get(2).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
-    let ms = args.get(3).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let min = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
+    let sec = match coerce_arg(ctx, args.get(2)) {
+        Ok(Some(n)) => n,
+        Ok(None) => ((ts / 1000.0) % 60.0).floor(),
+        Err(()) => return JSValue::undefined(),
+    };
+    let ms = match coerce_arg(ctx, args.get(3)) {
+        Ok(Some(n)) => n,
+        Ok(None) => ts % 1000.0,
+        Err(()) => return JSValue::undefined(),
+    };
     let (y, mo, d, h, _, _, _) = timestamp_to_date(ts);
     let new_ts = date_to_timestamp(y, mo, d, h, min as u32, sec as u32) as f64 + ms;
-    set_date_timestamp(ctx, this, new_ts)
+    set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
 pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -936,13 +998,29 @@ pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
     if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
-    let hr = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
-    let min = args.get(2).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
-    let sec = args.get(3).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
-    let ms = args.get(4).and_then(|v| arg_to_number(ctx, v)).unwrap_or(0.0);
+    let hr = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
+    let min = match coerce_arg(ctx, args.get(2)) {
+        Ok(Some(n)) => n,
+        Ok(None) => ((ts / 60000.0) % 60.0).floor(),
+        Err(()) => return JSValue::undefined(),
+    };
+    let sec = match coerce_arg(ctx, args.get(3)) {
+        Ok(Some(n)) => n,
+        Ok(None) => ((ts / 1000.0) % 60.0).floor(),
+        Err(()) => return JSValue::undefined(),
+    };
+    let ms = match coerce_arg(ctx, args.get(4)) {
+        Ok(Some(n)) => n,
+        Ok(None) => ts % 1000.0,
+        Err(()) => return JSValue::undefined(),
+    };
     let (y, mo, d, _, _, _, _) = timestamp_to_date(ts);
     let new_ts = date_to_timestamp(y, mo, d, hr as u32, min as u32, sec as u32) as f64 + ms;
-    set_date_timestamp(ctx, this, new_ts)
+    set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
 pub fn date_set_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -952,10 +1030,14 @@ pub fn date_set_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
     if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
-    let d = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
+    let d = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
     let (y, mo, _, h, mi, s, _) = timestamp_to_date(ts);
     let new_ts = date_to_timestamp(y, mo, d as u32, h, mi, s) as f64 + ts % 1000.0;
-    set_date_timestamp(ctx, this, new_ts)
+    set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
 pub fn date_set_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -965,12 +1047,20 @@ pub fn date_set_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
     if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
-    let mo = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
-    let d = args.get(2).and_then(|v| arg_to_number(ctx, v));
+    let mo = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
+    let d_val = coerce_arg(ctx, args.get(2));
     let (y, _, day, h, mi, s, _) = timestamp_to_date(ts);
-    let day = d.unwrap_or(day as f64) as u32;
+    let day = match d_val {
+        Ok(Some(n)) => n as u32,
+        Ok(None) => day,
+        Err(()) => return JSValue::undefined(),
+    };
     let new_ts = date_to_timestamp(y, (mo as u32) + 1, day, h, mi, s) as f64 + ts % 1000.0;
-    set_date_timestamp(ctx, this, new_ts)
+    set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
 pub fn date_set_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -980,14 +1070,26 @@ pub fn date_set_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
     if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
-    let y = args.get(1).and_then(|v| arg_to_number(ctx, v)).unwrap_or(f64::NAN);
-    let mo = args.get(2).and_then(|v| arg_to_number(ctx, v));
-    let d = args.get(3).and_then(|v| arg_to_number(ctx, v));
+    let y = match coerce_arg(ctx, args.get(1)) {
+        Ok(Some(n)) => n,
+        Ok(None) => f64::NAN,
+        Err(()) => return JSValue::undefined(),
+    };
+    let mo_val = coerce_arg(ctx, args.get(2));
+    let d_val = coerce_arg(ctx, args.get(3));
     let (_, month, day, h, mi, s, _) = timestamp_to_date(ts);
-    let month = mo.unwrap_or(month as f64 - 1.0) as u32;
-    let day = d.unwrap_or(day as f64) as u32;
+    let month = match mo_val {
+        Ok(Some(n)) => n as u32,
+        Ok(None) => month - 1,
+        Err(()) => return JSValue::undefined(),
+    };
+    let day = match d_val {
+        Ok(Some(n)) => n as u32,
+        Ok(None) => day,
+        Err(()) => return JSValue::undefined(),
+    };
     let new_ts = date_to_timestamp(y as i32, month + 1, day, h, mi, s) as f64 + ts % 1000.0;
-    set_date_timestamp(ctx, this, new_ts)
+    set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
 pub fn date_set_utc_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1300,50 +1402,60 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let timestamp = if args.is_empty() {
         current_timestamp_ms()
     } else if args.len() == 1 {
-        if args[0].is_int() {
-            args[0].get_int() as f64
-        } else if args[0].is_float() {
-            args[0].get_float()
-        } else if args[0].is_string() {
-            let s = ctx.get_atom_str(args[0].get_atom()).to_string();
-            parse_date_string(&s)
-        } else {
-            return JSValue::new_float(f64::NAN);
+        match to_number_arg(ctx, &args[0]) {
+            Ok(n) => {
+                if n.is_nan() && args[0].is_string() {
+                    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+                    let parsed = parse_date_string(&s);
+                    if !parsed.is_nan() {
+                        time_clip(parsed)
+                    } else {
+                        f64::NAN
+                    }
+                } else {
+                    n
+                }
+            }
+            Err(()) => return JSValue::undefined(),
         }
     } else {
-        let mut year = args[0].get_int() as i32;
+        let year_val = match to_number_arg(ctx, &args[0]) {
+            Ok(n) => n as i32,
+            Err(()) => return JSValue::undefined(),
+        };
+        let mut year = year_val;
         if year >= 0 && year <= 99 {
             year += 1900;
         }
-        let month = if args.len() > 1 {
-            args[1].get_int() as u32
-        } else {
-            0
+        let month = match coerce_arg(ctx, args.get(1)) {
+            Ok(Some(n)) => n as u32,
+            Ok(None) => 0,
+            Err(()) => return JSValue::undefined(),
         };
-        let day = if args.len() > 2 {
-            args[2].get_int() as u32
-        } else {
-            1
+        let day = match coerce_arg(ctx, args.get(2)) {
+            Ok(Some(n)) => n as u32,
+            Ok(None) => 1,
+            Err(()) => return JSValue::undefined(),
         };
-        let hour = if args.len() > 3 {
-            args[3].get_int() as u32
-        } else {
-            0
+        let hour = match coerce_arg(ctx, args.get(3)) {
+            Ok(Some(n)) => n as u32,
+            Ok(None) => 0,
+            Err(()) => return JSValue::undefined(),
         };
-        let minute = if args.len() > 4 {
-            args[4].get_int() as u32
-        } else {
-            0
+        let minute = match coerce_arg(ctx, args.get(4)) {
+            Ok(Some(n)) => n as u32,
+            Ok(None) => 0,
+            Err(()) => return JSValue::undefined(),
         };
-        let second = if args.len() > 5 {
-            args[5].get_int() as u32
-        } else {
-            0
+        let second = match coerce_arg(ctx, args.get(5)) {
+            Ok(Some(n)) => n as u32,
+            Ok(None) => 0,
+            Err(()) => return JSValue::undefined(),
         };
-        let ms = if args.len() > 6 {
-            args[6].get_int() as f64
-        } else {
-            0.0
+        let ms = match coerce_arg(ctx, args.get(6)) {
+            Ok(Some(n)) => n,
+            Ok(None) => 0.0,
+            Err(()) => return JSValue::undefined(),
         };
 
         date_to_timestamp(year, month + 1, day.max(1), hour, minute, second) as f64 + ms
