@@ -277,22 +277,22 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta, harness_code
         }
     }
 
-    let test_code = if meta.flags.contains(&"onlyStrict".to_string()) {
+    let strict_prefix = if meta.flags.contains(&"onlyStrict".to_string()) {
         if !code.trim_start().starts_with("\"use strict\"")
             && !code.trim_start().starts_with("'use strict'")
         {
-            format!("\"use strict\";\n{}", code)
+            "\"use strict\";\n"
         } else {
-            code.to_string()
+            ""
         }
     } else {
-        code.to_string()
+        ""
     };
 
     let full_code = if harness_code.is_empty() {
-        test_code
+        format!("{}{}", strict_prefix, code)
     } else {
-        format!("{}\n{}", harness_code, test_code)
+        format!("{}{}\n{}", strict_prefix, harness_code, code)
     };
 
     match eval(ctx, &full_code) {
