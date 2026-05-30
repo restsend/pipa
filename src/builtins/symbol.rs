@@ -51,6 +51,9 @@ fn symbol_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             Some(desc_val.get_atom())
         } else if desc_val.is_undefined() {
             None
+        } else if desc_val.is_symbol() {
+            throw_type_error(ctx, "Cannot convert a Symbol value to a string");
+            return JSValue::undefined();
         } else {
             let s = if desc_val.is_int() {
                 desc_val.get_int().to_string()
