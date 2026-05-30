@@ -24,7 +24,7 @@ fn throw_type_error(ctx: &mut JSContext, msg: &str) {
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
+    let mut func = JSFunction::new_builtin(ctx.intern(name), 0);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -244,6 +244,26 @@ fn symbol_description(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         JSValue::new_string(desc_atom)
     }
+}
+
+fn symbol_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
+        throw_type_error(ctx, "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol");
+        return JSValue::undefined();
+    }
+    let this_val = &args[0];
+    if this_val.is_symbol() {
+        return this_val.clone();
+    }
+    if this_val.is_object() {
+        if let Some(v) = this_val.as_object().get(ctx.common_atoms.__value__) {
+            if v.is_symbol() {
+                return v;
+            }
+        }
+    }
+    throw_type_error(ctx, "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol");
+    JSValue::undefined()
 }
 
 fn symbol_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -531,6 +551,7 @@ pub fn init_symbol(ctx: &mut JSContext) {
     let to_string_fn = create_builtin_function(ctx, "symbol_toString");
     let value_of_fn = create_builtin_function(ctx, "symbol_valueOf");
     let description_fn = create_builtin_function(ctx, "symbol_description");
+    let to_primitive_fn = create_builtin_function(ctx, "symbol_toPrimitive");
     sym_proto.set(ctx.intern("toString"), to_string_fn.clone());
     sym_proto.set(ctx.intern("valueOf"), value_of_fn.clone());
 
@@ -603,6 +624,20 @@ pub fn init_symbol(ctx: &mut JSContext) {
         },
     );
 
+    let symbol_to_primitive_sym = get_or_create_well_known_symbol(ctx, SYMBOL_TO_PRIMITIVE_DESC);
+    let to_prim_key = crate::runtime::atom::Atom(0x40000000 | symbol_to_primitive_sym.get_symbol_id());
+    proto_value.as_object_mut().define_property(
+        to_prim_key,
+        crate::object::object::PropertyDescriptor {
+            value: Some(to_primitive_fn),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+
     let symbol_atom = ctx.intern("Symbol");
     let global = ctx.global();
     if global.is_object() {
@@ -632,6 +667,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "symbol_description",
         HostFunction::method("description", 0, symbol_description),
+    );
+    ctx.register_builtin(
+        "symbol_toPrimitive",
+        HostFunction::method("[Symbol.toPrimitive]", 1, symbol_to_primitive),
     );
 }
 
