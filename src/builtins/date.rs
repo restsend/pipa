@@ -1599,21 +1599,25 @@ pub fn init_date_to_primitive(ctx: &mut JSContext) {
     let proto_val = date_ctor.as_object().get(proto_key);
     if let Some(pv) = proto_val {
         if pv.is_object() {
-            pv.as_object_mut()
-                .set(sym_atom, create_builtin_function(ctx, "date_toPrimitive", 1, None));
+            let fn_val = create_builtin_function(ctx, "date_toPrimitive", 1, Some("[Symbol.toPrimitive]"));
+            pv.as_object_mut().define_property(sym_atom, crate::object::object::PropertyDescriptor {
+                value: Some(fn_val),
+                writable: false,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            });
         }
     }
 }
 
 pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::undefined();
-    }
-    let this = &args[0];
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
     if let Some(_) = require_date_this(ctx, this) {
         return JSValue::undefined();
     }
-    let hint_val = &args[1];
+    let hint_val = args.get(1).cloned().unwrap_or_else(|| JSValue::new_string(ctx.intern("default")));
     let hint = if hint_val.is_string() {
         ctx.get_atom_str(hint_val.get_atom())
     } else {
