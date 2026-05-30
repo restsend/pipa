@@ -1485,7 +1485,7 @@ fn time_clip(t: f64) -> f64 {
     if t.is_nan() || t.abs() > 8.64e15 {
         return f64::NAN;
     }
-    t
+    t + 0.0
 }
 
 pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
