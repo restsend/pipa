@@ -813,7 +813,7 @@ pub fn date_get_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(f64::NAN);
     }
 
-    let (year, _, _, _, _, _, _) = timestamp_to_date(timestamp);
+    let (year, _, _, _, _, _, _, _) = timestamp_to_date(timestamp);
     JSValue::new_int(year as i64)
 }
 
@@ -827,7 +827,7 @@ pub fn date_get_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(f64::NAN);
     }
 
-    let (_, month, _, _, _, _, _) = timestamp_to_date(timestamp);
+    let (_, month, _, _, _, _, _, _) = timestamp_to_date(timestamp);
     JSValue::new_int(month as i64 - 1)
 }
 
@@ -841,7 +841,7 @@ pub fn date_get_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(f64::NAN);
     }
 
-    let (_, _, day, _, _, _, _) = timestamp_to_date(timestamp);
+    let (_, _, day, _, _, _, _, _) = timestamp_to_date(timestamp);
     JSValue::new_int(day as i64)
 }
 
@@ -855,7 +855,7 @@ pub fn date_get_day(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(f64::NAN);
     }
 
-    let (_, _, _, _, _, _, weekday) = timestamp_to_date(timestamp);
+    let (_, _, _, _, _, _, weekday, _) = timestamp_to_date(timestamp);
     JSValue::new_int(weekday as i64)
 }
 
@@ -869,7 +869,7 @@ pub fn date_get_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(f64::NAN);
     }
 
-    let (_, _, _, hour, _, _, _) = timestamp_to_date(timestamp);
+    let (_, _, _, hour, _, _, _, _) = timestamp_to_date(timestamp);
     JSValue::new_int(hour as i64)
 }
 
@@ -883,7 +883,7 @@ pub fn date_get_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(f64::NAN);
     }
 
-    let (_, _, _, _, minute, _, _) = timestamp_to_date(timestamp);
+    let (_, _, _, _, minute, _, _, _) = timestamp_to_date(timestamp);
     JSValue::new_int(minute as i64)
 }
 
@@ -897,7 +897,7 @@ pub fn date_get_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(f64::NAN);
     }
 
-    let (_, _, _, _, _, second, _) = timestamp_to_date(timestamp);
+    let (_, _, _, _, _, second, _, _) = timestamp_to_date(timestamp);
     JSValue::new_int(second as i64)
 }
 
@@ -967,19 +967,19 @@ macro_rules! date_get_utc_field {
             if ts.is_nan() {
                 return JSValue::new_float(f64::NAN);
             }
-            let (year, month, day, hour, minute, second, weekday) = timestamp_to_date(ts);
-            JSValue::new_int($field(year, month, day, hour, minute, second, weekday))
+            let (year, month, day, hour, minute, second, weekday, ms_part) = timestamp_to_date(ts);
+            JSValue::new_int($field(year, month, day, hour, minute, second, weekday, ms_part))
         }
     };
 }
 
-date_get_utc_field!(date_get_utc_full_year, |y,_,_,_,_,_,_| y as i64);
-date_get_utc_field!(date_get_utc_month, |_,m,_,_,_,_,_| m as i64 - 1);
-date_get_utc_field!(date_get_utc_date, |_,_,d,_,_,_,_| d as i64);
-date_get_utc_field!(date_get_utc_day, |_,_,_,_,_,_,w| w as i64);
-date_get_utc_field!(date_get_utc_hours, |_,_,_,h,_,_,_| h as i64);
-date_get_utc_field!(date_get_utc_minutes, |_,_,_,_,m,_,_| m as i64);
-date_get_utc_field!(date_get_utc_seconds, |_,_,_,_,_,s,_| s as i64);
+date_get_utc_field!(date_get_utc_full_year, |y,_,_,_,_,_,_,_| y as i64);
+date_get_utc_field!(date_get_utc_month, |_,m,_,_,_,_,_,_| m as i64 - 1);
+date_get_utc_field!(date_get_utc_date, |_,_,d,_,_,_,_,_| d as i64);
+date_get_utc_field!(date_get_utc_day, |_,_,_,_,_,_,w,_| w as i64);
+date_get_utc_field!(date_get_utc_hours, |_,_,_,h,_,_,_,_| h as i64);
+date_get_utc_field!(date_get_utc_minutes, |_,_,_,_,m,_,_,_| m as i64);
+date_get_utc_field!(date_get_utc_seconds, |_,_,_,_,_,s,_,_| s as i64);
 
 pub fn date_get_utc_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = args.get(0).cloned().unwrap_or_else(JSValue::undefined);
@@ -1279,7 +1279,7 @@ pub fn date_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_string(ctx.intern("Invalid Date"));
     }
 
-    let (year, month, day, hour, minute, second, weekday) = timestamp_to_date(timestamp);
+    let (year, month, day, hour, minute, second, weekday, _) = timestamp_to_date(timestamp);
     let weekday_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     let month_names = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -1306,14 +1306,23 @@ pub fn date_to_iso_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
-        return JSValue::new_string(ctx.intern("Invalid Date"));
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Invalid time value")));
+        if let Some(proto) = ctx.get_range_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     }
 
-    let (year, month, day, hour, minute, second, _) = timestamp_to_date(timestamp);
+    let (year, month, day, hour, minute, second, _, ms) = timestamp_to_date(timestamp);
 
     let result = format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.000Z",
-        year, month, day, hour, minute, second
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        year, month, day, hour, minute, second, ms
     );
 
     JSValue::new_string(ctx.intern(&result))
@@ -1333,7 +1342,7 @@ pub fn date_to_date_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_string(ctx.intern("Invalid Date"));
     }
 
-    let (year, month, day, _, _, _, weekday) = timestamp_to_date(timestamp);
+    let (year, month, day, _, _, _, weekday, _) = timestamp_to_date(timestamp);
     let weekday_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     let month_names = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -1360,7 +1369,7 @@ pub fn date_to_time_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_string(ctx.intern("Invalid Date"));
     }
 
-    let (_, _, _, hour, minute, second, _) = timestamp_to_date(timestamp);
+    let (_, _, _, hour, minute, second, _, _) = timestamp_to_date(timestamp);
 
     let result = format!("{:02}:{:02}:{:02} GMT+0000 (UTC)", hour, minute, second);
 
@@ -1486,9 +1495,9 @@ fn get_date_timestamp_with_ctx(this: &JSValue, ctx: &mut JSContext) -> f64 {
     f64::NAN
 }
 
-fn timestamp_to_date(ms: f64) -> (i32, u32, u32, u32, u32, u32, u32) {
+fn timestamp_to_date(ms: f64) -> (i32, u32, u32, u32, u32, u32, u32, u32) {
     if ms.is_nan() || ms.is_infinite() {
-        return (0, 0, 0, 0, 0, 0, 0);
+        return (0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     let total_ms = ms as i64;
@@ -1531,9 +1540,10 @@ fn timestamp_to_date(ms: f64) -> (i32, u32, u32, u32, u32, u32, u32) {
     let hour = ((total_hours % 24 + 24) % 24) as u32;
     let minute = ((total_minutes % 60 + 60) % 60) as u32;
     let second = ((total_seconds % 60 + 60) % 60) as u32;
+    let ms_part = (total_ms % 1000 + 1000) % 1000;
     let weekday = ((total_days % 7 + 4 + 7) % 7) as u32;
 
-    (year, month, day, hour, minute, second, weekday)
+    (year, month, day, hour, minute, second, weekday, ms_part as u32)
 }
 
 fn make_day_from_parts(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32, ms: u32) -> f64 {
