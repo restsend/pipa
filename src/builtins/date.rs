@@ -623,7 +623,7 @@ fn make_day(year: f64, month: f64, date: f64) -> f64 {
     let y = year as i64;
     let m = month as i64;
     let d = date as i64;
-    let ym = y + m / 12;
+    let ym = y + (m as f64 / 12.0).floor() as i64;
     let mn = m % 12;
     let mn = if mn < 0 { mn + 12 } else { mn };
     let day = day_from_year(ym) + month_to_day_in_year(mn as i32, is_leap_year(ym as i32)) as i64 + d - 1;
