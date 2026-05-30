@@ -989,17 +989,24 @@ fn require_date_this(ctx: &mut JSContext, this: &JSValue) -> Option<JSValue> {
         return Some(JSValue::undefined());
     }
     let obj = this.as_object();
-    if obj.get(ctx.intern("__dateValue__")).is_none() && obj.get(ctx.common_atoms.__value__).is_none() {
-        let mut err = JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Date object")));
-        if let Some(proto) = ctx.get_type_error_prototype() {
-            err.prototype = Some(proto);
+    if obj.get(ctx.intern("__dateValue__")).is_none() {
+        let has_value = if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+            v.is_float() || v.is_int()
+        } else {
+            false
+        };
+        if !has_value {
+            let mut err = JSObject::new();
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Date object")));
+            if let Some(proto) = ctx.get_type_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return Some(JSValue::undefined());
         }
-        let ptr = Box::into_raw(Box::new(err)) as usize;
-        ctx.runtime_mut().gc_heap_mut().track(ptr);
-        ctx.pending_exception = Some(JSValue::new_object(ptr));
-        return Some(JSValue::undefined());
     }
     None
 }
