@@ -782,7 +782,7 @@ fn object_is_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 }
 
-fn object_property_is_enumerable(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn object_property_is_enumerable(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::bool(false);
     }
@@ -790,7 +790,7 @@ fn object_property_is_enumerable(_ctx: &mut JSContext, args: &[JSValue]) -> JSVa
     if !is_object_like(this) {
         return JSValue::bool(false);
     }
-    let Some(atom) = to_property_atom(_ctx, &args[1]) else {
+    let Some(atom) = to_property_atom(ctx, &args[1]) else {
         return JSValue::bool(false);
     };
     let obj = this.as_object();
@@ -1206,19 +1206,41 @@ fn object_get_own_property_descriptors(ctx: &mut JSContext, args: &[JSValue]) ->
 }
 
 fn object_get_own_property_names(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let mut result = JSObject::new_array();
-    if let Some(proto_ptr) = ctx.get_array_prototype() {
-        result.prototype = Some(proto_ptr);
+    if args.is_empty() || args[0].is_null() || args[0].is_undefined() {
+        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Object.getOwnPropertyNames called on non-object")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     }
 
-    if args.is_empty() || !(args[0].is_object() || args[0].is_function()) {
+    let arg = &args[0];
+    let obj_val = if arg.is_object() || arg.is_function() {
+        arg.clone()
+    } else if arg.is_string() {
+        let mut wrapper = crate::object::object::JSObject::new();
+        if let Some(proto) = ctx.get_object_prototype() {
+            wrapper.prototype = Some(proto);
+        }
+        wrapper.set(ctx.common_atoms.length, JSValue::new_int(arg.get_atom().0 as i64));
+        let ptr = Box::into_raw(Box::new(wrapper)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        JSValue::new_object(ptr)
+    } else {
+        let mut result = JSObject::new_array();
+        if let Some(proto_ptr) = ctx.get_array_prototype() {
+            result.prototype = Some(proto_ptr);
+        }
         result.set(ctx.common_atoms.length, JSValue::new_int(0));
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
-    }
+    };
 
-    let obj = &args[0];
-    let obj_ref = obj.as_object();
+    let obj_ref = obj_val.as_object();
 
     let mut names: Vec<Atom> = obj_ref
         .keys()
@@ -1240,6 +1262,11 @@ fn object_get_own_property_names(ctx: &mut JSContext, args: &[JSValue]) -> JSVal
             (false, false) => std::cmp::Ordering::Equal,
         }
     });
+
+    let mut result = JSObject::new_array();
+    if let Some(proto_ptr) = ctx.get_array_prototype() {
+        result.prototype = Some(proto_ptr);
+    }
 
     result.set(
         ctx.common_atoms.length,
