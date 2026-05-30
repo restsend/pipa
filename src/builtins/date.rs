@@ -680,18 +680,28 @@ fn make_day_count(year: i32, month: u32, day: u32) -> i64 {
     days
 }
 
-fn to_integer(val: f64) -> i64 {
+fn to_integer_i64(val: f64) -> i64 {
     if val.is_nan() || val.is_infinite() {
         return 0;
     }
     val.trunc() as i64
 }
 
+fn to_integer_f64(val: f64) -> f64 {
+    if val.is_nan() {
+        return 0.0;
+    }
+    if val.is_infinite() {
+        return val;
+    }
+    val.trunc()
+}
+
 fn make_time_ms(hour: f64, minute: f64, second: f64, ms: f64) -> f64 {
-    let h = to_integer(hour) as f64;
-    let m = to_integer(minute) as f64;
-    let s = to_integer(second) as f64;
-    let milli = to_integer(ms) as f64;
+    let h = to_integer_f64(hour);
+    let m = to_integer_f64(minute);
+    let s = to_integer_f64(second);
+    let milli = to_integer_f64(ms);
     h * 3600000.0 + m * 60000.0 + s * 1000.0 + milli
 }
 
@@ -726,7 +736,7 @@ pub fn date_utc(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if year_val.is_nan() || year_val.is_infinite() {
         return JSValue::new_float(f64::NAN);
     }
-    let year_int = to_integer(year_val);
+    let year_int = to_integer_i64(year_val);
     let mut year = year_int as i32;
     if year_int >= 0 && year_int <= 99 {
         year += 1900;
@@ -762,7 +772,7 @@ pub fn date_utc(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         y += extra_years;
     }
 
-    let day_int = to_integer(day_val);
+    let day_int = to_integer_i64(day_val);
     let day = make_day_count(y, (m as u32) + 1, 1) + day_int - 1;
     let time = make_time_ms(hour_val, minute_val, second_val, ms_val);
     let ts = (day as f64) * 86400000.0 + time;
@@ -909,6 +919,10 @@ pub fn date_get_timezone_offset(ctx: &mut JSContext, args: &[JSValue]) -> JSValu
     let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
     if let Some(_) = require_date_this(ctx, &this) {
         return JSValue::undefined();
+    }
+    let ts = get_date_timestamp_with_ctx(&this, ctx);
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
     }
     JSValue::new_int(0)
 }
