@@ -1564,17 +1564,63 @@ pub fn date_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 pub fn date_to_json(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() || !args[0].is_object() {
+    let this_val = args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if !this_val.is_object() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
-    let this_val = &args[0];
     let obj = this_val.as_object();
+    let mut tv = JSValue::undefined();
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        for method_name in &["valueOf", "toString"] {
+            let method_key = ctx.intern(method_name);
+            if let Some(method) = obj.get(method_key) {
+                if method.is_function() {
+                    match vm.call_function_with_this(ctx, method, this_val, &[]) {
+                        Ok(result) => {
+                            if !result.is_object() {
+                                tv = result;
+                                break;
+                            }
+                        }
+                        Err(_) => {
+                            if let Some(exc) = vm.last_caught_exception.take() {
+                                ctx.pending_exception = Some(exc);
+                            }
+                            return JSValue::undefined();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if tv.is_float() {
+        let f = tv.get_float();
+        if f.is_nan() || f.is_infinite() {
+            return JSValue::null();
+        }
+    }
+    if tv.is_int() {
+        // finite integer, continue to toISOString
+    } else if tv.is_string() {
+        // String result from toString — wrap as Date and call toISOString
+        // For now, try toISOString on the original this
+    }
     let to_iso = obj.get(ctx.intern("toISOString"));
     if let Some(fn_val) = to_iso {
         if fn_val.is_function() {
             if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
                 let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
-                match vm.call_function_with_this(ctx, fn_val, *this_val, &[]) {
+                match vm.call_function_with_this(ctx, fn_val, this_val, &[]) {
                     Ok(val) => return val,
                     Err(_) => {
                         if let Some(exc) = vm.last_caught_exception.take() {
