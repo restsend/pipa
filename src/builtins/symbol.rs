@@ -31,7 +31,7 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     JSValue::new_function(ptr)
 }
 
-const NO_DESCRIPTION: Atom = Atom(u32::MAX);
+pub const NO_DESCRIPTION: Atom = Atom(u32::MAX);
 
 fn create_symbol(ctx: &mut JSContext, description: Option<Atom>) -> JSValue {
     let desc = description.unwrap_or(NO_DESCRIPTION);

@@ -537,6 +537,14 @@ fn string_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             JSValue::new_string(ctx.common_atoms.null)
         } else if val.is_undefined() {
             JSValue::new_string(ctx.common_atoms.undefined)
+        } else if val.is_symbol() {
+            let desc_atom = val.get_atom();
+            if desc_atom == crate::builtins::symbol::NO_DESCRIPTION {
+                JSValue::new_string(ctx.intern("Symbol()"))
+            } else {
+                let desc = ctx.get_atom_str(desc_atom);
+                JSValue::new_string(ctx.intern(&format!("Symbol({})", desc)))
+            }
         } else if val.is_object() {
             JSValue::new_string(ctx.intern("[object Object]"))
         } else {
