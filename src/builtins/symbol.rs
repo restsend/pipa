@@ -23,8 +23,8 @@ fn throw_type_error(ctx: &mut JSContext, msg: &str) {
     ctx.pending_exception = Some(JSValue::new_object(ptr));
 }
 
-fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = JSFunction::new_builtin(ctx.intern(name), 0);
+fn create_builtin_function(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
+    let mut func = JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -334,6 +334,9 @@ const SYMBOL_SPLIT_DESC: &str = "Symbol.split";
 const SYMBOL_UNSCOPABLES_DESC: &str = "Symbol.unscopables";
 const SYMBOL_HAS_INSTANCE_DESC: &str = "Symbol.hasInstance";
 const SYMBOL_ASYNC_ITERATOR_DESC: &str = "Symbol.asyncIterator";
+const SYMBOL_MATCH_ALL_DESC: &str = "Symbol.matchAll";
+const SYMBOL_ASYNC_DISPOSE_DESC: &str = "Symbol.asyncDispose";
+const SYMBOL_DISPOSE_DESC: &str = "Symbol.dispose";
 
 pub fn get_or_create_well_known_symbol(ctx: &mut JSContext, description: &str) -> JSValue {
     let desc_atom = ctx.intern(description);
@@ -361,8 +364,8 @@ pub fn init_symbol(ctx: &mut JSContext) {
     let mut symbol_ctor = JSFunction::new_builtin(ctx.intern("Symbol"), 0);
     symbol_ctor.set_builtin_marker(ctx, "symbol_constructor");
 
-    let for_func = create_builtin_function(ctx, "symbol_for");
-    let key_for_func = create_builtin_function(ctx, "symbol_keyFor");
+    let for_func = create_builtin_function(ctx, "symbol_for", 1);
+    let key_for_func = create_builtin_function(ctx, "symbol_keyFor", 1);
 
     symbol_ctor.base.define_property(
         ctx.intern("for"),
@@ -544,14 +547,53 @@ pub fn init_symbol(ctx: &mut JSContext) {
         },
     );
 
+    let symbol_match_all = get_or_create_well_known_symbol(ctx, SYMBOL_MATCH_ALL_DESC);
+    symbol_ctor.base.define_property(
+        ctx.intern("matchAll"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_match_all),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
+
+    let symbol_async_dispose = get_or_create_well_known_symbol(ctx, SYMBOL_ASYNC_DISPOSE_DESC);
+    symbol_ctor.base.define_property(
+        ctx.intern("asyncDispose"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_async_dispose),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
+
+    let symbol_dispose = get_or_create_well_known_symbol(ctx, SYMBOL_DISPOSE_DESC);
+    symbol_ctor.base.define_property(
+        ctx.intern("dispose"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_dispose),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
+
     let mut sym_proto = JSObject::new();
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         sym_proto.prototype = Some(obj_proto_ptr);
     }
-    let to_string_fn = create_builtin_function(ctx, "symbol_toString");
-    let value_of_fn = create_builtin_function(ctx, "symbol_valueOf");
-    let description_fn = create_builtin_function(ctx, "symbol_description");
-    let to_primitive_fn = create_builtin_function(ctx, "symbol_toPrimitive");
+    let to_string_fn = create_builtin_function(ctx, "symbol_toString", 0);
+    let value_of_fn = create_builtin_function(ctx, "symbol_valueOf", 0);
+    let description_fn = create_builtin_function(ctx, "symbol_description", 0);
+    let to_primitive_fn = create_builtin_function(ctx, "symbol_toPrimitive", 1);
     sym_proto.set(ctx.intern("toString"), to_string_fn.clone());
     sym_proto.set(ctx.intern("valueOf"), value_of_fn.clone());
 

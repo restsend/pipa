@@ -4271,6 +4271,14 @@ impl VM {
                         } else {
                             JSValue::undefined()
                         }
+                    } else if obj_val.is_symbol() && key_val.is_symbol() {
+                        if let Some(proto_ptr) = ctx.get_symbol_prototype() {
+                            let proto_obj = unsafe { &*proto_ptr };
+                            let sym_key = crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id());
+                            proto_obj.get(sym_key).unwrap_or(JSValue::undefined())
+                        } else {
+                            JSValue::undefined()
+                        }
                     } else {
                         JSValue::undefined()
                     };
