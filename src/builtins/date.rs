@@ -1627,7 +1627,16 @@ pub fn init_date_to_primitive(ctx: &mut JSContext) {
 
 pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
-    if let Some(_) = require_date_this(ctx, this) {
+    if !this.is_object() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
     let hint_val = args.get(1).cloned().unwrap_or_else(|| JSValue::new_string(ctx.intern("default")));
@@ -1636,11 +1645,56 @@ pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         "default"
     };
-    match hint {
-        "string" | "default" => date_to_string(ctx, args),
-        "number" => date_get_time(ctx, args),
-        _ => date_to_string(ctx, args),
+    let obj = this.as_object();
+    let (first_method, second_method) = match hint {
+        "string" | "default" => ("toString", "valueOf"),
+        "number" => ("valueOf", "toString"),
+        _ => {
+            let mut err = JSObject::new();
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("invalid hint")));
+            if let Some(proto) = ctx.get_type_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+    };
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        for method_name in &[first_method, second_method] {
+            let method_key = ctx.intern(method_name);
+            if let Some(method) = obj.get(method_key) {
+                if method.is_function() {
+                    match vm.call_function_with_this(ctx, method, *this, &[]) {
+                        Ok(result) => {
+                            if !result.is_object() {
+                                return result;
+                            }
+                        }
+                        Err(_) => {
+                            if let Some(exc) = vm.last_caught_exception.take() {
+                                ctx.pending_exception = Some(exc);
+                            }
+                            return JSValue::undefined();
+                        }
+                    }
+                }
+            }
+        }
     }
+    let mut err = JSObject::new();
+    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("can't convert to primitive")));
+    if let Some(proto) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto);
+    }
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+    JSValue::undefined()
 }
 
 fn get_date_timestamp_with_ctx(this: &JSValue, ctx: &mut JSContext) -> f64 {
