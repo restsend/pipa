@@ -660,7 +660,7 @@ fn make_time(hour: f64, min: f64, sec: f64, ms: f64) -> f64 {
     (h * 3600000 + m * 60000 + s * 1000 + milli) as f64
 }
 
-fn date_to_timestamp_fast(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32, ms: u32) -> f64 {
+fn make_day_count(year: i32, month: u32, day: u32) -> i64 {
     let mut days: i64 = 0;
     if year >= 1970 {
         for y in 1970..year {
@@ -677,51 +677,96 @@ fn date_to_timestamp_fast(year: i32, month: u32, day: u32, hour: u32, minute: u3
         days += 1;
     }
     days += (day.saturating_sub(1)) as i64;
-    (days * 24 * 60 * 60 * 1000
-        + hour as i64 * 3600000
-        + minute as i64 * 60000
-        + second as i64 * 1000
-        + ms as i64) as f64
+    days
+}
+
+fn to_integer(val: f64) -> i64 {
+    if val.is_nan() || val.is_infinite() {
+        return 0;
+    }
+    val.trunc() as i64
+}
+
+fn make_time_ms(hour: f64, minute: f64, second: f64, ms: f64) -> f64 {
+    let h = to_integer(hour) as f64;
+    let m = to_integer(minute) as f64;
+    let s = to_integer(second) as f64;
+    let milli = to_integer(ms) as f64;
+    h * 3600000.0 + m * 60000.0 + s * 1000.0 + milli
+}
+
+fn date_to_timestamp_fast(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32, ms: u32) -> f64 {
+    let days = make_day_count(year, month, day);
+    (days * 86400000 + hour as i64 * 3600000 + minute as i64 * 60000 + second as i64 * 1000 + ms as i64) as f64
 }
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
+fn coerce_utc_arg(ctx: &mut JSContext, val: Option<&JSValue>, default: f64) -> f64 {
+    match val {
+        None => default,
+        Some(v) => match to_number_arg(ctx, v) {
+            Ok(n) => n,
+            Err(_) => f64::NAN,
+        },
+    }
+}
+
 pub fn date_utc(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 3 {
+    if args.is_empty() {
         return JSValue::new_float(f64::NAN);
     }
 
-    let year = match to_number_arg(ctx, &args[0]) { Ok(n) => n as i32, Err(_) => return JSValue::undefined() };
-    let month = match to_number_arg(ctx, &args[1]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() };
-    let day = if args.len() > 2 {
-        match to_number_arg(ctx, &args[2]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
-    } else {
-        1
+    let year_val = match to_number_arg(ctx, &args[0]) {
+        Ok(n) => n,
+        Err(_) => return JSValue::undefined(),
     };
-    let hour = if args.len() > 3 {
-        match to_number_arg(ctx, &args[3]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
-    } else {
-        0
-    };
-    let minute = if args.len() > 4 {
-        match to_number_arg(ctx, &args[4]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
-    } else {
-        0
-    };
-    let second = if args.len() > 5 {
-        match to_number_arg(ctx, &args[5]) { Ok(n) => n as u32, Err(_) => return JSValue::undefined() }
-    } else {
-        0
-    };
-    let ms = if args.len() > 6 {
-        match to_number_arg(ctx, &args[6]) { Ok(n) => n, Err(_) => return JSValue::undefined() }
-    } else {
-        0.0
-    };
+    if year_val.is_nan() || year_val.is_infinite() {
+        return JSValue::new_float(f64::NAN);
+    }
+    let year_int = to_integer(year_val);
+    let mut year = year_int as i32;
+    if year_int >= 0 && year_int <= 99 {
+        year += 1900;
+    }
 
-    JSValue::new_float(make_day_from_parts(year, month + 1, day, hour, minute, second, ms as u32))
+    let month_val = coerce_utc_arg(ctx, args.get(1), 0.0);
+    if month_val.is_nan() || month_val.is_infinite() {
+        return JSValue::new_float(f64::NAN);
+    }
+    let month_raw = month_val as i32;
+
+    let day_val = coerce_utc_arg(ctx, args.get(2), 1.0);
+    let hour_val = coerce_utc_arg(ctx, args.get(3), 0.0);
+    let minute_val = coerce_utc_arg(ctx, args.get(4), 0.0);
+    let second_val = coerce_utc_arg(ctx, args.get(5), 0.0);
+    let ms_val = coerce_utc_arg(ctx, args.get(6), 0.0);
+    if day_val.is_nan() || hour_val.is_nan() || minute_val.is_nan() || second_val.is_nan() || ms_val.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
+    if day_val.is_infinite() || hour_val.is_infinite() || minute_val.is_infinite() || second_val.is_infinite() || ms_val.is_infinite() {
+        return JSValue::new_float(f64::NAN);
+    }
+
+    let mut y = year;
+    let mut m = month_raw;
+    if m >= 12 || m < 0 {
+        let extra_years = m / 12;
+        m = m % 12;
+        if m < 0 {
+            m += 12;
+            y -= 1;
+        }
+        y += extra_years;
+    }
+
+    let day_int = to_integer(day_val);
+    let day = make_day_count(y, (m as u32) + 1, 1) + day_int - 1;
+    let time = make_time_ms(hour_val, minute_val, second_val, ms_val);
+    let ts = (day as f64) * 86400000.0 + time;
+    JSValue::new_float(time_clip(ts))
 }
 
 pub fn date_get_time(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
