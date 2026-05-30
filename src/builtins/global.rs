@@ -172,6 +172,23 @@ pub fn init_globals(ctx: &mut JSContext) {
     typedarray::init_typed_array(ctx);
     intl::init_intl(ctx);
 
+    if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
+        let global = ctx.global();
+        if global.is_object() {
+            let global_obj = global.as_object();
+            let mut values = Vec::new();
+            global_obj.for_each_property(|_atom, value, _attrs| {
+                values.push(value);
+            });
+            for value in values {
+                if value.is_function() {
+                    let func = unsafe { crate::value::JSValue::function_from_ptr_mut(value.get_ptr()) };
+                    func.base.set_prototype_raw(fn_proto_ptr);
+                }
+            }
+        }
+    }
+
     #[cfg(feature = "fetch")]
     {
         fetch::register_fetch(ctx);
