@@ -1639,11 +1639,11 @@ pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
-    let hint_val = args.get(1).cloned().unwrap_or_else(|| JSValue::new_string(ctx.intern("default")));
+    let hint_val = args.get(1).cloned().unwrap_or_else(|| JSValue::undefined());
     let hint = if hint_val.is_string() {
         ctx.get_atom_str(hint_val.get_atom())
     } else {
-        "default"
+        ""
     };
     let obj = this.as_object();
     let (first_method, second_method) = match hint {
