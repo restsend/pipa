@@ -436,14 +436,10 @@ pub fn init_symbol(ctx: &mut JSContext) {
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         sym_proto.prototype = Some(obj_proto_ptr);
     }
-    sym_proto.set(
-        ctx.intern("toString"),
-        create_builtin_function(ctx, "symbol_toString"),
-    );
-    sym_proto.set(
-        ctx.intern("valueOf"),
-        create_builtin_function(ctx, "symbol_valueOf"),
-    );
+    let to_string_fn = create_builtin_function(ctx, "symbol_toString");
+    let value_of_fn = create_builtin_function(ctx, "symbol_valueOf");
+    sym_proto.set(ctx.intern("toString"), to_string_fn.clone());
+    sym_proto.set(ctx.intern("valueOf"), value_of_fn.clone());
 
     let proto_ptr = Box::into_raw(Box::new(sym_proto)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
@@ -451,9 +447,57 @@ pub fn init_symbol(ctx: &mut JSContext) {
     symbol_ctor.base.set(ctx.intern("prototype"), proto_value);
     ctx.set_symbol_prototype(proto_ptr);
 
+    let symbol_to_string_tag = get_or_create_well_known_symbol(ctx, SYMBOL_TO_STRING_TAG_DESC);
+    let tag_key = crate::runtime::atom::Atom(0x40000000 | symbol_to_string_tag.get_symbol_id());
+    proto_value.as_object_mut().define_property(
+        tag_key,
+        crate::object::object::PropertyDescriptor {
+            value: Some(JSValue::new_string(ctx.intern("Symbol"))),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+
     let symbol_ptr = Box::into_raw(Box::new(symbol_ctor)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(symbol_ptr);
     let symbol_ctor_val = JSValue::new_function(symbol_ptr);
+
+    proto_value.as_object_mut().define_property(
+        ctx.intern("constructor"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(symbol_ctor_val.clone()),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+    proto_value.as_object_mut().define_property(
+        ctx.intern("toString"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(to_string_fn),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
+    proto_value.as_object_mut().define_property(
+        ctx.intern("valueOf"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(value_of_fn),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
 
     let symbol_atom = ctx.intern("Symbol");
     let global = ctx.global();
