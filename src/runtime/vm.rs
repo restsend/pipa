@@ -876,9 +876,9 @@ impl VM {
                                                 *cached_regs_ptr
                                                     .add(arg_regs[arg_idx as usize] as usize)
                                             }
-                                        } else {
-                                            JSValue::undefined()
-                                        };
+                    } else {
+                        JSValue::undefined()
+                    };
                                         (atom, value)
                                     }),
                                 cached_shape,
@@ -4252,6 +4252,25 @@ impl VM {
                         let s = VM::js_to_string(&key_val, ctx);
                         let atom = s.get_atom();
                         js_obj.get(atom).unwrap_or(JSValue::undefined())
+                    } else if obj_val.is_symbol() && key_val.is_string() {
+                        if let Some(proto_ptr) = ctx.get_symbol_prototype() {
+                            let proto_obj = unsafe { &*proto_ptr };
+                            let atom = key_val.get_atom();
+                            if let Some(getter) = proto_obj.get_own_accessor_value(atom) {
+                                if getter.is_function() {
+                                    match self.call_function_with_this(ctx, getter, obj_val, &[]) {
+                                        Ok(v) => v,
+                                        Err(_) => JSValue::undefined(),
+                                    }
+                                } else {
+                                    JSValue::undefined()
+                                }
+                            } else {
+                                proto_obj.get(atom).unwrap_or(JSValue::undefined())
+                            }
+                        } else {
+                            JSValue::undefined()
+                        }
                     } else {
                         JSValue::undefined()
                     };
@@ -4399,7 +4418,8 @@ impl VM {
                         && (obj_val.is_int()
                             || obj_val.is_float()
                             || obj_val.is_string()
-                            || obj_val.is_bool())
+                            || obj_val.is_bool()
+                            || obj_val.is_symbol())
                         && key_val.is_string()
                     {
                         let atom = key_val.get_atom();
@@ -4407,6 +4427,8 @@ impl VM {
                             ctx.get_string_prototype()
                         } else if obj_val.is_int() || obj_val.is_float() {
                             ctx.get_number_prototype()
+                        } else if obj_val.is_symbol() {
+                            ctx.get_symbol_prototype()
                         } else {
                             ctx.get_object_prototype()
                         };
@@ -7071,7 +7093,7 @@ impl VM {
     ) -> Option<JSValue> {
         if !obj_val.is_object_like()
             && !obj_val.is_function()
-            && (obj_val.is_int() || obj_val.is_float() || obj_val.is_string() || obj_val.is_bool())
+            && (obj_val.is_int() || obj_val.is_float() || obj_val.is_string() || obj_val.is_bool() || obj_val.is_symbol())
         {
             if obj_val.is_string() && atom == ctx.common_atoms.length {
                 let len = ctx.string_char_count(obj_val.get_atom()) as i64;
@@ -7083,6 +7105,8 @@ impl VM {
                 ctx.get_string_prototype()
             } else if obj_val.is_int() || obj_val.is_float() {
                 ctx.get_number_prototype()
+            } else if obj_val.is_symbol() {
+                ctx.get_symbol_prototype()
             } else {
                 ctx.get_object_prototype()
             };
@@ -7103,6 +7127,15 @@ impl VM {
                                 wrapper.set_prototype_raw(opp);
                             }
                             if obj_val.is_string() || obj_val.is_int() || obj_val.is_float() {
+                                wrapper.set_cached(
+                                    crate::runtime::atom::Atom(0),
+                                    obj_val,
+                                    ctx.shape_cache_mut(),
+                                );
+                            } else if obj_val.is_symbol() {
+                                if let Some(sp) = ctx.get_symbol_prototype() {
+                                    wrapper.set_prototype_raw(sp);
+                                }
                                 wrapper.set_cached(
                                     crate::runtime::atom::Atom(0),
                                     obj_val,

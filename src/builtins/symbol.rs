@@ -5,6 +5,24 @@ use crate::runtime::atom::Atom;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
+fn throw_type_error(ctx: &mut JSContext, msg: &str) {
+    let mut err = JSObject::new();
+    if let Some(proto_ptr) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto_ptr);
+    }
+    err.set(
+        ctx.common_atoms.name,
+        JSValue::new_string(ctx.intern("TypeError")),
+    );
+    err.set(
+        ctx.common_atoms.message,
+        JSValue::new_string(ctx.intern(msg)),
+    );
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+}
+
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
     func.set_builtin_marker(ctx, name);
@@ -13,9 +31,13 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     JSValue::new_function(ptr)
 }
 
+const NO_DESCRIPTION: Atom = Atom(u32::MAX);
+
 fn create_symbol(ctx: &mut JSContext, description: Option<Atom>) -> JSValue {
-    let desc = description.unwrap_or(ctx.intern(""));
-    ctx.mark_symbol_atom(desc);
+    let desc = description.unwrap_or(NO_DESCRIPTION);
+    if desc != NO_DESCRIPTION {
+        ctx.mark_symbol_atom(desc);
+    }
     let id = ctx.runtime_mut().next_symbol_id();
     JSValue::new_symbol_with_id(desc, id)
 }
@@ -46,22 +68,30 @@ fn symbol_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn symbol_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() {
-        return JSValue::undefined();
-    }
-    let key_val = args[0];
-    let key = if key_val.is_string() {
-        key_val.get_atom()
+    let key_val = if args.is_empty() {
+        JSValue::new_string(ctx.intern("undefined"))
     } else {
-        let s = if key_val.is_int() {
-            key_val.get_int().to_string()
-        } else if key_val.is_float() {
-            key_val.get_float().to_string()
+        let v = args[0];
+        if v.is_string() {
+            v
+        } else if v.is_int() {
+            JSValue::new_string(ctx.intern(&v.get_int().to_string()))
+        } else if v.is_float() {
+            JSValue::new_string(ctx.intern(&v.get_float().to_string()))
+        } else if v.is_bool() {
+            JSValue::new_string(ctx.intern(if v.get_bool() { "true" } else { "false" }))
+        } else if v.is_undefined() {
+            JSValue::new_string(ctx.intern("undefined"))
+        } else if v.is_null() {
+            JSValue::new_string(ctx.intern("null"))
+        } else if v.is_symbol() {
+            throw_type_error(ctx, "Can't convert symbol to string");
+            return JSValue::undefined();
         } else {
-            String::new()
-        };
-        ctx.intern(&s)
+            JSValue::new_string(ctx.intern(""))
+        }
     };
+    let key = key_val.get_atom();
 
     let global = ctx.global();
     if global.is_object() {
@@ -138,10 +168,12 @@ fn symbol_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn symbol_key_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
+        throw_type_error(ctx, "Symbol.keyFor requires a symbol");
         return JSValue::undefined();
     }
     let sym_val = args[0];
     if !sym_val.is_symbol() {
+        throw_type_error(ctx, "Symbol.keyFor requires a symbol");
         return JSValue::undefined();
     }
 
@@ -181,32 +213,88 @@ fn symbol_key_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::undefined()
 }
 
-fn symbol_value_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn symbol_description(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::undefined();
     }
     let this_val = &args[0];
-    if this_val.is_symbol() {
-        *this_val
+    let sym = if this_val.is_symbol() {
+        this_val.clone()
+    } else if this_val.is_object() {
+        if let Some(v) = this_val.as_object().get(ctx.common_atoms.__value__) {
+            if v.is_symbol() {
+                v
+            } else {
+                return JSValue::undefined();
+            }
+        } else {
+            return JSValue::undefined();
+        }
     } else {
+        return JSValue::undefined();
+    };
+
+    let desc_atom = sym.get_atom();
+    if desc_atom == NO_DESCRIPTION {
         JSValue::undefined()
+    } else {
+        JSValue::new_string(desc_atom)
     }
 }
 
-fn symbol_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn symbol_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return JSValue::new_string(ctx.intern("Symbol()"));
+        throw_type_error(ctx, "Symbol.prototype.valueOf requires that 'this' be a Symbol");
+        return JSValue::undefined();
     }
     let this_val = &args[0];
     if this_val.is_symbol() {
-        let desc = ctx.get_atom_str(this_val.get_atom());
-        if desc.is_empty() {
-            JSValue::new_string(ctx.intern("Symbol()"))
+        return this_val.clone();
+    }
+    if this_val.is_object() {
+        if let Some(v) = this_val.as_object().get(ctx.common_atoms.__value__) {
+            if v.is_symbol() {
+                return v;
+            }
+        }
+    }
+    throw_type_error(ctx, "Symbol.prototype.valueOf requires that 'this' be a Symbol");
+    JSValue::undefined()
+}
+
+fn symbol_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this_val = if args.is_empty() {
+        return JSValue::new_string(ctx.intern("Symbol()"));
+    } else {
+        &args[0]
+    };
+
+    let sym = if this_val.is_symbol() {
+        this_val.clone()
+    } else if this_val.is_object() {
+        let inner = this_val.as_object().get(ctx.common_atoms.__value__);
+        if let Some(v) = inner {
+            if v.is_symbol() {
+                v
+            } else {
+                throw_type_error(ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
+                return JSValue::undefined();
+            }
         } else {
-            JSValue::new_string(ctx.intern(&format!("Symbol({})", desc)))
+            throw_type_error(ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
+            return JSValue::undefined();
         }
     } else {
+        throw_type_error(ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
+        return JSValue::undefined();
+    };
+
+    let desc_atom = sym.get_atom();
+    if desc_atom == NO_DESCRIPTION {
         JSValue::new_string(ctx.intern("Symbol()"))
+    } else {
+        let desc = ctx.get_atom_str(desc_atom);
+        JSValue::new_string(ctx.intern(&format!("Symbol({})", desc)))
     }
 }
 
@@ -246,7 +334,7 @@ pub fn init_symbol(ctx: &mut JSContext) {
             return;
         }
     }
-    let mut symbol_ctor = JSFunction::new_builtin(ctx.intern("Symbol"), 1);
+    let mut symbol_ctor = JSFunction::new_builtin(ctx.intern("Symbol"), 0);
     symbol_ctor.set_builtin_marker(ctx, "symbol_constructor");
 
     let for_func = create_builtin_function(ctx, "symbol_for");
@@ -438,6 +526,7 @@ pub fn init_symbol(ctx: &mut JSContext) {
     }
     let to_string_fn = create_builtin_function(ctx, "symbol_toString");
     let value_of_fn = create_builtin_function(ctx, "symbol_valueOf");
+    let description_fn = create_builtin_function(ctx, "symbol_description");
     sym_proto.set(ctx.intern("toString"), to_string_fn.clone());
     sym_proto.set(ctx.intern("valueOf"), value_of_fn.clone());
 
@@ -498,6 +587,17 @@ pub fn init_symbol(ctx: &mut JSContext) {
             set: None,
         },
     );
+    proto_value.as_object_mut().define_property(
+        ctx.intern("description"),
+        crate::object::object::PropertyDescriptor {
+            value: None,
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: Some(description_fn),
+            set: None,
+        },
+    );
 
     let symbol_atom = ctx.intern("Symbol");
     let global = ctx.global();
@@ -510,7 +610,7 @@ pub fn init_symbol(ctx: &mut JSContext) {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "symbol_constructor",
-        HostFunction::new("Symbol", 1, symbol_constructor),
+        HostFunction::new("Symbol", 0, symbol_constructor),
     );
     ctx.register_builtin("symbol_for", HostFunction::new("for", 1, symbol_for));
     ctx.register_builtin(
@@ -524,6 +624,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "symbol_toString",
         HostFunction::method("toString", 0, symbol_to_string),
+    );
+    ctx.register_builtin(
+        "symbol_description",
+        HostFunction::method("description", 0, symbol_description),
     );
 }
 

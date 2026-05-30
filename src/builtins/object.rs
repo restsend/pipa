@@ -285,6 +285,17 @@ fn object_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             ctx.runtime_mut().gc_heap_mut().track(ptr);
             return JSValue::new_object(ptr);
         }
+
+        if arg.is_symbol() {
+            let mut obj = JSObject::new();
+            if let Some(proto_ptr) = ctx.get_symbol_prototype() {
+                obj.prototype = Some(proto_ptr);
+            }
+            obj.set(ctx.common_atoms.__value__, arg);
+            let ptr = Box::into_raw(Box::new(obj)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            return JSValue::new_object(ptr);
+        }
     }
     let mut obj = JSObject::new();
     if let Some(proto_ptr) = ctx.get_object_prototype() {
