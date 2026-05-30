@@ -35,7 +35,9 @@ fn parse_date_string(s: &str) -> f64 {
     let (year, month, day) = if date_part.starts_with('-') {
         let after = &date_part[1..];
         let dp: Vec<&str> = after.splitn(3, '-').collect();
-        let y = -dp[0].parse::<i32>().unwrap_or(0);
+        let raw_y: i32 = dp[0].parse().unwrap_or(0);
+        if raw_y == 0 { return f64::NAN; }
+        let y = -raw_y;
         let m = if dp.len() > 1 { dp[1].parse::<u32>().unwrap_or(1) } else { 1 };
         let d = if dp.len() > 2 { dp[2].parse::<u32>().unwrap_or(1) } else { 1 };
         (y, m, d)
@@ -497,6 +499,11 @@ pub fn date_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_float(ts);
     }
 
+    let ts = parse_date_string(&date_str);
+    if !ts.is_nan() {
+        return JSValue::new_float(ts);
+    }
+
     JSValue::new_float(f64::NAN)
 }
 
@@ -509,14 +516,18 @@ fn parse_iso_date(s: &str) -> Result<f64, ()> {
         let after_sign = &date_part[1..];
         let neg_parts: Vec<&str> = after_sign.splitn(2, '-').collect();
         if neg_parts.len() != 2 {
-            return Err(());
+            let y: i32 = after_sign.parse().map_err(|_| ())?;
+            if y == 0 { return Err(()); }
+            return Ok(make_day_from_parts(-y, 1, 1, 0, 0, 0, 0));
         }
         let y: i32 = neg_parts[0].parse().map_err(|_| ())?;
+        if y == 0 { return Err(()); }
         (-y, neg_parts[1])
     } else {
         let pos_parts: Vec<&str> = date_part.splitn(2, '-').collect();
         if pos_parts.len() != 2 {
-            return Err(());
+            let y: i32 = date_part.parse().map_err(|_| ())?;
+            return Ok(make_day_from_parts(y, 1, 1, 0, 0, 0, 0));
         }
         let y: i32 = pos_parts[0].parse().map_err(|_| ())?;
         (y, pos_parts[1])
@@ -1401,9 +1412,21 @@ pub fn date_to_iso_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let (year, month, day, hour, minute, second, _, ms) = timestamp_to_date(timestamp);
 
+    let year_str = if year < 0 {
+        if year > -10000 {
+            format!("-{:06}", -year)
+        } else {
+            format!("-{:06}", -year)
+        }
+    } else if year < 10000 {
+        format!("{:04}", year)
+    } else {
+        format!("+{:06}", year)
+    };
+
     let result = format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
-        year, month, day, hour, minute, second, ms
+        "{}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        year_str, month, day, hour, minute, second, ms
     );
 
     JSValue::new_string(ctx.intern(&result))
@@ -1692,21 +1715,22 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let timestamp = if args.is_empty() {
         current_timestamp_ms()
     } else if args.len() == 1 {
-        match to_number_arg(ctx, &args[0]) {
-            Ok(n) => {
-                if n.is_nan() && args[0].is_string() {
-                    let s = ctx.get_atom_str(args[0].get_atom()).to_string();
-                    let parsed = parse_date_string(&s);
-                    if !parsed.is_nan() {
-                        time_clip(parsed)
-                    } else {
-                        f64::NAN
-                    }
-                } else {
-                    n
+        if args[0].is_string() {
+            let s = ctx.get_atom_str(args[0].get_atom()).to_string();
+            let parsed = parse_date_string(&s);
+            if !parsed.is_nan() {
+                time_clip(parsed)
+            } else {
+                match to_number_arg(ctx, &args[0]) {
+                    Ok(n) => n,
+                    Err(()) => f64::NAN,
                 }
             }
-            Err(()) => return JSValue::undefined(),
+        } else {
+            match to_number_arg(ctx, &args[0]) {
+                Ok(n) => n,
+                Err(()) => return JSValue::undefined(),
+            }
         }
     } else {
         let year_val = match to_number_arg(ctx, &args[0]) {
