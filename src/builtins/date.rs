@@ -1518,27 +1518,32 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             year += 1900;
         }
         let month_raw = match coerce_arg(ctx, args.get(1)) {
-            Ok(Some(n)) => n as i32,
+            Ok(Some(n)) if !n.is_nan() => n as i32,
+            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
             Ok(None) => 0,
             Err(()) => return JSValue::undefined(),
         };
         let day = match coerce_arg(ctx, args.get(2)) {
-            Ok(Some(n)) => n as u32,
+            Ok(Some(n)) if !n.is_nan() => n as u32,
+            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
             Ok(None) => 1,
             Err(()) => return JSValue::undefined(),
         };
         let hour = match coerce_arg(ctx, args.get(3)) {
-            Ok(Some(n)) => n as u32,
+            Ok(Some(n)) if !n.is_nan() => n as u32,
+            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
             Ok(None) => 0,
             Err(()) => return JSValue::undefined(),
         };
         let minute = match coerce_arg(ctx, args.get(4)) {
-            Ok(Some(n)) => n as u32,
+            Ok(Some(n)) if !n.is_nan() => n as u32,
+            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
             Ok(None) => 0,
             Err(()) => return JSValue::undefined(),
         };
         let second = match coerce_arg(ctx, args.get(5)) {
-            Ok(Some(n)) => n as u32,
+            Ok(Some(n)) if !n.is_nan() => n as u32,
+            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
             Ok(None) => 0,
             Err(()) => return JSValue::undefined(),
         };
@@ -1547,6 +1552,9 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             Ok(None) => 0.0,
             Err(()) => return JSValue::undefined(),
         };
+        if ms.is_nan() {
+            return JSValue::new_float(f64::NAN);
+        }
 
         let mut y = year;
         let mut m = month_raw;
