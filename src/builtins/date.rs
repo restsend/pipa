@@ -1106,7 +1106,6 @@ pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let sec = match coerce_arg(ctx, args.get(1)) {
         Ok(Some(n)) => n,
         Ok(None) => f64::NAN,
@@ -1114,9 +1113,10 @@ pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let ms = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => ts % 1000.0,
+        Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
         Err(()) => return JSValue::undefined(),
     };
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, (ts as i64 / 60000 % 60) as f64, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1127,7 +1127,6 @@ pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let min = match coerce_arg(ctx, args.get(1)) {
         Ok(Some(n)) => n,
         Ok(None) => f64::NAN,
@@ -1135,14 +1134,15 @@ pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let sec = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => ((ts as i64 / 1000) % 60) as f64,
+        Ok(None) => if ts.is_nan() { 0.0 } else { ((ts as i64 / 1000) % 60) as f64 },
         Err(()) => return JSValue::undefined(),
     };
     let ms = match coerce_arg(ctx, args.get(3)) {
         Ok(Some(n)) => n,
-        Ok(None) => ts % 1000.0,
+        Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
         Err(()) => return JSValue::undefined(),
     };
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, min, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1153,7 +1153,6 @@ pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let hr = match coerce_arg(ctx, args.get(1)) {
         Ok(Some(n)) => n,
         Ok(None) => f64::NAN,
@@ -1161,19 +1160,20 @@ pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let min = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => ((ts as i64 / 60000) % 60) as f64,
+        Ok(None) => if ts.is_nan() { 0.0 } else { ((ts as i64 / 60000) % 60) as f64 },
         Err(()) => return JSValue::undefined(),
     };
     let sec = match coerce_arg(ctx, args.get(3)) {
         Ok(Some(n)) => n,
-        Ok(None) => ((ts as i64 / 1000) % 60) as f64,
+        Ok(None) => if ts.is_nan() { 0.0 } else { ((ts as i64 / 1000) % 60) as f64 },
         Err(()) => return JSValue::undefined(),
     };
     let ms = match coerce_arg(ctx, args.get(4)) {
         Ok(Some(n)) => n,
-        Ok(None) => ts % 1000.0,
+        Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
         Err(()) => return JSValue::undefined(),
     };
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let new_ts = make_date(day_from_time(ts as i64) as f64, make_time(hr, min, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1183,13 +1183,13 @@ pub fn date_set_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if let Some(_) = require_date_this(ctx, this) {
         return JSValue::undefined();
     }
-    let ts = get_date_timestamp_with_ctx(this, ctx);
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let d = match coerce_arg(ctx, args.get(1)) {
         Ok(Some(n)) => n,
         Ok(None) => f64::NAN,
         Err(()) => return JSValue::undefined(),
     };
+    let ts = get_date_timestamp_with_ctx(this, ctx);
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let month = month_from_time(tsi);
@@ -1203,13 +1203,13 @@ pub fn date_set_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let mo = match coerce_arg(ctx, args.get(1)) {
         Ok(Some(n)) => n,
         Ok(None) => f64::NAN,
         Err(()) => return JSValue::undefined(),
     };
     let d_val = coerce_arg(ctx, args.get(2));
+    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let dt = match d_val {
@@ -1227,7 +1227,6 @@ pub fn date_set_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let ts = get_date_timestamp_with_ctx(this, ctx);
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
     let y = match coerce_arg(ctx, args.get(1)) {
         Ok(Some(n)) => n,
         Ok(None) => f64::NAN,
@@ -1235,6 +1234,20 @@ pub fn date_set_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let mo_val = coerce_arg(ctx, args.get(2));
     let d_val = coerce_arg(ctx, args.get(3));
+    if ts.is_nan() {
+        let dt = match d_val {
+            Ok(Some(n)) => n,
+            Ok(None) => 1.0,
+            Err(()) => return JSValue::undefined(),
+        };
+        let mo = match mo_val {
+            Ok(Some(n)) => n,
+            Ok(None) => 0.0,
+            Err(()) => return JSValue::undefined(),
+        };
+        let new_ts = make_date(make_day(y, mo, dt), 0.0);
+        return set_date_timestamp(ctx, this, time_clip(new_ts));
+    }
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let month = month_from_time(tsi);
