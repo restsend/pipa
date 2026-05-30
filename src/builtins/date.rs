@@ -1517,8 +1517,8 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         if year >= 0 && year <= 99 {
             year += 1900;
         }
-        let month = match coerce_arg(ctx, args.get(1)) {
-            Ok(Some(n)) => n as u32,
+        let month_raw = match coerce_arg(ctx, args.get(1)) {
+            Ok(Some(n)) => n as i32,
             Ok(None) => 0,
             Err(()) => return JSValue::undefined(),
         };
@@ -1548,7 +1548,19 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             Err(()) => return JSValue::undefined(),
         };
 
-        make_day_from_parts(year, month + 1, day.max(1), hour, minute, second, ms as u32)
+        let mut y = year;
+        let mut m = month_raw;
+        if m >= 12 || m < 0 {
+            let extra_years = m / 12;
+            m = m % 12;
+            if m < 0 {
+                m += 12;
+                y -= 1;
+            }
+            y += extra_years;
+        }
+
+        make_day_from_parts(y, (m as u32) + 1, day.max(1), hour, minute, second, ms as u32)
     };
 
     if timestamp.is_nan() {
