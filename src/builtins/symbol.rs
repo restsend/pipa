@@ -716,6 +716,16 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
 }
 
+pub fn fix_prototype_chain(ctx: &mut JSContext) {
+    if let Some(sym_proto_ptr) = ctx.get_symbol_prototype() {
+        if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
+            unsafe {
+                (*sym_proto_ptr).prototype = Some(obj_proto_ptr);
+            }
+        }
+    }
+}
+
 pub fn get_symbol_iterator(ctx: &mut JSContext) -> JSValue {
     get_or_create_well_known_symbol(ctx, SYMBOL_ITERATOR_DESC)
 }

@@ -164,6 +164,7 @@ pub fn init_globals(ctx: &mut JSContext) {
     error::init_error(ctx);
     map_set::init_map_set(ctx);
     symbol::init_symbol(ctx);
+    symbol::fix_prototype_chain(ctx);
     date::init_date_to_primitive(ctx);
     bigint::init_bigint(ctx);
     weakref::init_weakref(ctx);
