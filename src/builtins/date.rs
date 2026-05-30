@@ -1285,12 +1285,24 @@ pub fn date_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
 
+    let year_str = if year < 0 {
+        if year > -10000 {
+            format!("{:05}", year)
+        } else {
+            format!("{}", year)
+        }
+    } else if year < 10000 {
+        format!("{:04}", year)
+    } else {
+        format!("{:+}", year)
+    };
+
     let result = format!(
-        "{} {} {:02} {:04} {:02}:{:02}:{:02} GMT+0000 (UTC)",
+        "{} {} {:02} {} {:02}:{:02}:{:02} GMT+0000 (UTC)",
         weekday_names[weekday as usize],
         month_names[(month - 1) as usize],
         day,
-        year,
+        year_str,
         hour,
         minute,
         second
@@ -1329,7 +1341,45 @@ pub fn date_to_iso_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 pub fn date_to_utc_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    date_to_string(ctx, args)
+    let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
+    if let Some(_) = require_date_this(ctx, this) {
+        return JSValue::undefined();
+    }
+    let timestamp = get_date_timestamp_with_ctx(this, ctx);
+    if timestamp.is_nan() {
+        return JSValue::new_string(ctx.intern("Invalid Date"));
+    }
+
+    let (year, month, day, hour, minute, second, weekday, _) = timestamp_to_date(timestamp);
+    let weekday_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    let month_names = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    let year_str = if year < 0 {
+        if year > -10000 {
+            format!("{:05}", year)
+        } else {
+            format!("{}", year)
+        }
+    } else if year < 10000 {
+        format!("{:04}", year)
+    } else {
+        format!("{:+}", year)
+    };
+
+    let result = format!(
+        "{}, {:02} {} {} {:02}:{:02}:{:02} GMT",
+        weekday_names[weekday as usize],
+        day,
+        month_names[(month - 1) as usize],
+        year_str,
+        hour,
+        minute,
+        second
+    );
+
+    JSValue::new_string(ctx.intern(&result))
 }
 
 pub fn date_to_date_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1348,12 +1398,24 @@ pub fn date_to_date_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
 
+    let year_str = if year < 0 {
+        if year > -10000 {
+            format!("{:05}", year)
+        } else {
+            format!("{}", year)
+        }
+    } else if year < 10000 {
+        format!("{:04}", year)
+    } else {
+        format!("{:+}", year)
+    };
+
     let result = format!(
-        "{} {} {:02} {:04}",
+        "{} {} {:02} {}",
         weekday_names[weekday as usize],
         month_names[(month - 1) as usize],
         day,
-        year
+        year_str
     );
 
     JSValue::new_string(ctx.intern(&result))
