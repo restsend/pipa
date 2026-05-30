@@ -5,6 +5,70 @@ use crate::runtime::atom::Atom;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
+fn throw_type_error_obj(ctx: &mut JSContext, msg: &str) {
+    let mut err = JSObject::new();
+    if let Some(proto_ptr) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto_ptr);
+    }
+    err.set(
+        ctx.common_atoms.name,
+        JSValue::new_string(ctx.intern("TypeError")),
+    );
+    err.set(
+        ctx.common_atoms.message,
+        JSValue::new_string(ctx.intern(msg)),
+    );
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+}
+
+fn object_to_object(ctx: &mut JSContext, value: &JSValue) -> JSValue {
+    if value.is_string() {
+        let mut obj = JSObject::new();
+        if let Some(proto_ptr) = ctx.get_string_prototype() {
+            obj.prototype = Some(proto_ptr);
+        }
+        obj.set(ctx.common_atoms.__value__, *value);
+        let s = ctx.get_atom_str(value.get_atom());
+        obj.set(ctx.common_atoms.length, JSValue::new_int(s.len() as i64));
+        let ptr = Box::into_raw(Box::new(obj)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        return JSValue::new_object(ptr);
+    }
+    if value.is_int() || value.is_float() {
+        let mut obj = JSObject::new();
+        if let Some(proto_ptr) = ctx.get_number_prototype() {
+            obj.prototype = Some(proto_ptr);
+        }
+        obj.set(ctx.common_atoms.__value__, *value);
+        let ptr = Box::into_raw(Box::new(obj)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        return JSValue::new_object(ptr);
+    }
+    if value.is_bool() {
+        let mut obj = JSObject::new();
+        if let Some(proto_ptr) = ctx.get_object_prototype() {
+            obj.prototype = Some(proto_ptr);
+        }
+        obj.set(ctx.common_atoms.__value__, *value);
+        let ptr = Box::into_raw(Box::new(obj)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        return JSValue::new_object(ptr);
+    }
+    if value.is_symbol() {
+        let mut obj = JSObject::new();
+        if let Some(proto_ptr) = ctx.get_symbol_prototype() {
+            obj.prototype = Some(proto_ptr);
+        }
+        obj.set(ctx.common_atoms.__value__, *value);
+        let ptr = Box::into_raw(Box::new(obj)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        return JSValue::new_object(ptr);
+    }
+    JSValue::undefined()
+}
+
 #[inline(always)]
 fn is_object_like(value: &JSValue) -> bool {
     value.is_object() || value.is_function()
@@ -562,33 +626,46 @@ fn object_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_object(result_ptr)
 }
 
-fn object_assign(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() {
-        return JSValue::new_object(Box::into_raw(Box::new(JSObject::new())) as usize);
-    }
-
-    let target = &args[0];
-    if !target.is_object() {
-        return target.clone();
-    }
-
-    let target_obj = target.as_object_mut();
-
-    for arg in args.iter().skip(1) {
-        if !arg.is_object() {
-            continue;
+    fn object_assign(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+        if args.is_empty() {
+            throw_type_error_obj(ctx, "Object.assign requires at least 1 argument");
+            return JSValue::undefined();
         }
-        let src_obj = arg.as_object();
 
-        src_obj.for_each_property(|key, val, attrs| {
-            if attrs & crate::object::object::ATTR_ENUMERABLE != 0 {
-                target_obj.set(key, val);
-            }
-        });
+        let target = &args[0];
+        let to = if target.is_object() || target.is_function() {
+            target.clone()
+        } else if target.is_undefined() || target.is_null() {
+            throw_type_error_obj(ctx, "Object.assign cannot convert undefined or null to object");
+            return JSValue::undefined();
+        } else {
+            object_to_object(ctx, target)
+        };
+
+        if !to.is_object() {
+            return to;
+        }
+
+        let to_obj = to.as_object_mut();
+
+        for arg in args.iter().skip(1) {
+            let from = if arg.is_object() || arg.is_function() {
+                arg.as_object()
+            } else if arg.is_string() {
+                continue;
+            } else {
+                continue;
+            };
+
+            from.for_each_property(|key, val, attrs| {
+                if attrs & crate::object::object::ATTR_ENUMERABLE != 0 {
+                    to_obj.set(key, val);
+                }
+            });
+        }
+
+        to
     }
-
-    target.clone()
-}
 
 fn object_create(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let mut new_obj = JSObject::new();
