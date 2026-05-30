@@ -32,7 +32,14 @@ fn parse_date_string(s: &str) -> f64 {
     let date_part = parts[0];
     let time_part = if parts.len() > 1 { parts[1] } else { "" };
 
-    let (year, month, day) = if date_part.contains('-') {
+    let (year, month, day) = if date_part.starts_with('-') {
+        let after = &date_part[1..];
+        let dp: Vec<&str> = after.splitn(3, '-').collect();
+        let y = -dp[0].parse::<i32>().unwrap_or(0);
+        let m = if dp.len() > 1 { dp[1].parse::<u32>().unwrap_or(1) } else { 1 };
+        let d = if dp.len() > 2 { dp[2].parse::<u32>().unwrap_or(1) } else { 1 };
+        (y, m, d)
+    } else if date_part.contains('-') {
         let dp: Vec<&str> = date_part.split('-').collect();
         if dp.len() < 1 {
             return f64::NAN;
@@ -498,14 +505,29 @@ fn parse_iso_date(s: &str) -> Result<f64, ()> {
     let parts: Vec<&str> = s.split('T').collect();
     let date_part = parts[0];
 
-    let date_components: Vec<&str> = date_part.split('-').collect();
-    if date_components.len() != 3 {
+    let (year, rest_date) = if date_part.starts_with('-') {
+        let after_sign = &date_part[1..];
+        let neg_parts: Vec<&str> = after_sign.splitn(2, '-').collect();
+        if neg_parts.len() != 2 {
+            return Err(());
+        }
+        let y: i32 = neg_parts[0].parse().map_err(|_| ())?;
+        (-y, neg_parts[1])
+    } else {
+        let pos_parts: Vec<&str> = date_part.splitn(2, '-').collect();
+        if pos_parts.len() != 2 {
+            return Err(());
+        }
+        let y: i32 = pos_parts[0].parse().map_err(|_| ())?;
+        (y, pos_parts[1])
+    };
+
+    let rest_parts: Vec<&str> = rest_date.split('-').collect();
+    if rest_parts.len() != 2 {
         return Err(());
     }
-
-    let year: i32 = date_components[0].parse().map_err(|_| ())?;
-    let month: u32 = date_components[1].parse().map_err(|_| ())?;
-    let day: u32 = date_components[2].parse().map_err(|_| ())?;
+    let month: u32 = rest_parts[0].parse().map_err(|_| ())?;
+    let day: u32 = rest_parts[1].parse().map_err(|_| ())?;
 
     let mut hour: u32 = 0;
     let mut minute: u32 = 0;
@@ -1681,65 +1703,31 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     } else {
         let year_val = match to_number_arg(ctx, &args[0]) {
-            Ok(n) => n as i32,
+            Ok(n) => n,
             Err(()) => return JSValue::undefined(),
         };
-        let mut year = year_val;
-        if year >= 0 && year <= 99 {
-            year += 1900;
+        let mut year = to_integer_f64(year_val);
+        if year >= 0.0 && year <= 99.0 {
+            year += 1900.0;
         }
-        let month_raw = match coerce_arg(ctx, args.get(1)) {
-            Ok(Some(n)) if !n.is_nan() => n as i32,
-            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
-            Ok(None) => 0,
-            Err(()) => return JSValue::undefined(),
+        let month_raw = match coerce_utc_arg(ctx, args.get(1), 0.0) {
+            n if n.is_nan() => return JSValue::new_float(f64::NAN),
+            n => n,
         };
-        let day = match coerce_arg(ctx, args.get(2)) {
-            Ok(Some(n)) if !n.is_nan() => n as u32,
-            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
-            Ok(None) => 1,
-            Err(()) => return JSValue::undefined(),
-        };
-        let hour = match coerce_arg(ctx, args.get(3)) {
-            Ok(Some(n)) if !n.is_nan() => n as u32,
-            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
-            Ok(None) => 0,
-            Err(()) => return JSValue::undefined(),
-        };
-        let minute = match coerce_arg(ctx, args.get(4)) {
-            Ok(Some(n)) if !n.is_nan() => n as u32,
-            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
-            Ok(None) => 0,
-            Err(()) => return JSValue::undefined(),
-        };
-        let second = match coerce_arg(ctx, args.get(5)) {
-            Ok(Some(n)) if !n.is_nan() => n as u32,
-            Ok(Some(_)) => return JSValue::new_float(f64::NAN),
-            Ok(None) => 0,
-            Err(()) => return JSValue::undefined(),
-        };
-        let ms = match coerce_arg(ctx, args.get(6)) {
-            Ok(Some(n)) => n,
-            Ok(None) => 0.0,
-            Err(()) => return JSValue::undefined(),
-        };
-        if ms.is_nan() {
-            return JSValue::new_float(f64::NAN);
-        }
+        let day = coerce_utc_arg(ctx, args.get(2), 1.0);
+        if day.is_nan() { return JSValue::new_float(f64::NAN); }
+        let hour = coerce_utc_arg(ctx, args.get(3), 0.0);
+        if hour.is_nan() { return JSValue::new_float(f64::NAN); }
+        let minute = coerce_utc_arg(ctx, args.get(4), 0.0);
+        if minute.is_nan() { return JSValue::new_float(f64::NAN); }
+        let second = coerce_utc_arg(ctx, args.get(5), 0.0);
+        if second.is_nan() { return JSValue::new_float(f64::NAN); }
+        let ms = coerce_utc_arg(ctx, args.get(6), 0.0);
+        if ms.is_nan() { return JSValue::new_float(f64::NAN); }
 
-        let mut y = year;
-        let mut m = month_raw;
-        if m >= 12 || m < 0 {
-            let extra_years = m / 12;
-            m = m % 12;
-            if m < 0 {
-                m += 12;
-                y -= 1;
-            }
-            y += extra_years;
-        }
-
-        make_day_from_parts(y, (m as u32) + 1, day.max(1), hour, minute, second, ms as u32)
+        let day_val = make_day(year, month_raw, day);
+        let time_val = make_time_ms(hour, minute, second, ms);
+        make_date(day_val, time_val)
     };
 
     if timestamp.is_nan() {
