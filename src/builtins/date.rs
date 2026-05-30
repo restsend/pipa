@@ -598,7 +598,10 @@ fn parse_common_date(s: &str) -> Result<f64, ()> {
                     day = d;
                 }
             } else {
-                month = month_from_name(part);
+                let m = month_from_name(part);
+                if m > 0 {
+                    month = m;
+                }
             }
         }
 
