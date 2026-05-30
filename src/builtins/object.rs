@@ -641,17 +641,27 @@ fn object_create(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_object(ptr)
 }
 
-    fn object_get_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() || !is_object_like(&args[0]) {
-        return JSValue::null();
-    }
+    fn object_get_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+        if args.is_empty() {
+            return JSValue::null();
+        }
+        let obj_val = &args[0];
+        if obj_val.is_symbol() {
+            if let Some(proto_ptr) = ctx.get_symbol_prototype() {
+                return JSValue::new_object(proto_ptr as usize);
+            }
+            return JSValue::null();
+        }
+        if !is_object_like(obj_val) {
+            return JSValue::null();
+        }
 
-    let obj = args[0].as_object();
-    if let Some(proto_ptr) = obj.prototype {
-        return JSValue::new_object(proto_ptr as usize);
+        let obj = obj_val.as_object();
+        if let Some(proto_ptr) = obj.prototype {
+            return JSValue::new_object(proto_ptr as usize);
+        }
+        JSValue::null()
     }
-    JSValue::null()
-}
 
 fn object_set_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 || !is_object_like(&args[0]) {

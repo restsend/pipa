@@ -215,6 +215,7 @@ fn symbol_key_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn symbol_description(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
+        throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
         return JSValue::undefined();
     }
     let this_val = &args[0];
@@ -225,12 +226,15 @@ fn symbol_description(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             if v.is_symbol() {
                 v
             } else {
+                throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
                 return JSValue::undefined();
             }
         } else {
+            throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
             return JSValue::undefined();
         }
     } else {
+        throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
         return JSValue::undefined();
     };
 
