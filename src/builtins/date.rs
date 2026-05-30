@@ -492,16 +492,19 @@ pub fn date_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     if let Ok(ts) = parse_iso_date(&date_str) {
-        return JSValue::new_float(ts);
+        let clipped = time_clip(ts);
+        return JSValue::new_float(if clipped.is_nan() { f64::NAN } else { ts });
     }
 
     if let Ok(ts) = parse_common_date(&date_str) {
-        return JSValue::new_float(ts);
+        let clipped = time_clip(ts);
+        return JSValue::new_float(if clipped.is_nan() { f64::NAN } else { ts });
     }
 
     let ts = parse_date_string(&date_str);
     if !ts.is_nan() {
-        return JSValue::new_float(ts);
+        let clipped = time_clip(ts);
+        return JSValue::new_float(if clipped.is_nan() { f64::NAN } else { ts });
     }
 
     JSValue::new_float(f64::NAN)
@@ -543,6 +546,7 @@ fn parse_iso_date(s: &str) -> Result<f64, ()> {
     let mut hour: u32 = 0;
     let mut minute: u32 = 0;
     let mut second: u32 = 0;
+    let mut ms: u32 = 0;
 
     if parts.len() > 1 {
         let time_part = parts[1].trim_end_matches('Z');
@@ -554,11 +558,20 @@ fn parse_iso_date(s: &str) -> Result<f64, ()> {
                 let sec_str = time_components[2];
                 let sec_parts: Vec<&str> = sec_str.split('.').collect();
                 second = sec_parts[0].parse().map_err(|_| ())?;
+                if sec_parts.len() > 1 {
+                    let frac = sec_parts[1];
+                    if frac.len() >= 3 {
+                        ms = frac[..3].parse().map_err(|_| ())?;
+                    } else {
+                        let padded = format!("{:0<3}", frac);
+                        ms = padded[..3].parse().map_err(|_| ())?;
+                    }
+                }
             }
         }
     }
 
-    Ok(make_day_from_parts(year, month, day, hour, minute, second, 0))
+    Ok(make_day_from_parts(year, month, day, hour, minute, second, ms))
 }
 
 fn parse_common_date(s: &str) -> Result<f64, ()> {
