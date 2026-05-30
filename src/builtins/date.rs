@@ -1096,6 +1096,7 @@ pub fn date_set_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => f64::NAN,
         Err(()) => return JSValue::undefined(),
     };
+    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
     let new_ts = (ts / 1000.0).floor() * 1000.0 + ms;
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1116,7 +1117,7 @@ pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
     let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, (ts as i64 / 60000 % 60) as f64, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1142,7 +1143,7 @@ pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
     let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, min, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1173,7 +1174,7 @@ pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
     let new_ts = make_date(day_from_time(ts as i64) as f64, make_time(hr, min, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1183,13 +1184,13 @@ pub fn date_set_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if let Some(_) = require_date_this(ctx, this) {
         return JSValue::undefined();
     }
+    let ts = get_date_timestamp_with_ctx(this, ctx);
     let d = match coerce_arg(ctx, args.get(1)) {
         Ok(Some(n)) => n,
         Ok(None) => f64::NAN,
         Err(()) => return JSValue::undefined(),
     };
-    let ts = get_date_timestamp_with_ctx(this, ctx);
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let month = month_from_time(tsi);
@@ -1209,7 +1210,7 @@ pub fn date_set_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Err(()) => return JSValue::undefined(),
     };
     let d_val = coerce_arg(ctx, args.get(2));
-    if ts.is_nan() { return set_date_timestamp(ctx, this, f64::NAN); }
+    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let dt = match d_val {
