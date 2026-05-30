@@ -219,16 +219,9 @@ pub fn init_date(ctx: &mut JSContext) {
     let mut date_func = JSFunction::new_builtin(date_atom, 7);
     date_func.set_builtin_marker(ctx, "date_constructor");
 
-    date_func
-        .base
-        .set(ctx.intern("now"), create_builtin_function(ctx, "date_now", 0));
-    date_func.base.set(
-        ctx.intern("parse"),
-        create_builtin_function(ctx, "date_parse", 1),
-    );
-    date_func
-        .base
-        .set(ctx.intern("UTC"), create_builtin_function(ctx, "date_utc", 7));
+    crate::builtins::global::set_non_enumerable(&mut date_func.base, ctx.intern("now"), create_builtin_function(ctx, "date_now", 0));
+    crate::builtins::global::set_non_enumerable(&mut date_func.base, ctx.intern("parse"), create_builtin_function(ctx, "date_parse", 1));
+    crate::builtins::global::set_non_enumerable(&mut date_func.base, ctx.intern("UTC"), create_builtin_function(ctx, "date_utc", 7));
 
     let date_ptr = Box::into_raw(Box::new(date_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(date_ptr);
@@ -420,6 +413,18 @@ pub fn init_date(ctx: &mut JSContext) {
         ctx.intern("toJSON"),
         create_builtin_function(ctx, "date_toJSON", 1),
     );
+    set_ne(&mut proto_obj,
+        ctx.intern("toLocaleString"),
+        create_builtin_function(ctx, "date_to_string", 0),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("toLocaleDateString"),
+        create_builtin_function(ctx, "date_to_date_string", 0),
+    );
+    set_ne(&mut proto_obj,
+        ctx.intern("toLocaleTimeString"),
+        create_builtin_function(ctx, "date_to_time_string", 0),
+    );
 
     let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
@@ -432,7 +437,14 @@ pub fn init_date(ctx: &mut JSContext) {
     }
 
     let date_func_ref = date_value.as_function_mut();
-    date_func_ref.base.set(ctx.intern("prototype"), proto_value);
+    date_func_ref.base.define_property(ctx.intern("prototype"), crate::object::object::PropertyDescriptor {
+        value: Some(proto_value),
+        writable: false,
+        enumerable: false,
+        configurable: false,
+        get: None,
+        set: None,
+    });
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
