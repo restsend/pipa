@@ -1613,10 +1613,7 @@ pub fn date_to_json(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     }
     if tv.is_int() {
-        // finite integer, continue to toISOString
     } else if tv.is_string() {
-        // String result from toString — wrap as Date and call toISOString
-        // For now, try toISOString on the original this
     }
     let to_iso = obj.get(ctx.intern("toISOString"));
     if let Some(fn_val) = to_iso {
