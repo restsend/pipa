@@ -897,6 +897,11 @@ impl JSObject {
     }
 
     #[inline(always)]
+    pub fn set_by_offset_fast(&mut self, offset: usize, value: JSValue) {
+        unsafe { self.props.inline[offset].assume_init_mut() }.value = value;
+    }
+
+    #[inline(always)]
     pub fn get_by_offset_fast(&self, offset: usize) -> JSValue {
         debug_assert!(
             offset < INLINE_PROPS,

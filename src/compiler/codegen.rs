@@ -141,7 +141,7 @@ impl CodegenSettings {
                 p2_fold_profile: P2FoldProfile::Stable,
                 opt_jump_if_nullish: true,
                 opt_call23: true,
-                opt_fused_cmp_jump: false,
+                opt_fused_cmp_jump: true,
                 opt_fused_getprop_call: true,
                 opt_tiny_inline: true,
                 opt_branch_result_prealloc: true,

@@ -269,18 +269,23 @@ impl JSValue {
         (payload | extend) as i64
     }
 
+    #[inline(always)]
     pub fn to_number(&self) -> f64 {
         if !Self::is_tagged(self.0) {
             return f64::from_bits(self.0);
         }
-        if self.get_tag() == TAG_INT {
+        let tag = self.get_tag();
+        if tag == TAG_INT {
             return self.get_int() as f64;
         }
-        if self.get_tag() == TAG_BOOL {
+        if tag == TAG_BOOL {
             return if self.get_bool() { 1.0 } else { 0.0 };
         }
-        if self.get_tag() == TAG_NULL {
+        if tag == TAG_NULL {
             return 0.0;
+        }
+        if tag == TAG_UNDEFINED {
+            return f64::NAN;
         }
         f64::NAN
     }
@@ -358,23 +363,19 @@ impl JSValue {
         self.get_payload() != 0
     }
 
+    #[inline(always)]
     pub fn is_truthy(&self) -> bool {
         if !Self::is_tagged(self.0) {
             let f = f64::from_bits(self.0);
             return f != 0.0 && !f.is_nan();
         }
-        if self.is_float() {
-            let f = self.get_float();
-            return f != 0.0 && !f.is_nan();
-        }
-        match self.get_tag() {
-            TAG_UNDEFINED | TAG_NULL => false,
-            TAG_BOOL => self.get_bool(),
+        let tag = self.get_tag();
+        match tag {
             TAG_INT => self.get_int() != 0,
+            TAG_BOOL => self.get_bool(),
             TAG_STRING => self.get_payload() != 0,
             TAG_OBJECT | TAG_FUNC | TAG_SYMBOL | TAG_BIGINT => true,
-            TAG_TDZ => false,
-            _ => true,
+            _ => false,
         }
     }
 

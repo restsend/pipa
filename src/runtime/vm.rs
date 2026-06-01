@@ -138,6 +138,10 @@ pub struct VM {
 
     cached_has_instance_atom: crate::runtime::atom::Atom,
 
+    instanceof_cache_ctor: usize,
+    instanceof_cache_proto: usize,
+    instanceof_cache_result: bool,
+
     regex_lit_cache: std::collections::HashMap<usize, crate::regexp::Regex>,
 
     gc_roots: Vec<JSValue>,
@@ -175,6 +179,9 @@ impl VM {
             caller_vm: None,
             eval_binding_frames: 0,
             cached_has_instance_atom: crate::runtime::atom::Atom(0),
+            instanceof_cache_ctor: 0,
+            instanceof_cache_proto: 0,
+            instanceof_cache_result: false,
             regex_lit_cache: std::collections::HashMap::new(),
             gc_roots: Vec::with_capacity(512),
         };
@@ -378,7 +385,34 @@ impl VM {
             frame.upvalue_sync_bitset = 0;
         }
         self.pc = 0;
-        self.refresh_cache();
+        self.cached_code_ptr = bytecode_ptr;
+        self.cached_code_len = bytecode_len;
+        self.cached_const_ptr = constants_ptr;
+        self.cached_registers_base = base;
+        self.cached_has_upvalue_sync = false;
+        self.cached_upvalue_sync_bitset = 0;
+        self.cached_registers_ptr =
+            unsafe { self.registers.as_mut_ptr().add(base) };
+        self.cached_ic_table_ptr = frame.ic_table_ptr;
+        if let Some(fptr) = function_ptr {
+            if frame.has_upvalues {
+                let func = unsafe { JSValue::function_from_ptr(fptr) };
+                if let Some(uv) = func.upvalues.as_ref() {
+                    let slots = &uv.upvalue_slots;
+                    self.cached_upvalue_slot_ptr = slots.as_ptr();
+                    self.cached_upvalues_len = slots.len();
+                } else {
+                    self.cached_upvalue_slot_ptr = std::ptr::null();
+                    self.cached_upvalues_len = 0;
+                }
+            } else {
+                self.cached_upvalue_slot_ptr = std::ptr::null();
+                self.cached_upvalues_len = 0;
+            }
+        } else {
+            self.cached_upvalue_slot_ptr = std::ptr::null();
+            self.cached_upvalues_len = 0;
+        }
     }
 
     #[inline(always)]
@@ -496,7 +530,34 @@ impl VM {
             frame.upvalue_sync_bitset = 0;
         }
         self.pc = 0;
-        self.refresh_cache();
+        self.cached_code_ptr = bytecode_ptr;
+        self.cached_code_len = bytecode_len;
+        self.cached_const_ptr = constants_ptr;
+        self.cached_registers_base = base;
+        self.cached_has_upvalue_sync = false;
+        self.cached_upvalue_sync_bitset = 0;
+        self.cached_registers_ptr =
+            unsafe { self.registers.as_mut_ptr().add(base) };
+        self.cached_ic_table_ptr = ic_table_ptr;
+        if let Some(fptr) = function_ptr {
+            if frame.has_upvalues {
+                let func = unsafe { JSValue::function_from_ptr(fptr) };
+                if let Some(uv) = func.upvalues.as_ref() {
+                    let slots = &uv.upvalue_slots;
+                    self.cached_upvalue_slot_ptr = slots.as_ptr();
+                    self.cached_upvalues_len = slots.len();
+                } else {
+                    self.cached_upvalue_slot_ptr = std::ptr::null();
+                    self.cached_upvalues_len = 0;
+                }
+            } else {
+                self.cached_upvalue_slot_ptr = std::ptr::null();
+                self.cached_upvalues_len = 0;
+            }
+        } else {
+            self.cached_upvalue_slot_ptr = std::ptr::null();
+            self.cached_upvalues_len = 0;
+        }
     }
 
     #[inline(never)]
@@ -876,9 +937,9 @@ impl VM {
                                                 *cached_regs_ptr
                                                     .add(arg_regs[arg_idx as usize] as usize)
                                             }
-                    } else {
-                        JSValue::undefined()
-                    };
+                                        } else {
+                                            JSValue::undefined()
+                                        };
                                         (atom, value)
                                     }),
                                 cached_shape,
@@ -1750,8 +1811,8 @@ impl VM {
             let saved_frame_index = self.frame_index;
             let saved_pc = self.pc;
             let saved_r0 = self.get_reg(0);
-            let saved_exception_handlers = self.exception_handlers.clone();
-            self.exception_handlers.clear();
+            let saved_handlers_len = self.exception_handlers.len();
+            self.exception_handlers.truncate(0);
 
             let fn_this =
                 if !js_func.is_strict() && (this_value.is_undefined() || this_value.is_null()) {
@@ -1785,7 +1846,7 @@ impl VM {
                 self.pop_frame(JSValue::undefined());
             }
             self.pc = saved_pc;
-            self.exception_handlers = saved_exception_handlers;
+            self.exception_handlers.truncate(saved_handlers_len);
             self.refresh_cache();
             self.set_reg(0, saved_r0);
 
@@ -2352,33 +2413,33 @@ impl VM {
                     let a = self.get_reg(a_reg);
                     let b_reg = self.read_u16_pc();
                     let b = self.get_reg(b_reg);
-                    let result = if JSValue::both_int(&a, &b) {
-                        JSValue::new_int(a.get_int() + b.get_int())
-                    } else if a.is_float() && b.is_float() {
-                        JSValue::new_float_raw(a.get_float() + b.get_float())
+                    if JSValue::both_int(&a, &b) {
+                        self.set_reg(dst, JSValue::new_int(a.get_int() + b.get_int()));
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        self.set_reg(dst, JSValue::new_float_raw(a.get_float() + b.get_float()));
                     } else {
-                        self.add_slow(&a, &b, ctx)
-                    };
-                    if let Some(exc) = self.pending_throw.take() {
-                        match self.dispatch_throw_value(ctx, exc) {
-                            ThrowDispatch::Caught => {
-                                self.set_reg(dst, self.get_reg(0));
-                                return Ok(ExecutionOutcome::Complete(self.get_reg(dst)));
+                        let result = self.add_slow(&a, &b, ctx);
+                        if let Some(exc) = self.pending_throw.take() {
+                            match self.dispatch_throw_value(ctx, exc) {
+                                ThrowDispatch::Caught => {
+                                    self.set_reg(dst, self.get_reg(0));
+                                    return Ok(ExecutionOutcome::Complete(self.get_reg(dst)));
+                                }
+                                ThrowDispatch::Uncaught(e) => return Err(e),
+                                ThrowDispatch::AsyncComplete(o) => match o {
+                                    ExecutionOutcome::Complete(v) => {
+                                        self.set_reg(dst, v);
+                                        return Ok(ExecutionOutcome::Complete(v));
+                                    }
+                                    _ => {
+                                        self.set_reg(dst, JSValue::undefined());
+                                        return Ok(ExecutionOutcome::Complete(JSValue::undefined()));
+                                    }
+                                },
                             }
-                            ThrowDispatch::Uncaught(e) => return Err(e),
-                            ThrowDispatch::AsyncComplete(o) => match o {
-                                ExecutionOutcome::Complete(v) => {
-                                    self.set_reg(dst, v);
-                                    return Ok(ExecutionOutcome::Complete(v));
-                                }
-                                _ => {
-                                    self.set_reg(dst, JSValue::undefined());
-                                    return Ok(ExecutionOutcome::Complete(JSValue::undefined()));
-                                }
-                            },
                         }
+                        self.set_reg(dst, result);
                     }
-                    self.set_reg(dst, result);
                 }
                 Opcode::AddNum => {
                     let dst = self.read_u16_pc();
@@ -2539,12 +2600,12 @@ impl VM {
                         } else {
                             JSValue::new_int(v)
                         }
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        JSValue::new_float_raw(a.get_float() - b.get_float())
                     } else if a.is_bigint() && b.is_bigint() {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
                         Self::create_bigint(a_int - b_int)
-                    } else if a.is_float() && b.is_float() {
-                        JSValue::new_float_raw(a.get_float() - b.get_float())
                     } else if a.is_int() && b.is_float() {
                         JSValue::new_float_raw(a.get_int() as f64 - b.get_float())
                     } else if a.is_float() && b.is_int() {
@@ -2579,19 +2640,18 @@ impl VM {
                     let result = if JSValue::both_int(&a, &b) {
                         let ai = a.get_int();
                         let bi = b.get_int();
-
                         match ai.checked_mul(bi) {
                             Some(prod) if prod >= -(1i64 << 46) && prod < (1i64 << 46) => {
                                 JSValue::new_int(prod)
                             }
                             _ => JSValue::new_float(ai as f64 * bi as f64),
                         }
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        JSValue::new_float_raw(a.get_float() * b.get_float())
                     } else if a.is_bigint() && b.is_bigint() {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
                         Self::create_bigint(a_int * b_int)
-                    } else if a.is_float() && b.is_float() {
-                        JSValue::new_float_raw(a.get_float() * b.get_float())
                     } else if a.is_int() && b.is_float() {
                         JSValue::new_float(a.get_int() as f64 * b.get_float())
                     } else if a.is_float() && b.is_int() {
@@ -2619,6 +2679,8 @@ impl VM {
                         } else {
                             JSValue::new_float(ai as f64 / 0.0f64)
                         }
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        JSValue::new_float_raw(a.get_float() / b.get_float())
                     } else if a.is_bigint() && b.is_bigint() {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
@@ -2627,8 +2689,6 @@ impl VM {
                         } else {
                             JSValue::new_float(f64::NAN)
                         }
-                    } else if a.is_float() && b.is_float() {
-                        JSValue::new_float_raw(a.get_float() / b.get_float())
                     } else if a.is_int() && b.is_float() {
                         JSValue::new_float(a.get_int() as f64 / b.get_float())
                     } else if a.is_float() && b.is_int() {
@@ -2975,6 +3035,8 @@ impl VM {
                     let b = self.get_reg(b_reg);
                     let result = if JSValue::both_int(&a, &b) {
                         JSValue::bool(a.get_int() < b.get_int())
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        JSValue::bool(a.get_float() < b.get_float())
                     } else if a.is_bigint() && b.is_bigint() {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
@@ -2996,6 +3058,8 @@ impl VM {
                     let b = self.get_reg(b_reg);
                     let result = if JSValue::both_int(&a, &b) {
                         JSValue::bool(a.get_int() <= b.get_int())
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        JSValue::bool(a.get_float() <= b.get_float())
                     } else if a.is_bigint() && b.is_bigint() {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
@@ -3029,6 +3093,8 @@ impl VM {
                     let b = self.get_reg(b_reg);
                     let result = if JSValue::both_int(&a, &b) {
                         JSValue::bool(a.get_int() > b.get_int())
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        JSValue::bool(a.get_float() > b.get_float())
                     } else if a.is_bigint() && b.is_bigint() {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
@@ -3050,6 +3116,8 @@ impl VM {
                     let b = self.get_reg(b_reg);
                     let result = if JSValue::both_int(&a, &b) {
                         JSValue::bool(a.get_int() >= b.get_int())
+                    } else if JSValue::both_raw_float(&a, &b) {
+                        JSValue::bool(a.get_float() >= b.get_float())
                     } else if a.is_bigint() && b.is_bigint() {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
@@ -4120,32 +4188,6 @@ impl VM {
                     let obj_val = self.get_reg(obj_reg);
                     let key_val = self.get_reg(key_reg);
                     let result = if obj_val.is_object_like() && key_val.is_int() {
-                        if obj_val.is_object() {
-                            let js_obj_check =
-                                unsafe { JSValue::object_from_ptr(obj_val.get_ptr()) };
-                            if js_obj_check.is_mapped_arguments() {
-                                let fi = js_obj_check.mapped_args_frame_index();
-                                let param_count = js_obj_check.mapped_args_param_count();
-                                let idx = key_val.get_int();
-                                if idx >= 0 && fi < self.frames.len() {
-                                    let idx_u = idx as usize;
-                                    if (idx as u32) < param_count {
-                                        let base = self.frames[fi].registers_base;
-                                        let reg_idx = base + 1 + idx_u;
-                                        if reg_idx < self.registers.len() {
-                                            self.set_reg(dst, self.registers[reg_idx]);
-                                            continue;
-                                        }
-                                    } else {
-                                        let saved = &self.frames[fi].saved_args;
-                                        if idx_u < saved.len() {
-                                            self.set_reg(dst, saved[idx_u]);
-                                            continue;
-                                        }
-                                    }
-                                }
-                            }
-                        }
                         let ptr = obj_val.get_ptr();
                         let js_obj = unsafe { JSValue::object_from_ptr(ptr) };
                         if js_obj.is_dense_array() {
@@ -4158,6 +4200,36 @@ impl VM {
                             } else {
                                 JSValue::undefined()
                             }
+                        } else if js_obj.is_mapped_arguments() {
+                            let fi = js_obj.mapped_args_frame_index();
+                            let param_count = js_obj.mapped_args_param_count();
+                            let idx = key_val.get_int();
+                            if idx >= 0 && fi < self.frames.len() {
+                                let idx_u = idx as usize;
+                                if (idx as u32) < param_count {
+                                    let base = self.frames[fi].registers_base;
+                                    let reg_idx = base + 1 + idx_u;
+                                    if reg_idx < self.registers.len() {
+                                        self.set_reg(dst, self.registers[reg_idx]);
+                                        continue;
+                                    }
+                                } else {
+                                    let saved = &self.frames[fi].saved_args;
+                                    if idx_u < saved.len() {
+                                        self.set_reg(dst, saved[idx_u]);
+                                        continue;
+                                    }
+                                }
+                            }
+                            let idx = key_val.get_int();
+                            if idx >= 0 {
+                                if let Some(val) = js_obj.get_indexed(idx as usize) {
+                                    self.set_reg(dst, val);
+                                    continue;
+                                }
+                            }
+                            let atom = self.int_atom(idx as usize, ctx);
+                            js_obj.get(atom).unwrap_or(JSValue::undefined())
                         } else {
                             let idx = key_val.get_int();
                             if idx >= 0 {
@@ -4614,7 +4686,9 @@ impl VM {
                     let obj_reg = self.read_u16_pc();
                     let val_reg = self.read_u16_pc();
                     let atom = crate::runtime::atom::Atom(self.read_u32_pc());
-                    self.set_named_prop_fast(ctx, obj_reg, val_reg, atom, instr_pc);
+                    if self.set_named_prop_fast(ctx, obj_reg, val_reg, atom, instr_pc) {
+                        continue;
+                    }
                     if let Some(exc) = self.pending_throw.take() {
                         match self.dispatch_throw_value(ctx, exc) {
                             ThrowDispatch::Caught => continue,
@@ -5005,6 +5079,22 @@ impl VM {
                         continue;
                     }
 
+                    if ctor_val.is_function() && (obj_val.is_object() || obj_val.is_function()) {
+                        let ctor_ptr = ctor_val.get_ptr();
+                        let obj_ptr = obj_val.get_ptr();
+                        let obj_proto = unsafe {
+                            (*(obj_ptr as *const crate::object::object::JSObject)).prototype
+                        };
+                        if let Some(op) = obj_proto {
+                            if ctor_ptr == self.instanceof_cache_ctor
+                                && op as usize == self.instanceof_cache_proto
+                            {
+                                self.set_reg(dst, JSValue::bool(self.instanceof_cache_result));
+                                continue;
+                            }
+                        }
+                    }
+
                     let hi_atom = if self.cached_has_instance_atom.0 != 0 {
                         self.cached_has_instance_atom
                     } else {
@@ -5028,7 +5118,6 @@ impl VM {
                     } else {
                         ctor_val.as_object().get_own(hi_atom)
                     };
-                    let has_instance_handler = has_instance_handler;
                     if let Some(handler) = has_instance_handler {
                         if handler.is_function() || handler.is_object() {
                             if handler.is_function() {
@@ -5117,6 +5206,18 @@ impl VM {
                     } else {
                         false
                     };
+                    if ctor_val.is_function() && (obj_val.is_object() || obj_val.is_function()) {
+                        let ctor_ptr = ctor_val.get_ptr();
+                        let obj_ptr = obj_val.get_ptr();
+                        let obj_proto = unsafe {
+                            (*(obj_ptr as *const crate::object::object::JSObject)).prototype
+                        };
+                        if let Some(op) = obj_proto {
+                            self.instanceof_cache_ctor = ctor_ptr;
+                            self.instanceof_cache_proto = op as usize;
+                            self.instanceof_cache_result = result;
+                        }
+                    }
                     self.set_reg(dst, JSValue::bool(result));
                 }
                 Opcode::NewRegExp => {
@@ -7067,6 +7168,7 @@ impl VM {
     }
 
     #[inline(always)]
+    #[inline(always)]
     fn read_u16_pc(&mut self) -> u16 {
         let val =
             unsafe { std::ptr::read_unaligned(self.cached_code_ptr.add(self.pc) as *const u16) };
@@ -7799,10 +7901,10 @@ impl VM {
         val_reg: u16,
         atom: crate::runtime::atom::Atom,
         instr_pc: usize,
-    ) {
+    ) -> bool {
         let obj_val = self.get_reg(obj_reg);
         let value = self.get_reg(val_reg);
-        self.set_named_prop(ctx, obj_val, value, atom, instr_pc);
+        self.set_named_prop(ctx, obj_val, value, atom, instr_pc)
     }
 
     #[inline(always)]
@@ -7839,7 +7941,7 @@ impl VM {
         value: JSValue,
         atom: crate::runtime::atom::Atom,
         ic_pc: usize,
-    ) {
+    ) -> bool {
         if obj_val.is_object_like() {
             let ptr = obj_val.get_ptr();
             let js_obj = unsafe { JSValue::object_from_ptr_mut(ptr) };
@@ -7851,7 +7953,14 @@ impl VM {
                     if let Some(ic) = ic_table.get(ic_pc) {
                         if let Some((offset, new_shape_ptr)) = ic.get_transition(shape_id) {
                             if new_shape_ptr.is_null() {
-                                js_obj.set_by_offset(offset as usize, value);
+                                let off = offset as usize;
+                                if off < crate::object::object::INLINE_PROPS
+                                    && js_obj.has_no_deleted_props()
+                                {
+                                    js_obj.set_by_offset_fast(off, value);
+                                } else {
+                                    js_obj.set_by_offset(off, value);
+                                }
                             } else {
                                 let new_shape = unsafe {
                                     std::ptr::NonNull::new_unchecked(
@@ -7865,7 +7974,7 @@ impl VM {
                                     new_shape,
                                 );
                             }
-                            return;
+                            return true;
                         }
                     }
                 }
@@ -7879,7 +7988,7 @@ impl VM {
                     ctx.get_atom_str(atom)
                 );
                 self.set_pending_type_error(ctx, &msg);
-                return;
+                return false;
             }
 
             let (has_accessor, setter) = if !ic_table_ptr.is_null() {
@@ -7904,7 +8013,7 @@ impl VM {
                 if let Some(setter_fn) = setter {
                     let _ = self.call_function_with_this(ctx, setter_fn, obj_val, &[value]);
                 }
-                return;
+                return false;
             }
 
             if pre_offset.is_none() && !js_obj.extensible() {
@@ -7913,11 +8022,12 @@ impl VM {
                     ctx.get_atom_str(atom)
                 );
                 self.set_pending_type_error(ctx, &msg);
-                return;
+                return false;
             }
 
             self.set_named_prop_slow(ctx, obj_val, ptr, js_obj, value, atom, ic_pc);
         }
+        false
     }
 
     #[cold]
@@ -8601,18 +8711,18 @@ fn loose_equal(ctx: &JSContext, a: JSValue, b: JSValue) -> bool {
         };
     }
 
+    if (a.is_object() || a.is_function()) && b.is_null_or_undefined() {
+        return false;
+    }
+    if (b.is_object() || b.is_function()) && a.is_null_or_undefined() {
+        return false;
+    }
+
     if JSValue::both_int(&a, &b) {
         return false;
     }
 
     if JSValue::both_object(&a, &b) {
-        return false;
-    }
-
-    if (a.is_object() || a.is_function()) && b.is_null_or_undefined() {
-        return false;
-    }
-    if (b.is_object() || b.is_function()) && a.is_null_or_undefined() {
         return false;
     }
 

@@ -915,7 +915,7 @@ impl GcHeap {
             self.free_list.push(idx);
         }
         self.gray_stack.clear();
-        self.clean_stale_properties_on_live_objects();
+        self.clean_stale_properties_on_nursery_survivors();
 
         self.nursery_indices = new_nursery_indices;
         if self.nursery_indices.is_empty() {
@@ -1122,6 +1122,28 @@ impl GcHeap {
             return true;
         }
         self.objects.get(slot as usize) == Some(&ptr)
+    }
+
+    fn clean_stale_properties_on_nursery_survivors(&mut self) {
+        for &idx in &self.nursery_indices {
+            if self.marks[idx] == COLOR_WHITE {
+                continue;
+            }
+            let tag = self.tags[idx];
+            unsafe {
+                match tag {
+                    TAG_OBJECT | TAG_FUNCTION => {
+                        let obj = &mut *(self.objects[idx] as *mut JSObject);
+                        obj.clean_stale_properties(self);
+                    }
+                    TAG_ARRAY => {
+                        let arr = &mut *(self.objects[idx] as *mut JSArrayObject);
+                        arr.header.clean_stale_properties(self);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     fn clean_stale_properties_on_live_objects(&mut self) {
