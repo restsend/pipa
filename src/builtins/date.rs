@@ -1,4 +1,3 @@
-use crate::builtins::global::set_non_enumerable;
 use crate::host::HostFunction;
 use crate::object::function::JSFunction;
 use crate::object::object::JSObject;
@@ -15,13 +14,17 @@ fn current_timestamp_ms() -> f64 {
 
 fn parse_date_string(s: &str) -> f64 {
     let s = s.trim();
-    if s.starts_with('+') || s.starts_with('-') || s.contains('.') || s.contains('e') || s.contains('E') {
+    if s.starts_with('+')
+        || s.starts_with('-')
+        || s.contains('.')
+        || s.contains('e')
+        || s.contains('E')
+    {
         if let Ok(ts) = s.parse::<f64>() {
             return ts;
         }
     }
-    if let Some(rest) = s.strip_prefix("YYYY-") {
-    }
+    if s.strip_prefix("YYYY-").is_some() {}
     let parts: Vec<&str> = if s.contains('T') {
         s.splitn(2, 'T').collect()
     } else if s.contains(' ') {
@@ -36,10 +39,20 @@ fn parse_date_string(s: &str) -> f64 {
         let after = &date_part[1..];
         let dp: Vec<&str> = after.splitn(3, '-').collect();
         let raw_y: i32 = dp[0].parse().unwrap_or(0);
-        if raw_y == 0 { return f64::NAN; }
+        if raw_y == 0 {
+            return f64::NAN;
+        }
         let y = -raw_y;
-        let m = if dp.len() > 1 { dp[1].parse::<u32>().unwrap_or(1) } else { 1 };
-        let d = if dp.len() > 2 { dp[2].parse::<u32>().unwrap_or(1) } else { 1 };
+        let m = if dp.len() > 1 {
+            dp[1].parse::<u32>().unwrap_or(1)
+        } else {
+            1
+        };
+        let d = if dp.len() > 2 {
+            dp[2].parse::<u32>().unwrap_or(1)
+        } else {
+            1
+        };
         (y, m, d)
     } else if date_part.contains('-') {
         let dp: Vec<&str> = date_part.split('-').collect();
@@ -47,8 +60,16 @@ fn parse_date_string(s: &str) -> f64 {
             return f64::NAN;
         }
         let y = dp[0].parse::<i32>().unwrap_or(0);
-        let m = if dp.len() > 1 { dp[1].parse::<u32>().unwrap_or(1) } else { 1 };
-        let d = if dp.len() > 2 { dp[2].parse::<u32>().unwrap_or(1) } else { 1 };
+        let m = if dp.len() > 1 {
+            dp[1].parse::<u32>().unwrap_or(1)
+        } else {
+            1
+        };
+        let d = if dp.len() > 2 {
+            dp[2].parse::<u32>().unwrap_or(1)
+        } else {
+            1
+        };
         (y, m, d)
     } else {
         let y = date_part.parse::<i32>().unwrap_or(0);
@@ -99,8 +120,14 @@ fn parse_date_string(s: &str) -> f64 {
 
 fn parse_tz_offset(s: &str, sign: i64) -> i64 {
     let parts: Vec<&str> = s.split(':').collect();
-    let h = parts.first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
-    let m = parts.get(1).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+    let h = parts
+        .first()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
+    let m = parts
+        .get(1)
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0);
     sign * (h * 60 + m)
 }
 
@@ -128,7 +155,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "date_getDate",
         HostFunction::method("getDate", 0, date_get_date),
     );
-    ctx.register_builtin("date_getDay", HostFunction::method("getDay", 0, date_get_day));
+    ctx.register_builtin(
+        "date_getDay",
+        HostFunction::method("getDay", 0, date_get_day),
+    );
     ctx.register_builtin(
         "date_getHours",
         HostFunction::method("getHours", 0, date_get_hours),
@@ -212,15 +242,22 @@ pub fn register_builtins(ctx: &mut JSContext) {
 }
 
 pub fn init_date(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let date_atom = ctx.intern("Date");
@@ -228,9 +265,21 @@ pub fn init_date(ctx: &mut JSContext) {
     let mut date_func = JSFunction::new_builtin(date_atom, 7);
     date_func.set_builtin_marker(ctx, "date_constructor");
 
-    crate::builtins::global::set_non_enumerable(&mut date_func.base, ctx.intern("now"), create_builtin_function(ctx, "date_now", 0, None));
-    crate::builtins::global::set_non_enumerable(&mut date_func.base, ctx.intern("parse"), create_builtin_function(ctx, "date_parse", 1, None));
-    crate::builtins::global::set_non_enumerable(&mut date_func.base, ctx.intern("UTC"), create_builtin_function(ctx, "date_utc", 7, None));
+    crate::builtins::global::set_non_enumerable(
+        &mut date_func.base,
+        ctx.intern("now"),
+        create_builtin_function(ctx, "date_now", 0, None),
+    );
+    crate::builtins::global::set_non_enumerable(
+        &mut date_func.base,
+        ctx.intern("parse"),
+        create_builtin_function(ctx, "date_parse", 1, None),
+    );
+    crate::builtins::global::set_non_enumerable(
+        &mut date_func.base,
+        ctx.intern("UTC"),
+        create_builtin_function(ctx, "date_utc", 7, None),
+    );
 
     let date_ptr = Box::into_raw(Box::new(date_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(date_ptr);
@@ -249,48 +298,55 @@ pub fn init_date(ctx: &mut JSContext) {
         proto_obj.prototype = Some(obj_proto_ptr);
     }
 
-    set_ne(&mut proto_obj,
-        ctx.intern("constructor"),
-        date_value,
-    );
+    set_ne(&mut proto_obj, ctx.intern("constructor"), date_value);
 
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getTime"),
         create_builtin_function(ctx, "date_getTime", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getFullYear"),
         create_builtin_function(ctx, "date_getFullYear", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getMonth"),
         create_builtin_function(ctx, "date_getMonth", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getDate"),
         create_builtin_function(ctx, "date_getDate", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getDay"),
         create_builtin_function(ctx, "date_getDay", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getHours"),
         create_builtin_function(ctx, "date_getHours", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getMinutes"),
         create_builtin_function(ctx, "date_getMinutes", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getSeconds"),
         create_builtin_function(ctx, "date_getSeconds", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getMilliseconds"),
         create_builtin_function(ctx, "date_getMilliseconds", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("getTimezoneOffset"),
         create_builtin_function(ctx, "date_getTimezoneOffset", 0, None),
     );
@@ -334,103 +390,128 @@ pub fn init_date(ctx: &mut JSContext) {
         ctx.intern("getUTCMilliseconds"),
         create_builtin_function(ctx, "date_getUTCMilliseconds", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setTime"),
         create_builtin_function(ctx, "date_setTime", 1, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setMilliseconds"),
         create_builtin_function(ctx, "date_setMilliseconds", 1, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setSeconds"),
         create_builtin_function(ctx, "date_setSeconds", 2, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setMinutes"),
         create_builtin_function(ctx, "date_setMinutes", 3, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setHours"),
         create_builtin_function(ctx, "date_setHours", 4, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setDate"),
         create_builtin_function(ctx, "date_setDate", 1, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setMonth"),
         create_builtin_function(ctx, "date_setMonth", 2, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setFullYear"),
         create_builtin_function(ctx, "date_setFullYear", 3, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setUTCMilliseconds"),
         create_builtin_function(ctx, "date_setUTCMilliseconds", 1, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setUTCSeconds"),
         create_builtin_function(ctx, "date_setUTCSeconds", 2, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setUTCMinutes"),
         create_builtin_function(ctx, "date_setUTCMinutes", 3, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setUTCHours"),
         create_builtin_function(ctx, "date_setUTCHours", 4, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setUTCDate"),
         create_builtin_function(ctx, "date_setUTCDate", 1, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setUTCMonth"),
         create_builtin_function(ctx, "date_setUTCMonth", 2, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("setUTCFullYear"),
         create_builtin_function(ctx, "date_setUTCFullYear", 3, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toString"),
         create_builtin_function(ctx, "date_toString", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toISOString"),
         create_builtin_function(ctx, "date_toISOString", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toUTCString"),
         create_builtin_function(ctx, "date_toUTCString", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toDateString"),
         create_builtin_function(ctx, "date_toDateString", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toTimeString"),
         create_builtin_function(ctx, "date_toTimeString", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("valueOf"),
         create_builtin_function(ctx, "date_valueOf", 0, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toJSON"),
         create_builtin_function(ctx, "date_toJSON", 1, None),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toLocaleString"),
         create_builtin_function(ctx, "date_to_string", 0, Some("toLocaleString")),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toLocaleDateString"),
         create_builtin_function(ctx, "date_to_date_string", 0, Some("toLocaleDateString")),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toLocaleTimeString"),
         create_builtin_function(ctx, "date_to_time_string", 0, Some("toLocaleTimeString")),
     );
@@ -446,31 +527,43 @@ pub fn init_date(ctx: &mut JSContext) {
     }
 
     let date_func_ref = date_value.as_function_mut();
-    date_func_ref.base.define_property(ctx.intern("prototype"), crate::object::object::PropertyDescriptor {
-        value: Some(proto_value),
-        writable: false,
-        enumerable: false,
-        configurable: false,
-        get: None,
-        set: None,
-    });
+    date_func_ref.base.define_property(
+        ctx.intern("prototype"),
+        crate::object::object::PropertyDescriptor {
+            value: Some(proto_value),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 }
 
-fn create_builtin_function(ctx: &mut JSContext, internal_name: &str, arity: u32, display_name: Option<&str>) -> JSValue {
-    let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(internal_name), arity);
+fn create_builtin_function(
+    ctx: &mut JSContext,
+    internal_name: &str,
+    arity: u32,
+    display_name: Option<&str>,
+) -> JSValue {
+    let mut func =
+        crate::object::function::JSFunction::new_builtin(ctx.intern(internal_name), arity);
     func.set_builtin_marker(ctx, internal_name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     if let Some(dname) = display_name {
         let func_obj = unsafe { &mut *(ptr as *mut crate::object::function::JSFunction) };
-        func_obj.base.define_property(ctx.intern("name"), crate::object::object::PropertyDescriptor {
-            value: Some(JSValue::new_string(ctx.intern(dname))),
-            writable: false,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+        func_obj.base.define_property(
+            ctx.intern("name"),
+            crate::object::object::PropertyDescriptor {
+                value: Some(JSValue::new_string(ctx.intern(dname))),
+                writable: false,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
     JSValue::new_function(ptr)
 }
@@ -480,7 +573,11 @@ pub fn date_now(_ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
 }
 
 pub fn date_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let args = if !args.is_empty() && args[0].is_function() { &args[1..] } else { args };
+    let args = if !args.is_empty() && args[0].is_function() {
+        &args[1..]
+    } else {
+        args
+    };
     if args.is_empty() {
         return JSValue::new_float(f64::NAN);
     }
@@ -520,11 +617,15 @@ fn parse_iso_date(s: &str) -> Result<f64, ()> {
         let neg_parts: Vec<&str> = after_sign.splitn(2, '-').collect();
         if neg_parts.len() != 2 {
             let y: i32 = after_sign.parse().map_err(|_| ())?;
-            if y == 0 { return Err(()); }
+            if y == 0 {
+                return Err(());
+            }
             return Ok(make_day_from_parts(-y, 1, 1, 0, 0, 0, 0));
         }
         let y: i32 = neg_parts[0].parse().map_err(|_| ())?;
-        if y == 0 { return Err(()); }
+        if y == 0 {
+            return Err(());
+        }
         (-y, neg_parts[1])
     } else {
         let pos_parts: Vec<&str> = date_part.splitn(2, '-').collect();
@@ -571,7 +672,9 @@ fn parse_iso_date(s: &str) -> Result<f64, ()> {
         }
     }
 
-    Ok(make_day_from_parts(year, month, day, hour, minute, second, ms))
+    Ok(make_day_from_parts(
+        year, month, day, hour, minute, second, ms,
+    ))
 }
 
 fn parse_common_date(s: &str) -> Result<f64, ()> {
@@ -606,7 +709,9 @@ fn parse_common_date(s: &str) -> Result<f64, ()> {
         }
 
         if year > 0 && month > 0 && day > 0 {
-            return Ok(make_day_from_parts(year, month, day, hour, minute, second, 0));
+            return Ok(make_day_from_parts(
+                year, month, day, hour, minute, second, 0,
+            ));
         }
     }
 
@@ -699,7 +804,8 @@ fn make_day(year: f64, month: f64, date: f64) -> f64 {
     let ym = y + (m as f64 / 12.0).floor() as i64;
     let mn = m % 12;
     let mn = if mn < 0 { mn + 12 } else { mn };
-    let day = day_from_year(ym) + month_to_day_in_year(mn as i32, is_leap_year(ym as i32)) as i64 + d - 1;
+    let day =
+        day_from_year(ym) + month_to_day_in_year(mn as i32, is_leap_year(ym as i32)) as i64 + d - 1;
     day as f64
 }
 
@@ -709,7 +815,11 @@ fn month_to_day_in_year(month: i32, leap: bool) -> i32 {
     } else {
         [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
     };
-    if month < 12 && month >= 0 { days[month as usize] } else { 0 }
+    if month < 12 && month >= 0 {
+        days[month as usize]
+    } else {
+        0
+    }
 }
 
 fn make_date(day: f64, time: f64) -> f64 {
@@ -778,9 +888,21 @@ fn make_time_ms(hour: f64, minute: f64, second: f64, ms: f64) -> f64 {
     h * 3600000.0 + m * 60000.0 + s * 1000.0 + milli
 }
 
-fn date_to_timestamp_fast(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32, ms: u32) -> f64 {
+fn date_to_timestamp_fast(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    ms: u32,
+) -> f64 {
     let days = make_day_count(year, month, day);
-    (days * 86400000 + hour as i64 * 3600000 + minute as i64 * 60000 + second as i64 * 1000 + ms as i64) as f64
+    (days * 86400000
+        + hour as i64 * 3600000
+        + minute as i64 * 60000
+        + second as i64 * 1000
+        + ms as i64) as f64
 }
 
 fn is_leap_year(year: i32) -> bool {
@@ -799,7 +921,11 @@ fn coerce_utc_arg(ctx: &mut JSContext, val: Option<&JSValue>, default: f64) -> f
 }
 
 pub fn date_utc(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let args = if !args.is_empty() && args[0].is_function() { &args[1..] } else { args };
+    let args = if !args.is_empty() && args[0].is_function() {
+        &args[1..]
+    } else {
+        args
+    };
     if args.is_empty() {
         return JSValue::new_float(f64::NAN);
     }
@@ -828,10 +954,20 @@ pub fn date_utc(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let minute_val = coerce_utc_arg(ctx, args.get(4), 0.0);
     let second_val = coerce_utc_arg(ctx, args.get(5), 0.0);
     let ms_val = coerce_utc_arg(ctx, args.get(6), 0.0);
-    if day_val.is_nan() || hour_val.is_nan() || minute_val.is_nan() || second_val.is_nan() || ms_val.is_nan() {
+    if day_val.is_nan()
+        || hour_val.is_nan()
+        || minute_val.is_nan()
+        || second_val.is_nan()
+        || ms_val.is_nan()
+    {
         return JSValue::new_float(f64::NAN);
     }
-    if day_val.is_infinite() || hour_val.is_infinite() || minute_val.is_infinite() || second_val.is_infinite() || ms_val.is_infinite() {
+    if day_val.is_infinite()
+        || hour_val.is_infinite()
+        || minute_val.is_infinite()
+        || second_val.is_infinite()
+        || ms_val.is_infinite()
+    {
         return JSValue::new_float(f64::NAN);
     }
 
@@ -1005,8 +1141,14 @@ pub fn date_get_timezone_offset(ctx: &mut JSContext, args: &[JSValue]) -> JSValu
 fn require_date_this(ctx: &mut JSContext, this: &JSValue) -> Option<JSValue> {
     if !this.is_object() {
         let mut err = JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Date object")));
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not a Date object")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -1024,8 +1166,14 @@ fn require_date_this(ctx: &mut JSContext, this: &JSValue) -> Option<JSValue> {
         };
         if !has_value {
             let mut err = JSObject::new();
-            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Date object")));
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("TypeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("this is not a Date object")),
+            );
             if let Some(proto) = ctx.get_type_error_prototype() {
                 err.prototype = Some(proto);
             }
@@ -1050,18 +1198,20 @@ macro_rules! date_get_utc_field {
                 return JSValue::new_float(f64::NAN);
             }
             let (year, month, day, hour, minute, second, weekday, ms_part) = timestamp_to_date(ts);
-            JSValue::new_int($field(year, month, day, hour, minute, second, weekday, ms_part))
+            JSValue::new_int($field(
+                year, month, day, hour, minute, second, weekday, ms_part,
+            ))
         }
     };
 }
 
-date_get_utc_field!(date_get_utc_full_year, |y,_,_,_,_,_,_,_| y as i64);
-date_get_utc_field!(date_get_utc_month, |_,m,_,_,_,_,_,_| m as i64 - 1);
-date_get_utc_field!(date_get_utc_date, |_,_,d,_,_,_,_,_| d as i64);
-date_get_utc_field!(date_get_utc_day, |_,_,_,_,_,_,w,_| w as i64);
-date_get_utc_field!(date_get_utc_hours, |_,_,_,h,_,_,_,_| h as i64);
-date_get_utc_field!(date_get_utc_minutes, |_,_,_,_,m,_,_,_| m as i64);
-date_get_utc_field!(date_get_utc_seconds, |_,_,_,_,_,s,_,_| s as i64);
+date_get_utc_field!(date_get_utc_full_year, |y, _, _, _, _, _, _, _| y as i64);
+date_get_utc_field!(date_get_utc_month, |_, m, _, _, _, _, _, _| m as i64 - 1);
+date_get_utc_field!(date_get_utc_date, |_, _, d, _, _, _, _, _| d as i64);
+date_get_utc_field!(date_get_utc_day, |_, _, _, _, _, _, w, _| w as i64);
+date_get_utc_field!(date_get_utc_hours, |_, _, _, h, _, _, _, _| h as i64);
+date_get_utc_field!(date_get_utc_minutes, |_, _, _, _, m, _, _, _| m as i64);
+date_get_utc_field!(date_get_utc_seconds, |_, _, _, _, _, s, _, _| s as i64);
 
 pub fn date_get_utc_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = args.get(0).cloned().unwrap_or_else(JSValue::undefined);
@@ -1166,7 +1316,9 @@ pub fn date_set_milliseconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => f64::NAN,
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
     let new_ts = (ts / 1000.0).floor() * 1000.0 + ms;
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1184,11 +1336,27 @@ pub fn date_set_seconds(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let ms = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
+        Ok(None) => {
+            if ts.is_nan() {
+                0.0
+            } else {
+                ts % 1000.0
+            }
+        }
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
-    let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, (ts as i64 / 60000 % 60) as f64, sec, ms));
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
+    let new_ts = make_date(
+        day_from_time(ts as i64) as f64,
+        make_time(
+            (ts as i64 / 3600000 % 24) as f64,
+            (ts as i64 / 60000 % 60) as f64,
+            sec,
+            ms,
+        ),
+    );
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1205,16 +1373,33 @@ pub fn date_set_minutes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let sec = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => if ts.is_nan() { 0.0 } else { ((ts as i64 / 1000) % 60) as f64 },
+        Ok(None) => {
+            if ts.is_nan() {
+                0.0
+            } else {
+                ((ts as i64 / 1000) % 60) as f64
+            }
+        }
         Err(()) => return JSValue::undefined(),
     };
     let ms = match coerce_arg(ctx, args.get(3)) {
         Ok(Some(n)) => n,
-        Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
+        Ok(None) => {
+            if ts.is_nan() {
+                0.0
+            } else {
+                ts % 1000.0
+            }
+        }
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
-    let new_ts = make_date(day_from_time(ts as i64) as f64, make_time((ts as i64 / 3600000 % 24) as f64, min, sec, ms));
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
+    let new_ts = make_date(
+        day_from_time(ts as i64) as f64,
+        make_time((ts as i64 / 3600000 % 24) as f64, min, sec, ms),
+    );
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1231,20 +1416,40 @@ pub fn date_set_hours(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let min = match coerce_arg(ctx, args.get(2)) {
         Ok(Some(n)) => n,
-        Ok(None) => if ts.is_nan() { 0.0 } else { ((ts as i64 / 60000) % 60) as f64 },
+        Ok(None) => {
+            if ts.is_nan() {
+                0.0
+            } else {
+                ((ts as i64 / 60000) % 60) as f64
+            }
+        }
         Err(()) => return JSValue::undefined(),
     };
     let sec = match coerce_arg(ctx, args.get(3)) {
         Ok(Some(n)) => n,
-        Ok(None) => if ts.is_nan() { 0.0 } else { ((ts as i64 / 1000) % 60) as f64 },
+        Ok(None) => {
+            if ts.is_nan() {
+                0.0
+            } else {
+                ((ts as i64 / 1000) % 60) as f64
+            }
+        }
         Err(()) => return JSValue::undefined(),
     };
     let ms = match coerce_arg(ctx, args.get(4)) {
         Ok(Some(n)) => n,
-        Ok(None) => if ts.is_nan() { 0.0 } else { ts % 1000.0 },
+        Ok(None) => {
+            if ts.is_nan() {
+                0.0
+            } else {
+                ts % 1000.0
+            }
+        }
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
     let new_ts = make_date(day_from_time(ts as i64) as f64, make_time(hr, min, sec, ms));
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
@@ -1260,11 +1465,16 @@ pub fn date_set_date(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(None) => f64::NAN,
         Err(()) => return JSValue::undefined(),
     };
-    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let month = month_from_time(tsi);
-    let new_ts = make_date(make_day(year as f64, month as f64, d), time_within_day(tsi) as f64);
+    let new_ts = make_date(
+        make_day(year as f64, month as f64, d),
+        time_within_day(tsi) as f64,
+    );
     set_date_timestamp(ctx, this, time_clip(new_ts))
 }
 
@@ -1280,12 +1490,18 @@ pub fn date_set_month(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Err(()) => return JSValue::undefined(),
     };
     let d_val = coerce_arg(ctx, args.get(2));
-    if ts.is_nan() { return JSValue::new_float(f64::NAN); }
+    if ts.is_nan() {
+        return JSValue::new_float(f64::NAN);
+    }
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let dt = match d_val {
         Ok(Some(n)) => n,
-        Ok(None) => (day_within_year(year, day_from_time(tsi)) - month_to_day_in_year(month_from_time(tsi) as i32, is_leap_year(year)) as i64 + 1) as f64,
+        Ok(None) => {
+            (day_within_year(year, day_from_time(tsi))
+                - month_to_day_in_year(month_from_time(tsi) as i32, is_leap_year(year)) as i64
+                + 1) as f64
+        }
         Err(()) => return JSValue::undefined(),
     };
     let new_ts = make_date(make_day(year as f64, mo, dt), time_within_day(tsi) as f64);
@@ -1322,7 +1538,9 @@ pub fn date_set_full_year(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let tsi = ts as i64;
     let year = year_from_time(tsi);
     let month = month_from_time(tsi);
-    let dt_from_ts = (day_within_year(year, day_from_time(tsi)) - month_to_day_in_year(month as i32, is_leap_year(year)) as i64 + 1) as f64;
+    let dt_from_ts = (day_within_year(year, day_from_time(tsi))
+        - month_to_day_in_year(month as i32, is_leap_year(year)) as i64
+        + 1) as f64;
     let mo = match mo_val {
         Ok(Some(n)) => n,
         Ok(None) => month as f64,
@@ -1415,8 +1633,14 @@ pub fn date_to_iso_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let timestamp = get_date_timestamp_with_ctx(this, ctx);
     if timestamp.is_nan() {
         let mut err = JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Invalid time value")));
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("RangeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Invalid time value")),
+        );
         if let Some(proto) = ctx.get_range_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -1570,8 +1794,14 @@ pub fn date_to_json(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this_val = args.get(0).cloned().unwrap_or_else(JSValue::undefined);
     if !this_val.is_object() {
         let mut err = JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not an object")));
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not an object")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -1658,15 +1888,19 @@ pub fn init_date_to_primitive(ctx: &mut JSContext) {
     let proto_val = date_ctor.as_object().get(proto_key);
     if let Some(pv) = proto_val {
         if pv.is_object() {
-            let fn_val = create_builtin_function(ctx, "date_toPrimitive", 1, Some("[Symbol.toPrimitive]"));
-            pv.as_object_mut().define_property(sym_atom, crate::object::object::PropertyDescriptor {
-                value: Some(fn_val),
-                writable: false,
-                enumerable: false,
-                configurable: true,
-                get: None,
-                set: None,
-            });
+            let fn_val =
+                create_builtin_function(ctx, "date_toPrimitive", 1, Some("[Symbol.toPrimitive]"));
+            pv.as_object_mut().define_property(
+                sym_atom,
+                crate::object::object::PropertyDescriptor {
+                    value: Some(fn_val),
+                    writable: false,
+                    enumerable: false,
+                    configurable: true,
+                    get: None,
+                    set: None,
+                },
+            );
         }
     }
 }
@@ -1675,8 +1909,14 @@ pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = &args.get(0).cloned().unwrap_or_else(JSValue::undefined);
     if !this.is_object() {
         let mut err = JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not an object")));
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not an object")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -1697,8 +1937,14 @@ pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         "number" => ("valueOf", "toString"),
         _ => {
             let mut err = JSObject::new();
-            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("invalid hint")));
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("TypeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("invalid hint")),
+            );
             if let Some(proto) = ctx.get_type_error_prototype() {
                 err.prototype = Some(proto);
             }
@@ -1732,8 +1978,14 @@ pub fn date_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     }
     let mut err = JSObject::new();
-    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("can't convert to primitive")));
+    err.set(
+        ctx.common_atoms.name,
+        JSValue::new_string(ctx.intern("TypeError")),
+    );
+    err.set(
+        ctx.common_atoms.message,
+        JSValue::new_string(ctx.intern("can't convert to primitive")),
+    );
     if let Some(proto) = ctx.get_type_error_prototype() {
         err.prototype = Some(proto);
     }
@@ -1814,10 +2066,27 @@ fn timestamp_to_date(ms: f64) -> (i32, u32, u32, u32, u32, u32, u32, u32) {
     let ms_part = (total_ms % 1000 + 1000) % 1000;
     let weekday = ((total_days % 7 + 4 + 7) % 7) as u32;
 
-    (year, month, day, hour, minute, second, weekday, ms_part as u32)
+    (
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        weekday,
+        ms_part as u32,
+    )
 }
 
-fn make_day_from_parts(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32, ms: u32) -> f64 {
+fn make_day_from_parts(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    ms: u32,
+) -> f64 {
     date_to_timestamp_fast(year, month, day, hour, minute, second, ms)
 }
 
@@ -1863,15 +2132,25 @@ pub fn date_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             n => n,
         };
         let day = coerce_utc_arg(ctx, args.get(2), 1.0);
-        if day.is_nan() { return JSValue::new_float(f64::NAN); }
+        if day.is_nan() {
+            return JSValue::new_float(f64::NAN);
+        }
         let hour = coerce_utc_arg(ctx, args.get(3), 0.0);
-        if hour.is_nan() { return JSValue::new_float(f64::NAN); }
+        if hour.is_nan() {
+            return JSValue::new_float(f64::NAN);
+        }
         let minute = coerce_utc_arg(ctx, args.get(4), 0.0);
-        if minute.is_nan() { return JSValue::new_float(f64::NAN); }
+        if minute.is_nan() {
+            return JSValue::new_float(f64::NAN);
+        }
         let second = coerce_utc_arg(ctx, args.get(5), 0.0);
-        if second.is_nan() { return JSValue::new_float(f64::NAN); }
+        if second.is_nan() {
+            return JSValue::new_float(f64::NAN);
+        }
         let ms = coerce_utc_arg(ctx, args.get(6), 0.0);
-        if ms.is_nan() { return JSValue::new_float(f64::NAN); }
+        if ms.is_nan() {
+            return JSValue::new_float(f64::NAN);
+        }
 
         let day_val = make_day(year, month_raw, day);
         let time_val = make_time_ms(hour, minute, second, ms);

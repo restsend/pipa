@@ -22,15 +22,8 @@ pub struct UpvalueData {
     pub upvalues: FxHashMap<Atom, JSValue>,
     pub upvalue_cells: FxHashMap<Atom, Rc<Cell<JSValue>>>,
     pub upvalue_local_indices: FxHashMap<Atom, usize>,
-    pub upvalue_frame_overrides: FxHashMap<Atom, (usize, u64)>,
-
     pub upvalue_slots: Vec<Rc<Cell<JSValue>>>,
-
     pub upvalue_slot_atoms: Vec<Atom>,
-
-    pub env_frame: Option<usize>,
-
-    pub env_frame_id: Option<u64>,
 }
 
 impl UpvalueData {
@@ -53,14 +46,14 @@ pub struct JSFunction {
     pub builtin_func: Option<HostFunc>,
     pub upvalues: Option<Box<UpvalueData>>,
 
-    pub bytecode: Option<Box<crate::compiler::opcode::Bytecode>>,
+    pub bytecode: Option<crate::compiler::opcode::Bytecode>,
 
     pub shared_nb_for_ic: Option<std::sync::Arc<crate::compiler::opcode::NestedBytecode>>,
 
     pub cached_prototype_ptr: *mut crate::object::object::JSObject,
 
     pub source_filename: String,
-    pub line_number_table: Option<LineNumberTable>,
+    pub line_number_table: Option<std::sync::Arc<LineNumberTable>>,
     pub source_text: Option<String>,
 }
 
@@ -79,7 +72,7 @@ impl JSFunction {
             bytecode: None,
             shared_nb_for_ic: None,
             cached_prototype_ptr: std::ptr::null_mut(),
-            source_filename: "<anonymous>".to_string(),
+            source_filename: String::new(),
             line_number_table: None,
             source_text: None,
         }
@@ -227,7 +220,8 @@ impl JSFunction {
             get: None,
             set: None,
         };
-        self.base.define_property(ctx.common_atoms.length, length_desc);
+        self.base
+            .define_property(ctx.common_atoms.length, length_desc);
 
         let name_desc = PropertyDescriptor {
             value: Some(JSValue::new_string(self.name)),

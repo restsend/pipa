@@ -16,7 +16,7 @@ fn to_integer_index(val: &JSValue, ctx: &mut JSContext) -> i64 {
         let s = ctx.get_atom_str(val.get_atom());
         match s.trim().parse::<f64>() {
             Ok(v) if !v.is_nan() => v.trunc() as i64,
-            _ => 0
+            _ => 0,
         }
     } else {
         0
@@ -34,7 +34,11 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 
 pub fn js_float_to_string(f: f64) -> String {
     if f.is_infinite() {
-        return if f.is_sign_positive() { "Infinity".to_string() } else { "-Infinity".to_string() };
+        return if f.is_sign_positive() {
+            "Infinity".to_string()
+        } else {
+            "-Infinity".to_string()
+        };
     }
     if f.is_nan() {
         return "NaN".to_string();
@@ -48,7 +52,10 @@ fn this_to_string(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
     }
     if this.is_undefined() || this.is_null() {
         let mut err = JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
         err.set(
             ctx.common_atoms.message,
             JSValue::new_string(ctx.intern("this is not coercible")),
@@ -62,7 +69,11 @@ fn this_to_string(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
         return None;
     }
     if this.is_bool() {
-        return Some(if this.get_bool() { "true".to_string() } else { "false".to_string() });
+        return Some(if this.get_bool() {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        });
     }
     if this.is_int() {
         return Some(format!("{}", this.get_int()));
@@ -83,7 +94,11 @@ fn this_to_string(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
                 return Some(js_float_to_string(v.get_float()));
             }
             if v.is_bool() {
-                return Some(if v.get_bool() { "true".to_string() } else { "false".to_string() });
+                return Some(if v.get_bool() {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                });
             }
         }
     }
@@ -93,7 +108,10 @@ fn this_to_string(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
 fn require_string_coercible(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
     if this.is_undefined() || this.is_null() {
         let mut err = JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
         err.set(
             ctx.common_atoms.message,
             JSValue::new_string(ctx.intern("this is not coercible")),
@@ -110,7 +128,11 @@ fn require_string_coercible(ctx: &mut JSContext, this: &JSValue) -> Option<Strin
         return Some(ctx.get_atom_str(this.get_atom()).to_string());
     }
     if this.is_bool() {
-        return Some(if this.get_bool() { "true".to_string() } else { "false".to_string() });
+        return Some(if this.get_bool() {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        });
     }
     if this.is_int() {
         return Some(format!("{}", this.get_int()));
@@ -131,7 +153,11 @@ fn require_string_coercible(ctx: &mut JSContext, this: &JSValue) -> Option<Strin
                 return Some(js_float_to_string(v.get_float()));
             }
             if v.is_bool() {
-                return Some(if v.get_bool() { "true".to_string() } else { "false".to_string() });
+                return Some(if v.get_bool() {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                });
             }
         }
         return Some(ctx.get_atom_str(this.get_atom()).to_string());
@@ -140,15 +166,22 @@ fn require_string_coercible(ctx: &mut JSContext, this: &JSValue) -> Option<Strin
 }
 
 pub fn init_string(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let string_atom = ctx.common_atoms.string;
@@ -211,148 +244,184 @@ pub fn init_string(ctx: &mut JSContext) {
 
     let proto_atom = ctx.intern("StringPrototype");
     let mut proto_obj = JSObject::new();
-    set_ne(&mut proto_obj,
-        ctx.intern("constructor"),
-        string_value,
-    );
-    set_ne(&mut proto_obj,
+    set_ne(&mut proto_obj, ctx.intern("constructor"), string_value);
+    set_ne(
+        &mut proto_obj,
         ctx.intern("charAt"),
         create_builtin_function(ctx, "string_charAt"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("charCodeAt"),
         create_builtin_function(ctx, "string_charCodeAt"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("concat"),
         create_builtin_function(ctx, "string_concat"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("indexOf"),
         create_builtin_function(ctx, "string_indexOf"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("lastIndexOf"),
         create_builtin_function(ctx, "string_lastIndexOf"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("slice"),
         create_builtin_function(ctx, "string_slice"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("substring"),
         create_builtin_function(ctx, "string_substring"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toString"),
         create_builtin_function(ctx, "string_toString"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("valueOf"),
         create_builtin_function(ctx, "string_toString"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toLowerCase"),
         create_builtin_function(ctx, "string_toLowerCase"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toUpperCase"),
         create_builtin_function(ctx, "string_toUpperCase"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("split"),
         create_builtin_function(ctx, "string_split"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.length,
         create_builtin_function(ctx, "string_length"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("trim"),
         create_builtin_function(ctx, "string_trim"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("trimStart"),
         create_builtin_function(ctx, "string_trimStart"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("trimLeft"),
         create_builtin_function(ctx, "string_trimStart"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("trimEnd"),
         create_builtin_function(ctx, "string_trimEnd"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("trimRight"),
         create_builtin_function(ctx, "string_trimEnd"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("startsWith"),
         create_builtin_function(ctx, "string_startsWith"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("endsWith"),
         create_builtin_function(ctx, "string_endsWith"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("repeat"),
         create_builtin_function(ctx, "string_repeat"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("includes"),
         create_builtin_function(ctx, "string_includes"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("startsWith"),
         create_builtin_function(ctx, "string_starts_with"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("endsWith"),
         create_builtin_function(ctx, "string_ends_with"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("replace"),
         create_builtin_function(ctx, "string_replace"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("padStart"),
         create_builtin_function(ctx, "string_padStart"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("padEnd"),
         create_builtin_function(ctx, "string_padEnd"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("replaceAll"),
         create_builtin_function(ctx, "string_replaceAll"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("search"),
         create_builtin_function(ctx, "string_search"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("match"),
         create_builtin_function(ctx, "string_match"),
     );
-    set_ne(&mut proto_obj,ctx.intern("at"), create_builtin_function(ctx, "string_at"));
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("at"),
+        create_builtin_function(ctx, "string_at"),
+    );
+    set_ne(
+        &mut proto_obj,
         ctx.intern("isWellFormed"),
         create_builtin_function(ctx, "string_isWellFormed"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toWellFormed"),
         create_builtin_function(ctx, "string_toWellFormed"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("codePointAt"),
         create_builtin_function(ctx, "string_codePointAt"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("matchAll"),
         create_builtin_function(ctx, "string_matchAll"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("substr"),
         create_builtin_function(ctx, "string_substr"),
     );
@@ -405,7 +474,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "string_lastIndexOf",
         HostFunction::method("lastIndexOf", 1, string_last_index_of),
     );
-    ctx.register_builtin("string_slice", HostFunction::method("slice", 2, string_slice));
+    ctx.register_builtin(
+        "string_slice",
+        HostFunction::method("slice", 2, string_slice),
+    );
     ctx.register_builtin(
         "string_substring",
         HostFunction::method("substring", 2, string_substring),
@@ -422,7 +494,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "string_toUpperCase",
         HostFunction::method("toUpperCase", 0, string_to_upper_case),
     );
-    ctx.register_builtin("string_split", HostFunction::method("split", 1, string_split));
+    ctx.register_builtin(
+        "string_split",
+        HostFunction::method("split", 1, string_split),
+    );
     ctx.register_builtin(
         "string_length",
         HostFunction::method("length", 0, string_length),
@@ -435,10 +510,7 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "string_fromCodePoint",
         HostFunction::new("fromCodePoint", 1, string_fromcodepoint),
     );
-    ctx.register_builtin(
-        "string_raw",
-        HostFunction::new("raw", 1, string_raw),
-    );
+    ctx.register_builtin("string_raw", HostFunction::new("raw", 1, string_raw));
     ctx.register_builtin("string_trim", HostFunction::method("trim", 0, string_trim));
     ctx.register_builtin(
         "string_trimStart",
@@ -492,7 +564,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "string_search",
         HostFunction::method("search", 1, string_search),
     );
-    ctx.register_builtin("string_match", HostFunction::method("match", 1, string_match));
+    ctx.register_builtin(
+        "string_match",
+        HostFunction::method("match", 1, string_match),
+    );
     ctx.register_builtin("string_at", HostFunction::method("at", 1, string_at));
     ctx.register_builtin(
         "string_isWellFormed",
@@ -690,7 +765,7 @@ fn string_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let ps = ctx.get_atom_str(p.get_atom());
             match ps.trim().parse::<f64>() {
                 Ok(v) if !v.is_nan() => v.trunc() as i64,
-                _ => 0
+                _ => 0,
             }
         } else {
             0
@@ -981,7 +1056,9 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         usize::MAX
     };
 
-    let separator = sep_atom.map(|a| ctx.get_atom_str(a).to_string()).unwrap_or_default();
+    let separator = sep_atom
+        .map(|a| ctx.get_atom_str(a).to_string())
+        .unwrap_or_default();
     let s = s.to_string();
 
     if limit == 0 {
@@ -1068,8 +1145,14 @@ fn string_fromcodepoint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             if arg.get_bool() { 1.0 } else { 0.0 }
         } else {
             let mut err = crate::object::object::JSObject::new();
-            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Invalid code point")));
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("TypeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("Invalid code point")),
+            );
             if let Some(proto) = ctx.get_type_error_prototype() {
                 err.prototype = Some(proto);
             }
@@ -1080,8 +1163,14 @@ fn string_fromcodepoint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         };
         if cp.is_nan() || cp < 0.0 || cp > 1114111.0 || cp != cp.floor() {
             let mut err = crate::object::object::JSObject::new();
-            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Invalid code point")));
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("RangeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("Invalid code point")),
+            );
             if let Some(proto) = ctx.get_range_error_prototype() {
                 err.prototype = Some(proto);
             }
@@ -1175,7 +1264,11 @@ fn string_ends_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len = s.len();
     let end_pos = if args.len() > 2 {
         let idx = to_integer_index(&args[2], ctx);
-        if idx < 0 { 0usize } else { (idx as usize).min(len) }
+        if idx < 0 {
+            0usize
+        } else {
+            (idx as usize).min(len)
+        }
     } else {
         len
     };
@@ -1392,7 +1485,11 @@ fn js_to_string_arg(val: &JSValue, ctx: &mut JSContext) -> String {
     } else if val.is_float() {
         js_float_to_string(val.get_float())
     } else if val.is_bool() {
-        if val.get_bool() { "true".to_string() } else { "false".to_string() }
+        if val.get_bool() {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        }
     } else if val.is_undefined() {
         "undefined".to_string()
     } else if val.is_null() {
@@ -1544,7 +1641,7 @@ fn string_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let s = ctx.get_atom_str(pos.get_atom());
             match s.trim().parse::<f64>() {
                 Ok(v) if !v.is_nan() => v.trunc() as i64,
-                _ => 0
+                _ => 0,
             }
         } else {
             0
@@ -1932,9 +2029,16 @@ fn string_substr(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn string_raw(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw requires a template")));
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("String.raw requires a template")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -1945,9 +2049,16 @@ fn string_raw(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let template = &args[0];
     if !template.is_object() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw requires template to be an object")));
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("String.raw requires template to be an object")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -1961,9 +2072,17 @@ fn string_raw(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let raw_val = match obj.get(raw_atom) {
         Some(v) => v,
         None => {
-            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw template has no raw property")));
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("TypeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("String.raw template has no raw property")),
+            );
             if let Some(proto) = ctx.get_type_error_prototype() {
                 err.prototype = Some(proto);
             }
@@ -1974,9 +2093,16 @@ fn string_raw(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     };
     if !raw_val.is_object() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("String.raw template.raw is not an object")));
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("String.raw template.raw is not an object")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -2008,7 +2134,9 @@ fn string_raw(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let arr = unsafe { &*(arr_ptr as *const crate::object::array_obj::JSArrayObject) };
             arr.get(i).unwrap_or(JSValue::new_string(ctx.intern("")))
         } else {
-            raw_obj.get(key).unwrap_or(JSValue::new_string(ctx.intern("")))
+            raw_obj
+                .get(key)
+                .unwrap_or(JSValue::new_string(ctx.intern("")))
         };
         let raw_str = if raw_str_val.is_string() {
             ctx.get_atom_str(raw_str_val.get_atom()).to_string()

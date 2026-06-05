@@ -35,8 +35,8 @@ pub struct AtomTable {
 impl AtomTable {
     pub fn new() -> Self {
         let mut table = AtomTable {
-            entries: FxHashMap::with_capacity_and_hasher(4096, Default::default()),
-            index_map: FxHashMap::with_capacity_and_hasher(4096, Default::default()),
+            entries: FxHashMap::with_capacity_and_hasher(16384, Default::default()),
+            index_map: FxHashMap::with_capacity_and_hasher(16384, Default::default()),
             next_index: 0,
             symbol_atoms: FxHashMap::default(),
             index_atoms: FxHashMap::with_capacity_and_hasher(64, Default::default()),

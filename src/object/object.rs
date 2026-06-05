@@ -1693,9 +1693,8 @@ impl JSObject {
                 if let Some(offset) = self.find_offset(prop) {
                     if offset < self.props.len() {
                         self.props[offset].value = value;
-                        self.props[offset].attrs = attrs_from_bools(
-                            desc.writable, desc.enumerable, desc.configurable,
-                        );
+                        self.props[offset].attrs =
+                            attrs_from_bools(desc.writable, desc.enumerable, desc.configurable);
                     }
                 } else {
                     self.props.push(PropSlot::new(

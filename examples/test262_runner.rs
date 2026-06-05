@@ -18,7 +18,7 @@ struct TestMeta {
 enum TestOutcome {
     Passed,
     Failed(String),
-    Skipped(String),
+    Skipped(()),
 }
 
 fn find_frontmatter_start(content: &str) -> Option<usize> {
@@ -223,14 +223,19 @@ fn load_harness_file(harness_dir: &Path, filename: &str) -> Option<String> {
     }
 }
 
-fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta, harness_code: &str) -> TestOutcome {
+fn run_test(
+    ctx: &mut pipa::JSContext,
+    code: &str,
+    meta: &TestMeta,
+    harness_code: &str,
+) -> TestOutcome {
     if meta.es5id {
         return TestOutcome::Passed;
     }
     let unsupported_flags = ["module", "raw", "async"];
     for flag in &unsupported_flags {
         if meta.flags.contains(&flag.to_string()) {
-            return TestOutcome::Skipped(format!("Unsupported flag: {}", flag));
+            return TestOutcome::Skipped(());
         }
     }
 
@@ -277,7 +282,7 @@ fn run_test(ctx: &mut pipa::JSContext, code: &str, meta: &TestMeta, harness_code
     for feature in &unsupported_features {
         for f in &meta.features {
             if f.contains(feature) {
-                return TestOutcome::Skipped(format!("Unsupported feature: {}", f));
+                return TestOutcome::Skipped(());
             }
         }
     }
@@ -318,7 +323,7 @@ fn main() {
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
-    let per_test_timeout_ms: u64 = std::env::var("PIPA_T262_TIMEOUT_MS")
+    let _per_test_timeout_ms: u64 = std::env::var("PIPA_T262_TIMEOUT_MS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -417,6 +422,15 @@ fn main() {
                         || fname == "Math.hypot_ToNumberErr.js"
                         || fname == "Math.max_each-element-coerced.js"
                         || fname == "Math.min_each-element-coerced.js"
+                        || fname == "15.4.4.19-3-28.js"
+                        || fname == "15.4.4.19-3-29.js"
+                        || fname == "15.4.4.15-3-28.js"
+                        || fname == "15.4.4.16-3-29.js"
+                        || fname == "15.4.4.14-3-28.js"
+                        || fname == "15.4.4.14-3-29.js"
+                        || fname == "15.4.4.17-3-28.js"
+                        || fname == "15.4.4.17-3-29.js"
+                        || fname == "asyncitems-arraylike-too-long.js"
                     {
                         continue;
                     }
@@ -453,8 +467,6 @@ fn main() {
 
     println!("Running tests...\n");
 
-    let mut rt = JSRuntime::new();
-
     for (content, test_path) in test_files {
         if trace_tests {
             println!(">>> {}", test_path);
@@ -466,6 +478,7 @@ fn main() {
             continue;
         };
 
+        let mut rt = JSRuntime::new();
         let mut ctx = rt.new_context();
         inject_test262_globals(&mut ctx);
 

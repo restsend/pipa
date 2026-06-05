@@ -34,8 +34,14 @@ pub fn register_math_builtins(ctx: &mut JSContext) {
     ctx.register_builtin("math_acos", HostFunction::new("acos", 1, math_acos));
     ctx.register_builtin("math_atan", HostFunction::new("atan", 1, math_atan));
     ctx.register_builtin("math_atan2", HostFunction::new("atan2", 2, math_atan2));
-    ctx.register_builtin("math_f16round", HostFunction::new("f16round", 1, math_f16round));
-    ctx.register_builtin("math_sumPrecise", HostFunction::new("sumPrecise", 1, math_sum_precise));
+    ctx.register_builtin(
+        "math_f16round",
+        HostFunction::new("f16round", 1, math_f16round),
+    );
+    ctx.register_builtin(
+        "math_sumPrecise",
+        HostFunction::new("sumPrecise", 1, math_sum_precise),
+    );
     ctx.register_builtin("math_sinh", HostFunction::new("sinh", 1, math_sinh));
     ctx.register_builtin("math_cosh", HostFunction::new("cosh", 1, math_cosh));
     ctx.register_builtin("math_tanh", HostFunction::new("tanh", 1, math_tanh));
@@ -179,7 +185,7 @@ fn math_sqrt(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_float(args[arg_idx].get_float().sqrt())
 }
 
-fn math_max(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn math_max(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_float(f64::NEG_INFINITY);
     }
@@ -197,7 +203,7 @@ fn math_max(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_float(max)
 }
 
-fn math_min(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn math_min(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_float(f64::INFINITY);
     }
@@ -349,7 +355,11 @@ fn f16_from_f64(x: f64) -> f64 {
         return if x < 0.0 { -result } else { result };
     }
     if abs_x > 65520.0 {
-        return if x < 0.0 { f64::NEG_INFINITY } else { f64::INFINITY };
+        return if x < 0.0 {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
     }
 
     let bits = abs_x.to_bits();
@@ -420,19 +430,11 @@ fn f16_to_f64(bits: u16) -> f64 {
             2.0f64.powi(-14) * mant / 1024.0
         }
     } else if exp == 31 {
-        if mant == 0.0 {
-            f64::INFINITY
-        } else {
-            f64::NAN
-        }
+        if mant == 0.0 { f64::INFINITY } else { f64::NAN }
     } else {
         2.0f64.powi(exp - 15) * (1.0 + mant / 1024.0)
     };
-    if sign != 0 {
-        -val
-    } else {
-        val
-    }
+    if sign != 0 { -val } else { val }
 }
 
 fn math_hypot(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -643,9 +645,16 @@ fn rand_simple() -> f64 {
 }
 
 fn throw_type_error_math(ctx: &mut JSContext, msg: &str) -> JSValue {
-    let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(msg)));
+    let mut err =
+        crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+    err.set(
+        ctx.common_atoms.name,
+        JSValue::new_string(ctx.intern("TypeError")),
+    );
+    err.set(
+        ctx.common_atoms.message,
+        JSValue::new_string(ctx.intern(msg)),
+    );
     if let Some(proto) = ctx.get_type_error_prototype() {
         err.prototype = Some(proto);
     }
@@ -657,9 +666,16 @@ fn throw_type_error_math(ctx: &mut JSContext, msg: &str) -> JSValue {
 
 fn math_sum_precise(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("sumPrecise requires 1 argument")));
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("sumPrecise requires 1 argument")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -671,19 +687,20 @@ fn math_sum_precise(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let iterable = &args[0];
     let mut values: Vec<f64> = Vec::new();
 
-    let sym_iter_val = crate::builtins::symbol::get_or_create_well_known_symbol(ctx, "Symbol.iterator");
+    let sym_iter_val =
+        crate::builtins::symbol::get_or_create_well_known_symbol(ctx, "Symbol.iterator");
     let has_iterator = iterable.is_object() && {
         let sym_key = crate::runtime::atom::Atom(0x40000000 | sym_iter_val.get_symbol_id());
         let obj = unsafe { &*(iterable.get_ptr() as *const crate::object::JSObject) };
         obj.get(sym_key).map_or(false, |v| v.is_function())
     };
 
-     if has_iterator {
-         let vm_ptr = match ctx.get_register_vm_ptr() {
-             Some(p) => p,
-             None => return JSValue::new_float(f64::NAN),
-         };
-         let vm = unsafe { &mut *(vm_ptr as *mut VM) };
+    if has_iterator {
+        let vm_ptr = match ctx.get_register_vm_ptr() {
+            Some(p) => p,
+            None => return JSValue::new_float(f64::NAN),
+        };
+        let vm = unsafe { &mut *(vm_ptr as *mut VM) };
 
         let iter_fn = {
             let sym_key = crate::runtime::atom::Atom(0x40000000 | sym_iter_val.get_symbol_id());
@@ -705,7 +722,8 @@ fn math_sum_precise(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let next_atom = ctx.intern("next");
         let next_fn = {
             let mut next_val = None;
-            let mut current: Option<*const crate::object::JSObject> = Some(iterator.get_ptr() as *const _);
+            let mut current: Option<*const crate::object::JSObject> =
+                Some(iterator.get_ptr() as *const _);
             while let Some(ptr) = current {
                 let obj = unsafe { &*ptr };
                 if let Some(v) = obj.get(next_atom) {
@@ -734,7 +752,9 @@ fn math_sum_precise(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let result_obj = unsafe { &*(result.get_ptr() as *const crate::object::JSObject) };
             let done_atom = ctx.intern("done");
             let value_atom = ctx.intern("value");
-            let done = result_obj.get(done_atom).map_or(false, |v| v.is_bool() && v.get_bool());
+            let done = result_obj
+                .get(done_atom)
+                .map_or(false, |v| v.is_bool() && v.get_bool());
             if done {
                 break;
             }
@@ -810,10 +830,18 @@ fn math_sum_precise(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             finite_values.push(n);
         }
     }
-    if has_nan { return JSValue::new_float(f64::NAN); }
-    if pos_inf && neg_inf { return JSValue::new_float(f64::NAN); }
-    if pos_inf { return JSValue::new_float(f64::INFINITY); }
-    if neg_inf { return JSValue::new_float(f64::NEG_INFINITY); }
+    if has_nan {
+        return JSValue::new_float(f64::NAN);
+    }
+    if pos_inf && neg_inf {
+        return JSValue::new_float(f64::NAN);
+    }
+    if pos_inf {
+        return JSValue::new_float(f64::INFINITY);
+    }
+    if neg_inf {
+        return JSValue::new_float(f64::NEG_INFINITY);
+    }
     if finite_values.is_empty() {
         return JSValue::new_float(-0.0);
     }
@@ -822,15 +850,24 @@ fn math_sum_precise(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let result = exact_float_sum(&finite_values);
     if result == 0.0 {
-        let has_positive = finite_values.iter().any(|&x| x > 0.0 || (x == 0.0 && !x.is_sign_negative()));
-        let has_negative = finite_values.iter().any(|&x| x < 0.0 || (x == 0.0 && x.is_sign_negative()));
+        let has_positive = finite_values
+            .iter()
+            .any(|&x| x > 0.0 || (x == 0.0 && !x.is_sign_negative()));
+        let has_negative = finite_values
+            .iter()
+            .any(|&x| x < 0.0 || (x == 0.0 && x.is_sign_negative()));
         if has_positive && has_negative {
             return JSValue::new_float(0.0);
         }
-        if finite_values.iter().all(|&x| x == 0.0 && x.is_sign_negative()) {
+        if finite_values
+            .iter()
+            .all(|&x| x == 0.0 && x.is_sign_negative())
+        {
             return JSValue::new_float(-0.0);
         }
-        let has_pos_zero = finite_values.iter().any(|&x| x == 0.0 && !x.is_sign_negative());
+        let has_pos_zero = finite_values
+            .iter()
+            .any(|&x| x == 0.0 && !x.is_sign_negative());
         if has_pos_zero {
             return JSValue::new_float(0.0);
         }
@@ -879,11 +916,16 @@ fn exact_float_sum(values: &[f64]) -> f64 {
     if first_nonzero == 0 && result_limbs[0] == 0 {
         return if result_sign { -0.0 } else { 0.0 };
     }
-    let total_bits = first_nonzero * 64 + (64 - result_limbs[first_nonzero].leading_zeros() as usize);
+    let total_bits =
+        first_nonzero * 64 + (64 - result_limbs[first_nonzero].leading_zeros() as usize);
     let exp = min_exp + total_bits as i32 - 1;
     let biased_exp = exp + 1023;
     if biased_exp >= 0x7FF {
-        return if result_sign { f64::NEG_INFINITY } else { f64::INFINITY };
+        return if result_sign {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
     }
     if biased_exp <= 0 {
         return if result_sign { -0.0 } else { 0.0 };
@@ -891,12 +933,24 @@ fn exact_float_sum(values: &[f64]) -> f64 {
     let top_limb = first_nonzero;
     let bits_in_top = 64 - result_limbs[top_limb].leading_zeros() as usize;
     let top_val = result_limbs[top_limb];
-    let next_val = if top_limb > 0 { result_limbs[top_limb - 1] } else { 0 };
-    let next_next_val = if top_limb > 1 { result_limbs[top_limb - 2] } else { 0 };
+    let next_val = if top_limb > 0 {
+        result_limbs[top_limb - 1]
+    } else {
+        0
+    };
+    let next_next_val = if top_limb > 1 {
+        result_limbs[top_limb - 2]
+    } else {
+        0
+    };
     let result = if bits_in_top >= 53 {
         let shift = bits_in_top - 53;
         let mant = (top_val >> shift) as u64;
-        let round_bit = if shift > 0 { (top_val >> (shift - 1)) & 1 } else { 0 };
+        let round_bit = if shift > 0 {
+            (top_val >> (shift - 1)) & 1
+        } else {
+            0
+        };
         let sticky = if shift > 1 {
             (top_val & ((1u64 << (shift - 1)) - 1)) != 0
         } else if shift == 1 {
@@ -911,7 +965,11 @@ fn exact_float_sum(values: &[f64]) -> f64 {
         if shift <= 64 {
             mant |= (next_val >> (64 - shift)) as u128;
         }
-        let round_bit = if shift < 64 { ((next_val >> (64 - shift - 1)) & 1) != 0 } else { false };
+        let round_bit = if shift < 64 {
+            ((next_val >> (64 - shift - 1)) & 1) != 0
+        } else {
+            false
+        };
         let sticky = if shift < 63 {
             (next_val & ((1u64 << (64 - shift - 1)) - 1)) != 0 || next_next_val != 0
         } else {
@@ -925,18 +983,19 @@ fn exact_float_sum(values: &[f64]) -> f64 {
 }
 
 fn add_to_bigint(limbs: &mut [u64], val: u64, limb_idx: usize, bit_shift: usize) {
-    if limb_idx >= limbs.len() || val == 0 { return; }
+    if limb_idx >= limbs.len() || val == 0 {
+        return;
+    }
     let (lo, hi) = if bit_shift == 0 {
         (val, 0u64)
     } else {
         (val << bit_shift, val >> (64 - bit_shift))
     };
-    let mut carry = 0u64;
-    {
+    let mut carry = {
         let sum = limbs[limb_idx] as u128 + lo as u128;
         limbs[limb_idx] = sum as u64;
-        carry = (sum >> 64) as u64;
-    }
+        (sum >> 64) as u64
+    };
     if hi != 0 || carry != 0 {
         let idx = limb_idx + 1;
         if idx < limbs.len() {
@@ -956,8 +1015,12 @@ fn add_to_bigint(limbs: &mut [u64], val: u64, limb_idx: usize, bit_shift: usize)
 
 fn cmp_bigint(a: &[u64], b: &[u64]) -> i32 {
     for i in (0..a.len()).rev() {
-        if a[i] > b[i] { return 1; }
-        if a[i] < b[i] { return -1; }
+        if a[i] > b[i] {
+            return 1;
+        }
+        if a[i] < b[i] {
+            return -1;
+        }
     }
     0
 }
@@ -974,7 +1037,13 @@ fn sub_bigint(a: &[u64], b: &[u64]) -> Vec<u64> {
     result
 }
 
-fn round_mantissa_to_float(mant: u64, round_bit: bool, sticky: bool, mut biased_exp: i32, negative: bool) -> f64 {
+fn round_mantissa_to_float(
+    mant: u64,
+    round_bit: bool,
+    sticky: bool,
+    mut biased_exp: i32,
+    negative: bool,
+) -> f64 {
     let mant_53_mask = (1u64 << 53) - 1;
     let mut mant = mant & mant_53_mask;
     if mant == 0 && !round_bit {
@@ -988,7 +1057,11 @@ fn round_mantissa_to_float(mant: u64, round_bit: bool, sticky: bool, mut biased_
         }
     }
     if biased_exp >= 0x7FF {
-        return if negative { f64::NEG_INFINITY } else { f64::INFINITY };
+        return if negative {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
     }
     if biased_exp <= 0 {
         return if negative { -0.0 } else { 0.0 };
@@ -997,125 +1070,4 @@ fn round_mantissa_to_float(mant: u64, round_bit: bool, sticky: bool, mut biased_
     let sign_bit = if negative { 1u64 << 63 } else { 0 };
     let exp_bits = (biased_exp as u64) << 52;
     f64::from_bits(sign_bit | exp_bits | mant_bits)
-}
-
-fn naive_sum(values: &[f64]) -> f64 {
-    let mut sum = 0.0f64;
-    for &x in values { sum += x; }
-    sum
-}
-
-fn kbn_sum(values: &[f64]) -> f64 {
-    let mut sum = 0.0f64;
-    let mut c = 0.0f64;
-    for &x in values {
-        let y = x - c;
-        let t = sum + y;
-        c = (t - sum) - y;
-        sum = t;
-    }
-    sum
-}
-
-fn precise_sum(values: &[f64]) -> f64 {
-    let mut merged: Vec<f64> = Vec::new();
-    let mut positives: Vec<f64> = values.iter().filter(|&&x| x > 0.0).copied().collect::<Vec<_>>();
-    let mut negatives: Vec<f64> = values.iter().filter(|&&x| x < 0.0).copied().collect::<Vec<_>>();
-    positives.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    negatives.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let (mut pi, mut ni) = (0usize, 0usize);
-    let mut last_was_neg = false;
-    while pi < positives.len() || ni < negatives.len() {
-        let p_abs = if pi < positives.len() { positives[pi].abs() } else { 0.0 };
-        let n_abs = if ni < negatives.len() { negatives[ni].abs() } else { 0.0 };
-        let take_neg = if ni >= negatives.len() { false }
-            else if pi >= positives.len() { true }
-            else if n_abs > p_abs { true }
-            else if p_abs > n_abs { false }
-            else { !last_was_neg };
-        if take_neg {
-            merged.push(negatives[ni]);
-            ni += 1;
-            last_was_neg = true;
-        } else {
-            merged.push(positives[pi]);
-            pi += 1;
-            last_was_neg = false;
-        }
-    }
-    let mut sum = 0.0f64;
-    let mut c = 0.0f64;
-    for &x in &merged {
-        let y = x + c;
-        let t = sum + y;
-        if sum.abs() >= y.abs() {
-            c = (sum - t) + y;
-        } else {
-            c = (y - t) + sum;
-        }
-        sum = t;
-    }
-    sum + c
-}
-
-fn shewchuk_sum_finite(values: &[f64]) -> f64 {
-    let mut partials: Vec<f64> = Vec::new();
-    for &x in values {
-        let mut y = x;
-        let mut new_partials = Vec::with_capacity(partials.len() + 1);
-        for &p in &partials {
-            let (hi, lo) = two_sum(p, y);
-            y = lo;
-            if hi != 0.0 { new_partials.push(hi); }
-        }
-        if y != 0.0 { new_partials.push(y); }
-        partials = new_partials;
-    }
-    let mut sum = 0.0f64;
-    for &p in &partials { sum += p; }
-    sum
-}
-
-fn shewchuk_sum(values: &[f64]) -> f64 {
-    let mut partials: Vec<f64> = Vec::new();
-    for &x in values {
-        let mut y = x;
-        let mut j = 0;
-        for i in 0..partials.len() {
-            let p = partials[i];
-            if y.abs() > p.abs() {
-                let (hi, lo) = two_sum(y, p);
-                y = lo;
-                partials[j] = hi;
-            } else {
-                let (hi, lo) = two_sum(p, y);
-                y = lo;
-                partials[j] = hi;
-            }
-            j += 1;
-        }
-        partials.truncate(j);
-        if y != 0.0 {
-            partials.push(y);
-        }
-    }
-    let mut sum = 0.0f64;
-    let mut err = 0.0f64;
-    for &p in &partials {
-        let new_sum = sum + p;
-        if sum.abs() >= p.abs() {
-            err += (sum - new_sum) + p;
-        } else {
-            err += (p - new_sum) + sum;
-        }
-        sum = new_sum;
-    }
-    sum + err
-}
-
-fn two_sum(a: f64, b: f64) -> (f64, f64) {
-    let s = a + b;
-    let v = s - a;
-    let lo = (a - (s - v)) + (b - v);
-    (s, lo)
 }

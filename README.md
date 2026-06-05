@@ -16,57 +16,57 @@
 
 No external C libraries or system dependencies for the above — everything is implemented from scratch in Rust.
 
-## Benchmarks (2026-05-31)
+## Benchmarks (2026-06-05)
 
 V8 benchmark suite comparison (higher is better):
 
 | Benchmark              |   qjs |   node |   boa |  pipa | vs qjs |
 |------------------------|-------|--------|-------|-------|--------|
-| Richards               |   980 |  46846 |   133 |   895 |  -8.7% |
-| DeltaBlue              |   951 |  94979 |   140 |   923 |  -2.9% |
-| Crypto                 |  1059 |  60072 |   125 |   993 |  -6.2% |
-| RayTrace               |  1462 |  79697 |   315 |   965 | -34.1% |
-| EarleyBoyer            |  2107 |  95129 |   281 |  1307 | -38.0% |
-| RegExp                 |   330 |  12703 |  41.6 |  1016 | +207.9% |
-| Splay                  |  2405 |  48609 |   536 |  2904 | +20.7% |
-| NavierStokes           |  1793 |  56392 |   288 |  1825 |  +1.8% |
-| **SCORE (total)**      | **1201** | **53836** | **184** | **1240** | **+3.2%** |
+| Richards               |   963 |  45162 |   142 |   950 |  -1.3% |
+| DeltaBlue              |   941 |  98351 |   142 |   976 |  +3.7% |
+| Crypto                 |  1070 |  59358 |   126 |  1100 |  +2.8% |
+| RayTrace               |  1462 |  80659 |   312 |   956 | -34.6% |
+| EarleyBoyer            |  2083 |  92667 |   372 |  1848 | -11.3% |
+| RegExp                 |   329 |  13157 |  62.6 |  1018 | +209.4% |
+| Splay                  |  2410 |  50606 |   527 |  2038 | -15.4% |
+| NavierStokes           |  1809 |  56244 |   295 |  2115 | +16.9% |
+| **SCORE (total)**      | **1198** | **54138** | **203** | **1295** | **+8.1%** |
 
-Ranking: **#1 node** (53836) · **#2 pipa** (1240) · **#3 qjs** (1201) · **#4 boa** (184)
+Ranking: **#1 node** (54138) · **#2 pipa** (1295) · **#3 qjs** (1198) · **#4 boa** (203)
 
-## test262 Compatibility (2026-05-31)
+## test262 Compatibility (2026-06-05)
 
 Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl402`).
 
 | Category | Tests | Pass Rate | Notes |
 |----------|-------|-----------|-------|
 | **Core Builtins** | | | |
-| Math | 324 | **100%** (324/324) | |
+| Math | 324 | **99.7%** (323/324) | |
 | Boolean | 50 | **100%** (50/50) | |
-| parseFloat | 96 | **100%** (96/96) | |
-| parseInt | 104 | **100%** (104/104) | |
-| Number | 339 | **100%** (339/339) | |
+| parseFloat | 54 | **98.1%** (53/54) | |
+| parseInt | 55 | **96.4%** (53/55) | |
+| Number | 339 | **98.8%** (335/339) | |
 | Object.is | 21 | **100%** (21/21) | |
-| Object.defineProperty | 1131 | **98.8%** (1118/1131) | |
+| Object.defineProperty | 1131 | **98.9%** (1118/1131) | |
 | Object.create | 320 | **99.4%** (318/320) | |
 | Object.getPrototypeOf | 39 | **100%** (39/39) | |
-| Date | 594 | **93.6%** (556/594) | |
-| global | 29 | **96.6%** (28/29) | |
+| Date | 594 | **89.2%** (530/594) | |
+| global | 29 | **100%** (29/29) | |
 | Infinity | 6 | **100%** (6/6) | |
-| eval | 10 | **80.0%** (8/10) | |
-| URI encode/decode | 118 | **77.9%** (92/118) | |
+| eval | 10 | **90.0%** (9/10) | |
+| URI encode/decode | 173 | **45.1%** (78/173) | |
 | Function | 507 | **85.2%** (432/507) | |
 | **Other Builtins** | | | |
-| Symbol | 98 | **73.5%** (72/98) | |
-| JSON | 165 | **50.9%** (84/165) | |
-| Error | 92 | **44.6%** (41/92) | |
+| Symbol | 98 | **87.8%** (86/98) | |
+| JSON | 165 | **49.1%** (81/165) | |
+| Error | 180 | **52.8%** (95/180) | |
 | RegExp | 1878 | **42.3%** (794/1878) | |
-| String | 301 | **17.0%** (51/301) | |
-| Reflect | 153 | **20.9%** (32/153) | |
-| Map | 203 | **21.2%** (43/203) | |
-| Set | 382 | **18.3%** (70/382) | |
-| BigInt | 77 | **23.4%** (18/77) | |
-| Promise | 676 | **5.5%** (37/676) | Limited async support |
+| String | 1222 | **77.2%** (943/1222) | |
+| Reflect | 153 | **21.6%** (33/153) | |
+| Map | 203 | **22.2%** (45/203) | |
+| Set | 382 | **18.8%** (72/382) | |
+| BigInt | 77 | **27.3%** (21/77) | |
+| Promise | 676 | **5.6%** (38/676) | Limited async support |
 | Proxy | 311 | **0%** (0/311) | Not yet implemented |
 
 ## Usage

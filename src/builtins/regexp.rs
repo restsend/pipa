@@ -5,15 +5,22 @@ use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
 pub fn init_regexp(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     ctx.register_builtin(
@@ -33,34 +40,63 @@ pub fn init_regexp(ctx: &mut JSContext) {
     let proto_atom = ctx.intern("RegExpPrototype");
     let mut proto_obj = JSObject::new();
 
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.test,
         create_builtin_function(ctx, "regexp_test"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.exec,
         create_builtin_function(ctx, "regexp_exec"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.to_string,
         create_builtin_function(ctx, "regexp_toString"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("compile"),
         create_builtin_function(ctx, "regexp_compile"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.source,
         JSValue::new_string(ctx.intern("(?:)")),
     );
-    set_ne(&mut proto_obj,ctx.common_atoms.global, JSValue::bool(false));
-    set_ne(&mut proto_obj,ctx.common_atoms.ignore_case, JSValue::bool(false));
-    set_ne(&mut proto_obj,ctx.common_atoms.multiline, JSValue::bool(false));
-    set_ne(&mut proto_obj,ctx.common_atoms.sticky, JSValue::bool(false));
-    set_ne(&mut proto_obj,ctx.common_atoms.unicode, JSValue::bool(false));
-    set_ne(&mut proto_obj,ctx.intern("unicodeSets"), JSValue::bool(false));
-    set_ne(&mut proto_obj,ctx.intern("dotAll"), JSValue::bool(false));
-    set_ne(&mut proto_obj,ctx.intern("lastIndex"), JSValue::new_int(0));
+    set_ne(
+        &mut proto_obj,
+        ctx.common_atoms.global,
+        JSValue::bool(false),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.common_atoms.ignore_case,
+        JSValue::bool(false),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.common_atoms.multiline,
+        JSValue::bool(false),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.common_atoms.sticky,
+        JSValue::bool(false),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.common_atoms.unicode,
+        JSValue::bool(false),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("unicodeSets"),
+        JSValue::bool(false),
+    );
+    set_ne(&mut proto_obj, ctx.intern("dotAll"), JSValue::bool(false));
+    set_ne(&mut proto_obj, ctx.intern("lastIndex"), JSValue::new_int(0));
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto_obj.prototype = Some(obj_proto_ptr);

@@ -25,7 +25,7 @@ fn test_symbol_description() {
 
     let r = eval(
         &mut ctx,
-        "var a = Symbol('test').description; if (a !== 'test') throw new Error('description mismatch'); var b = Symbol().description; if (b !== undefined) throw new Error('undefined description mismatch'); var c = Symbol('').description; if (c !== undefined) throw new Error('empty description mismatch');",
+        "var a = Symbol('test').description; if (a !== 'test') throw new Error('description mismatch'); var b = Symbol().description; if (b !== undefined) throw new Error('undefined description mismatch'); var c = Symbol('').description; if (c !== '') throw new Error('empty description mismatch');",
     );
     assert!(r.is_ok(), "Symbol.description failed: {:?}", r);
 }

@@ -973,10 +973,16 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin("map_has", HostFunction::method("has", 1, map_has));
     ctx.register_builtin("map_delete", HostFunction::method("delete", 1, map_delete));
     ctx.register_builtin("map_clear", HostFunction::method("clear", 0, map_clear));
-    ctx.register_builtin("map_forEach", HostFunction::method("forEach", 1, map_for_each));
+    ctx.register_builtin(
+        "map_forEach",
+        HostFunction::method("forEach", 1, map_for_each),
+    );
     ctx.register_builtin("map_keys", HostFunction::method("keys", 0, map_keys));
     ctx.register_builtin("map_values", HostFunction::method("values", 0, map_values));
-    ctx.register_builtin("map_entries", HostFunction::method("entries", 0, map_entries));
+    ctx.register_builtin(
+        "map_entries",
+        HostFunction::method("entries", 0, map_entries),
+    );
     ctx.register_builtin(
         "map_symbol_iterator",
         HostFunction::method("[Symbol.iterator]", 0, map_symbol_iterator),
@@ -990,10 +996,16 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin("set_has", HostFunction::method("has", 1, set_has));
     ctx.register_builtin("set_delete", HostFunction::method("delete", 1, set_delete));
     ctx.register_builtin("set_clear", HostFunction::method("clear", 0, set_clear));
-    ctx.register_builtin("set_forEach", HostFunction::method("forEach", 1, set_for_each));
+    ctx.register_builtin(
+        "set_forEach",
+        HostFunction::method("forEach", 1, set_for_each),
+    );
     ctx.register_builtin("set_values", HostFunction::method("values", 0, set_values));
     ctx.register_builtin("set_keys", HostFunction::method("keys", 0, set_keys));
-    ctx.register_builtin("set_entries", HostFunction::method("entries", 0, set_entries));
+    ctx.register_builtin(
+        "set_entries",
+        HostFunction::method("entries", 0, set_entries),
+    );
     ctx.register_builtin(
         "set_symbol_iterator",
         HostFunction::method("[Symbol.iterator]", 0, set_symbol_iterator),

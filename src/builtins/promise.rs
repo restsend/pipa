@@ -833,7 +833,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "promise_reject",
         HostFunction::new("reject", 1, promise_reject),
     );
-    ctx.register_builtin("promise_then", HostFunction::method("then", 2, promise_then));
+    ctx.register_builtin(
+        "promise_then",
+        HostFunction::method("then", 2, promise_then),
+    );
     ctx.register_builtin(
         "promise_catch",
         HostFunction::method("catch", 2, promise_catch),

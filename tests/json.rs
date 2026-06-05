@@ -144,11 +144,11 @@ fn json_parse_whitespace() {
 }
 
 #[test]
-fn json_parse_invalid_returns_undefined() {
+fn json_parse_invalid_throws() {
     let mut rt = JSRuntime::new();
     let mut ctx = rt.new_context();
-    let r = eval(&mut ctx, "JSON.parse('invalid')").unwrap();
-    assert!(r.is_undefined(), "expected undefined for invalid JSON");
+    let r = eval(&mut ctx, "JSON.parse('invalid')");
+    assert!(r.is_err(), "expected SyntaxError for invalid JSON");
 }
 
 #[test]
@@ -186,7 +186,7 @@ fn json_stringify_string_escapes() {
 
 #[test]
 fn json_stringify_undefined() {
-    js_eq("if (JSON.stringify(undefined) !== 'null') throw new Error('fail');");
+    js_eq("var r = JSON.stringify(undefined); if (r !== undefined) throw new Error('fail');");
 }
 
 #[test]
@@ -242,7 +242,7 @@ fn json_stringify_skips_functions() {
 fn json_stringify_circular() {
     js_eq(
         "var obj = {a:1}; obj.self = obj; \
-         if (JSON.stringify(obj) !== '{\"a\":1,\"self\":null}') throw new Error('fail');",
+         try { JSON.stringify(obj); throw new Error('fail'); } catch(e) { if (e.message === 'fail') throw e; }",
     );
 }
 

@@ -6,7 +6,7 @@ use crate::runtime::io_reactor::{IoReactor, ReactorTask, WsTask};
 use crate::value::JSValue;
 
 pub fn register_websocket(ctx: &mut JSContext) {
-    ctx.register_builtin("WebSocket", HostFunction::new("WebSocket", 1, ws_ctor));
+    ctx.register_builtin("WebSocket", HostFunction::ctor("WebSocket", 1, ws_ctor));
     ctx.register_builtin("ws_send", HostFunction::method("send", 2, ws_send));
     ctx.register_builtin("ws_close", HostFunction::method("close", 1, ws_close));
 }

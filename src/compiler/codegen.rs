@@ -1487,7 +1487,7 @@ impl CodeGenerator {
         for (index, param) in params.iter().enumerate() {
             let value_reg = (index as u16) + 1;
             let saved_tmp = arg_saves[index];
-            
+
             if let Some(tmp) = saved_tmp {
                 // Restore the argument value from the saved temp, overwriting TDZ.
                 self.emit(Opcode::Move);
@@ -1725,10 +1725,11 @@ impl CodeGenerator {
             line_number_table: if line_table.entries().is_empty() {
                 None
             } else {
-                Some(line_table)
+                Some(std::sync::Arc::new(line_table))
             },
             ic_table: crate::compiler::InlineCacheTable::new(),
             shared_ic_table_ptr: std::ptr::null_mut(),
+            shared_nested_bytecodes_ptr: std::ptr::null_mut(),
             shared_code_ptr: std::ptr::null(),
             shared_code_len: 0,
             shared_const_ptr: std::ptr::null(),
@@ -1736,7 +1737,7 @@ impl CodeGenerator {
             uses_arguments: self.function_uses_arguments,
             is_strict: self.is_strict,
             var_name_to_slot,
-            nested_bytecodes: std::collections::HashMap::new(),
+            nested_bytecodes: Vec::new(),
             is_simple_constructor: false,
             simple_constructor_props: Vec::new(),
             cached_constructor_final_shape: None,
@@ -2659,25 +2660,21 @@ impl CodeGenerator {
     fn first_binding_name(&self, target: &AssignmentTarget) -> Option<String> {
         match target {
             AssignmentTarget::Identifier(name) => Some(name.clone()),
-            AssignmentTarget::ArrayPattern(arr) => {
-                arr.elements.first().and_then(|e| {
-                    if let Some(pat) = e {
-                        match pat {
-                            PatternElement::Pattern(p) => self.first_binding_name(p),
-                            PatternElement::RestElement(r) => self.first_binding_name(&r.argument),
-                            PatternElement::AssignmentPattern(ap) => self.first_binding_name(&ap.left),
-                        }
-                    } else {
-                        None
+            AssignmentTarget::ArrayPattern(arr) => arr.elements.first().and_then(|e| {
+                if let Some(pat) = e {
+                    match pat {
+                        PatternElement::Pattern(p) => self.first_binding_name(p),
+                        PatternElement::RestElement(r) => self.first_binding_name(&r.argument),
+                        PatternElement::AssignmentPattern(ap) => self.first_binding_name(&ap.left),
                     }
-                })
-            }
+                } else {
+                    None
+                }
+            }),
             AssignmentTarget::ObjectPattern(obj) => {
-                obj.properties.first().and_then(|prop| {
-                    match prop {
-                        ObjectPatternProperty::Property { value, .. } => self.first_binding_name(value),
-                        ObjectPatternProperty::RestElement(r) => self.first_binding_name(&r.argument),
-                    }
+                obj.properties.first().and_then(|prop| match prop {
+                    ObjectPatternProperty::Property { value, .. } => self.first_binding_name(value),
+                    ObjectPatternProperty::RestElement(r) => self.first_binding_name(&r.argument),
                 })
             }
             AssignmentTarget::AssignmentPattern(ap) => self.first_binding_name(&ap.left),
@@ -2786,9 +2783,7 @@ impl CodeGenerator {
         ctx: &mut JSContext,
     ) -> Result<Option<u16>, String> {
         match stmt {
-            ASTNode::ExpressionStatement(es) => {
-                Ok(Some(self.gen_expression(&es.expression, ctx)?))
-            }
+            ASTNode::ExpressionStatement(es) => Ok(Some(self.gen_expression(&es.expression, ctx)?)),
             ASTNode::IfStatement(if_stmt) => {
                 Ok(Some(self.gen_if_statement_as_expression(if_stmt, ctx)?))
             }
@@ -2798,9 +2793,9 @@ impl CodeGenerator {
             ASTNode::TryStatement(try_stmt) => {
                 Ok(Some(self.gen_try_statement_as_expression(try_stmt, ctx)?))
             }
-            ASTNode::SwitchStatement(switch_stmt) => {
-                Ok(Some(self.gen_switch_statement_as_expression(switch_stmt, ctx)?))
-            }
+            ASTNode::SwitchStatement(switch_stmt) => Ok(Some(
+                self.gen_switch_statement_as_expression(switch_stmt, ctx)?,
+            )),
             ASTNode::VariableDeclaration(_)
             | ASTNode::FunctionDeclaration(_)
             | ASTNode::ClassDeclaration(_) => {
@@ -2842,7 +2837,10 @@ impl CodeGenerator {
                 self.gen_do_while_statement_with_result(dw_stmt, ctx, Some(reg))?;
                 Ok(Some(reg))
             }
-            ASTNode::ReturnStatement(_) | ASTNode::ThrowStatement(_) | ASTNode::BreakStatement(_) | ASTNode::ContinueStatement(_) => {
+            ASTNode::ReturnStatement(_)
+            | ASTNode::ThrowStatement(_)
+            | ASTNode::BreakStatement(_)
+            | ASTNode::ContinueStatement(_) => {
                 self.gen_statement(stmt, ctx)?;
                 Ok(None)
             }
@@ -2868,7 +2866,9 @@ impl CodeGenerator {
                 self.pending_label = None;
                 result
             }
-            ASTNode::WithStatement(_) | ASTNode::EmptyStatement | ASTNode::DebuggerStatement => Ok(None),
+            ASTNode::WithStatement(_) | ASTNode::EmptyStatement | ASTNode::DebuggerStatement => {
+                Ok(None)
+            }
             _ => Ok(None),
         }
     }
@@ -3005,9 +3005,13 @@ impl CodeGenerator {
         if self.p2_fold_profile.allow_if_bool() {
             if let Expression::Literal(Literal::Boolean(test_bool)) = &stmt.test {
                 if *test_bool {
-                    return self.gen_statement_as_expression(&stmt.consequent, ctx).map(|r| self.unwrap_completion(r));
+                    return self
+                        .gen_statement_as_expression(&stmt.consequent, ctx)
+                        .map(|r| self.unwrap_completion(r));
                 } else if let Some(alt) = &stmt.alternate {
-                    return self.gen_statement_as_expression(alt, ctx).map(|r| self.unwrap_completion(r));
+                    return self
+                        .gen_statement_as_expression(alt, ctx)
+                        .map(|r| self.unwrap_completion(r));
                 } else {
                     return Ok(self.emit_load_undefined());
                 }
@@ -3656,7 +3660,10 @@ impl CodeGenerator {
         // Clear sync map for per-iteration let bindings BEFORE assigning.
         if needs_block_scope {
             if let Some(slot) = self.scope_stack.last().and_then(|scope| {
-                scope.iter().find(|(_, e)| e.kind != VariableKind::Var).map(|(_, e)| e.slot)
+                scope
+                    .iter()
+                    .find(|(_, e)| e.kind != VariableKind::Var)
+                    .map(|(_, e)| e.slot)
             }) {
                 self.emit(Opcode::ResetPerIterVar);
                 self.emit_u16(slot);
@@ -4068,7 +4075,7 @@ impl CodeGenerator {
             // Wrap catch body in Try-Finally so exceptions inside catch run finally
             if has_finally {
                 self.emit(Opcode::Try);
-                let catch_inner_catch_pc = self.code.len();
+                let _catch_inner_catch_pc = self.code.len();
                 self.emit_i32(0); // placeholder for catch_pc (set to finally_start)
                 catch_inner_finally_placeholder = Some(self.code.len());
                 self.emit_i32(0); // placeholder for finally_pc (set to finally_start)
@@ -4355,8 +4362,8 @@ impl CodeGenerator {
                                 // Variables in the root scope that are pre-declared by
                                 // pre_scan_let_const should not trigger TDZ for closures
                                 // created before the let statement.
-                                needs_tdz = parent_var.kind != VariableKind::Var
-                                    && !parent_var.initialized;
+                                needs_tdz =
+                                    parent_var.kind != VariableKind::Var && !parent_var.initialized;
                             }
                         }
                         if needs_tdz {
@@ -4374,8 +4381,11 @@ impl CodeGenerator {
                         self.emit_u32(idx);
                         // Emit CheckRef for closed lexical variables, unless
                         // suppress_ref_error is set (typeof operator).
-                        let is_closed = self.parent_vars.get(&id.name).map_or(false, |pv| pv.closed);
-                        if (is_closed && !self.suppress_ref_error) || (!self.suppress_ref_error && self.is_strict) {
+                        let is_closed =
+                            self.parent_vars.get(&id.name).map_or(false, |pv| pv.closed);
+                        if (is_closed && !self.suppress_ref_error)
+                            || (!self.suppress_ref_error && self.is_strict)
+                        {
                             self.emit(Opcode::CheckRef);
                             self.emit_u16(r);
                             self.emit_u32(idx);
@@ -5142,7 +5152,6 @@ impl CodeGenerator {
                 return self.gen_delete_expression(arg, &unary.argument, ctx);
             }
         }
-        Ok(arg)
     }
 
     fn gen_delete_expression(
@@ -5687,8 +5696,8 @@ impl CodeGenerator {
                             needs_tdz = entry.kind != VariableKind::Var && !entry.initialized;
                         } else if let Some(parent_var) = self.parent_vars.get(name) {
                             if !parent_var.is_inherited {
-                                needs_tdz = parent_var.kind != VariableKind::Var
-                                    && !parent_var.initialized;
+                                needs_tdz =
+                                    parent_var.kind != VariableKind::Var && !parent_var.initialized;
                             }
                         }
                         if let Some(opcode) = is_compound {
@@ -6347,23 +6356,23 @@ impl CodeGenerator {
                                 ident.name.as_str(),
                                 "Math"
                                     | "Object"
-                                     | "JSON"
-                                     | "Number"
-                                     | "String"
-                                     | "Array"
-                                     | "RegExp"
-                                     | "Error"
-                                     | "Function"
-                                     | "Promise"
-                                     | "Symbol"
-                                     | "Map"
-                                     | "Set"
-                                     | "WeakMap"
-                                     | "WeakSet"
-                                     | "BigInt"
-                                     | "Reflect"
-                                     | "Proxy"
-                                     | "console"
+                                    | "JSON"
+                                    | "Number"
+                                    | "String"
+                                    | "Array"
+                                    | "RegExp"
+                                    | "Error"
+                                    | "Function"
+                                    | "Promise"
+                                    | "Symbol"
+                                    | "Map"
+                                    | "Set"
+                                    | "WeakMap"
+                                    | "WeakSet"
+                                    | "BigInt"
+                                    | "Reflect"
+                                    | "Proxy"
+                                    | "console"
                             )
                         } else {
                             false
@@ -6518,12 +6527,12 @@ impl CodeGenerator {
                     }
                 };
                 let is_ns = matches!(&*member.object, Expression::Identifier(ident)
-                    if matches!(ident.name.as_str(),
-                        "Math" | "Object" | "JSON" | "Number" | "String"
-                        | "Array" | "RegExp" | "Error" | "Function" | "Promise" | "Symbol"
-                        | "Map" | "Set" | "WeakMap" | "WeakSet" | "BigInt"
-                        | "Reflect" | "Proxy" | "console"
-                    ));
+                if matches!(ident.name.as_str(),
+                    "Math" | "Object" | "JSON" | "Number" | "String"
+                    | "Array" | "RegExp" | "Error" | "Function" | "Promise" | "Symbol"
+                    | "Map" | "Set" | "WeakMap" | "WeakSet" | "BigInt"
+                    | "Reflect" | "Proxy" | "console"
+                ));
                 if is_ns {
                     (func_reg, None, Some(obj_reg))
                 } else {
@@ -6983,10 +6992,7 @@ impl CodeGenerator {
         // let/const variables that closures should NOT access.
         for (name, pv) in &self.parent_vars {
             if pv.closed && !parent_vars.contains_key(name) {
-                parent_vars.insert(
-                    name.clone(),
-                    *pv,
-                );
+                parent_vars.insert(name.clone(), *pv);
             }
         }
         let (bytecode, upvalues) = nested_codegen

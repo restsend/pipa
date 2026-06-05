@@ -218,7 +218,10 @@ fn symbol_key_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn symbol_description(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
+        throw_type_error(
+            ctx,
+            "Symbol.prototype.description requires that 'this' be a Symbol",
+        );
         return JSValue::undefined();
     }
     let this_val = &args[0];
@@ -229,15 +232,24 @@ fn symbol_description(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             if v.is_symbol() {
                 v
             } else {
-                throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
+                throw_type_error(
+                    ctx,
+                    "Symbol.prototype.description requires that 'this' be a Symbol",
+                );
                 return JSValue::undefined();
             }
         } else {
-            throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
+            throw_type_error(
+                ctx,
+                "Symbol.prototype.description requires that 'this' be a Symbol",
+            );
             return JSValue::undefined();
         }
     } else {
-        throw_type_error(ctx, "Symbol.prototype.description requires that 'this' be a Symbol");
+        throw_type_error(
+            ctx,
+            "Symbol.prototype.description requires that 'this' be a Symbol",
+        );
         return JSValue::undefined();
     };
 
@@ -251,7 +263,10 @@ fn symbol_description(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn symbol_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        throw_type_error(ctx, "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol");
+        throw_type_error(
+            ctx,
+            "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol",
+        );
         return JSValue::undefined();
     }
     let this_val = &args[0];
@@ -265,13 +280,19 @@ fn symbol_to_primitive(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
         }
     }
-    throw_type_error(ctx, "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol");
+    throw_type_error(
+        ctx,
+        "Symbol.prototype[Symbol.toPrimitive] requires that 'this' be a Symbol",
+    );
     JSValue::undefined()
 }
 
 fn symbol_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        throw_type_error(ctx, "Symbol.prototype.valueOf requires that 'this' be a Symbol");
+        throw_type_error(
+            ctx,
+            "Symbol.prototype.valueOf requires that 'this' be a Symbol",
+        );
         return JSValue::undefined();
     }
     let this_val = &args[0];
@@ -285,7 +306,10 @@ fn symbol_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
         }
     }
-    throw_type_error(ctx, "Symbol.prototype.valueOf requires that 'this' be a Symbol");
+    throw_type_error(
+        ctx,
+        "Symbol.prototype.valueOf requires that 'this' be a Symbol",
+    );
     JSValue::undefined()
 }
 
@@ -304,15 +328,24 @@ fn symbol_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             if v.is_symbol() {
                 v
             } else {
-                throw_type_error(ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
+                throw_type_error(
+                    ctx,
+                    "Symbol.prototype.toString requires that 'this' be a Symbol",
+                );
                 return JSValue::undefined();
             }
         } else {
-            throw_type_error(ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
+            throw_type_error(
+                ctx,
+                "Symbol.prototype.toString requires that 'this' be a Symbol",
+            );
             return JSValue::undefined();
         }
     } else {
-        throw_type_error(ctx, "Symbol.prototype.toString requires that 'this' be a Symbol");
+        throw_type_error(
+            ctx,
+            "Symbol.prototype.toString requires that 'this' be a Symbol",
+        );
         return JSValue::undefined();
     };
 
@@ -670,7 +703,8 @@ pub fn init_symbol(ctx: &mut JSContext) {
     );
 
     let symbol_to_primitive_sym = get_or_create_well_known_symbol(ctx, SYMBOL_TO_PRIMITIVE_DESC);
-    let to_prim_key = crate::runtime::atom::Atom(0x40000000 | symbol_to_primitive_sym.get_symbol_id());
+    let to_prim_key =
+        crate::runtime::atom::Atom(0x40000000 | symbol_to_primitive_sym.get_symbol_id());
     proto_value.as_object_mut().define_property(
         to_prim_key,
         crate::object::object::PropertyDescriptor {

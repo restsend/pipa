@@ -4,25 +4,31 @@ use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
 fn set_ctor_prototype(obj: &mut JSObject, key: crate::runtime::atom::Atom, val: JSValue) {
-    obj.define_property(key, crate::object::object::PropertyDescriptor {
-        value: Some(val),
-        writable: false,
-        enumerable: false,
-        configurable: false,
-        get: None,
-        set: None,
-    });
+    obj.define_property(
+        key,
+        crate::object::object::PropertyDescriptor {
+            value: Some(val),
+            writable: false,
+            enumerable: false,
+            configurable: false,
+            get: None,
+            set: None,
+        },
+    );
 }
 
 fn set_own_ne(obj: &mut JSObject, key: crate::runtime::atom::Atom, val: JSValue) {
-    obj.define_property(key, crate::object::object::PropertyDescriptor {
-        value: Some(val),
-        writable: true,
-        enumerable: false,
-        configurable: true,
-        get: None,
-        set: None,
-    });
+    obj.define_property(
+        key,
+        crate::object::object::PropertyDescriptor {
+            value: Some(val),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+    );
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
@@ -35,15 +41,22 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 }
 
 pub fn init_error(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let error_atom = ctx.intern("Error");
@@ -64,9 +77,18 @@ pub fn init_error(ctx: &mut JSContext) {
     }
 
     let mut proto_obj = JSObject::new();
-    set_ne(&mut proto_obj,ctx.intern("name"), JSValue::new_string(ctx.intern("Error")));
-    set_ne(&mut proto_obj,ctx.intern("message"), JSValue::new_string(ctx.intern("")));
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("name"),
+        JSValue::new_string(ctx.intern("Error")),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("message"),
+        JSValue::new_string(ctx.intern("")),
+    );
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toString"),
         create_builtin_function(ctx, "error_toString"),
     );
@@ -75,7 +97,7 @@ pub fn init_error(ctx: &mut JSContext) {
         proto_obj.prototype = Some(obj_proto_ptr);
     }
 
-    set_ne(&mut proto_obj,ctx.intern("constructor"), error_value);
+    set_ne(&mut proto_obj, ctx.intern("constructor"), error_value);
 
     let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
     ctx.set_error_prototype(proto_ptr);
@@ -98,15 +120,22 @@ pub fn init_error(ctx: &mut JSContext) {
 }
 
 fn init_type_error(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let atom = ctx.intern("TypeError");
@@ -126,16 +155,21 @@ fn init_type_error(ctx: &mut JSContext) {
     }
 
     let mut proto = JSObject::new();
-    set_ne(&mut proto,
+    set_ne(
+        &mut proto,
         ctx.intern("name"),
         JSValue::new_string(ctx.intern("TypeError")),
     );
-    set_ne(&mut proto,ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+    set_ne(
+        &mut proto,
+        ctx.intern("message"),
+        JSValue::new_string(ctx.intern("")),
+    );
 
     if let Some(error_proto_ptr) = ctx.get_error_prototype() {
         proto.prototype = Some(error_proto_ptr);
     }
-    set_ne(&mut proto,ctx.intern("constructor"), value);
+    set_ne(&mut proto, ctx.intern("constructor"), value);
 
     let proto_ptr = Box::into_raw(Box::new(proto)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
@@ -146,15 +180,22 @@ fn init_type_error(ctx: &mut JSContext) {
 }
 
 fn init_reference_error(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let atom = ctx.intern("ReferenceError");
@@ -168,15 +209,20 @@ fn init_reference_error(ctx: &mut JSContext) {
     let value = JSValue::new_function(ptr);
 
     let mut proto = JSObject::new();
-    set_ne(&mut proto,
+    set_ne(
+        &mut proto,
         ctx.intern("name"),
         JSValue::new_string(ctx.intern("ReferenceError")),
     );
-    set_ne(&mut proto,ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+    set_ne(
+        &mut proto,
+        ctx.intern("message"),
+        JSValue::new_string(ctx.intern("")),
+    );
     if let Some(error_proto_ptr) = ctx.get_error_prototype() {
         proto.prototype = Some(error_proto_ptr);
     }
-    set_ne(&mut proto,ctx.intern("constructor"), value);
+    set_ne(&mut proto, ctx.intern("constructor"), value);
 
     let proto_ptr = Box::into_raw(Box::new(proto)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
@@ -193,15 +239,22 @@ fn init_reference_error(ctx: &mut JSContext) {
 }
 
 fn init_syntax_error(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let atom = ctx.intern("SyntaxError");
@@ -215,15 +268,20 @@ fn init_syntax_error(ctx: &mut JSContext) {
     let value = JSValue::new_function(ptr);
 
     let mut proto = JSObject::new();
-    set_ne(&mut proto,
+    set_ne(
+        &mut proto,
         ctx.intern("name"),
         JSValue::new_string(ctx.intern("SyntaxError")),
     );
-    set_ne(&mut proto,ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+    set_ne(
+        &mut proto,
+        ctx.intern("message"),
+        JSValue::new_string(ctx.intern("")),
+    );
     if let Some(error_proto_ptr) = ctx.get_error_prototype() {
         proto.prototype = Some(error_proto_ptr);
     }
-    set_ne(&mut proto,ctx.intern("constructor"), value);
+    set_ne(&mut proto, ctx.intern("constructor"), value);
 
     let proto_ptr = Box::into_raw(Box::new(proto)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
@@ -240,15 +298,22 @@ fn init_syntax_error(ctx: &mut JSContext) {
 }
 
 fn init_range_error(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let atom = ctx.intern("RangeError");
@@ -262,15 +327,20 @@ fn init_range_error(ctx: &mut JSContext) {
     let value = JSValue::new_function(ptr);
 
     let mut proto = JSObject::new();
-    set_ne(&mut proto,
+    set_ne(
+        &mut proto,
         ctx.intern("name"),
         JSValue::new_string(ctx.intern("RangeError")),
     );
-    set_ne(&mut proto,ctx.intern("message"), JSValue::new_string(ctx.intern("")));
+    set_ne(
+        &mut proto,
+        ctx.intern("message"),
+        JSValue::new_string(ctx.intern("")),
+    );
     if let Some(error_proto_ptr) = ctx.get_error_prototype() {
         proto.prototype = Some(error_proto_ptr);
     }
-    set_ne(&mut proto,ctx.intern("constructor"), value);
+    set_ne(&mut proto, ctx.intern("constructor"), value);
 
     let proto_ptr = Box::into_raw(Box::new(proto)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
@@ -286,7 +356,12 @@ fn init_range_error(ctx: &mut JSContext) {
     }
 }
 
-fn get_property(ctx: &mut JSContext, obj: &crate::object::object::JSObject, prop: crate::runtime::atom::Atom, this: &JSValue) -> Option<JSValue> {
+fn get_property(
+    ctx: &mut JSContext,
+    obj: &crate::object::object::JSObject,
+    prop: crate::runtime::atom::Atom,
+    this: &JSValue,
+) -> Option<JSValue> {
     if let Some(val) = obj.get_own_accessor_value(prop) {
         if val.is_function() {
             if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
@@ -294,7 +369,9 @@ fn get_property(ctx: &mut JSContext, obj: &crate::object::object::JSObject, prop
                 let saved_exception = ctx.pending_exception.take();
                 let result = vm.call_function_with_this(ctx, val, this.clone(), &[]);
                 if result.is_err() {
-                    let exc = ctx.pending_exception.take()
+                    let exc = ctx
+                        .pending_exception
+                        .take()
                         .or_else(|| vm.last_caught_exception.take())
                         .or(saved_exception);
                     if let Some(e) = exc {
@@ -343,7 +420,10 @@ fn js_to_string_value(ctx: &mut JSContext, val: &JSValue) -> Result<String, ()> 
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert a Symbol value to a string")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Cannot convert a Symbol value to a string")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -357,9 +437,14 @@ fn js_to_string_value(ctx: &mut JSContext, val: &JSValue) -> Result<String, ()> 
             let value_of_atom = ctx.intern("valueOf");
             let hint_string = ctx.intern("string");
             if let Some(to_prim) = obj.get(ctx.intern("__toPrimitive__hook__")) {
-                drop(obj);
+                let _ = obj;
                 if to_prim.is_function() {
-                    let result = vm.call_function_with_this(ctx, to_prim, val.clone(), &[JSValue::new_string(hint_string)]);
+                    let result = vm.call_function_with_this(
+                        ctx,
+                        to_prim,
+                        val.clone(),
+                        &[JSValue::new_string(hint_string)],
+                    );
                     if ctx.pending_exception.is_some() {
                         return Err(());
                     }
@@ -371,7 +456,7 @@ fn js_to_string_value(ctx: &mut JSContext, val: &JSValue) -> Result<String, ()> 
                 }
             }
             let to_string_fn = obj.get(to_string_atom);
-            drop(obj);
+            let _ = obj;
             if let Some(fn_val) = to_string_fn {
                 if fn_val.is_function() {
                     let result = vm.call_function_with_this(ctx, fn_val, val.clone(), &[]);
@@ -390,7 +475,7 @@ fn js_to_string_value(ctx: &mut JSContext, val: &JSValue) -> Result<String, ()> 
             }
             let obj2 = val.as_object();
             let value_of_fn = obj2.get(value_of_atom);
-            drop(obj2);
+            let _ = obj2;
             if let Some(fn_val) = value_of_fn {
                 if fn_val.is_function() {
                     let result = vm.call_function_with_this(ctx, fn_val, val.clone(), &[]);
@@ -412,7 +497,10 @@ fn js_to_string_value(ctx: &mut JSContext, val: &JSValue) -> Result<String, ()> 
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert object to primitive value")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Cannot convert object to primitive value")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -421,13 +509,26 @@ fn js_to_string_value(ctx: &mut JSContext, val: &JSValue) -> Result<String, ()> 
     Ok(String::new())
 }
 
-fn build_error(ctx: &mut JSContext, name: &str, args: &[JSValue], proto: Option<*mut JSObject>) -> JSValue {
+fn build_error(
+    ctx: &mut JSContext,
+    name: &str,
+    args: &[JSValue],
+    proto: Option<*mut JSObject>,
+) -> JSValue {
     let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
-    set_own_ne(&mut err, ctx.intern("name"), JSValue::new_string(ctx.intern(name)));
+    set_own_ne(
+        &mut err,
+        ctx.intern("name"),
+        JSValue::new_string(ctx.intern(name)),
+    );
     if !args.is_empty() && !args[0].is_undefined() {
         match js_to_string_value(ctx, &args[0]) {
             Ok(s) => {
-                set_own_ne(&mut err, ctx.intern("message"), JSValue::new_string(ctx.intern(&s)));
+                set_own_ne(
+                    &mut err,
+                    ctx.intern("message"),
+                    JSValue::new_string(ctx.intern(&s)),
+                );
             }
             Err(()) => return JSValue::undefined(),
         }
@@ -457,7 +558,8 @@ pub fn type_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue 
 }
 
 pub fn reference_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let proto = ctx.get_reference_error_prototype()
+    let proto = ctx
+        .get_reference_error_prototype()
         .or_else(|| ctx.get_error_prototype())
         .map(|p| p as *mut _);
     build_error(ctx, "ReferenceError", args, proto)
@@ -469,7 +571,8 @@ pub fn syntax_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValu
 }
 
 pub fn range_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let proto = ctx.get_range_error_prototype()
+    let proto = ctx
+        .get_range_error_prototype()
         .or_else(|| ctx.get_error_prototype())
         .map(|p| p as *mut _);
     build_error(ctx, "RangeError", args, proto)
@@ -477,11 +580,15 @@ pub fn range_error_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue
 
 fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Error.prototype.toString called on undefined")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Error.prototype.toString called on undefined")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -489,11 +596,15 @@ fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let this = &args[0];
     if !this.is_object() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Error.prototype.toString called on non-object")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Error.prototype.toString called on non-object")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -503,7 +614,7 @@ fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj = this.as_object();
     let name_atom = ctx.intern("name");
     let name_val = get_property(ctx, &obj, name_atom, this);
-    drop(obj);
+    let _ = obj;
     if ctx.pending_exception.is_some() {
         return JSValue::undefined();
     }
@@ -527,7 +638,7 @@ fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let obj2 = this.as_object();
     let msg_atom = ctx.intern("message");
     let message_val = get_property(ctx, &obj2, msg_atom, this);
-    drop(obj2);
+    let _ = obj2;
     if ctx.pending_exception.is_some() {
         return JSValue::undefined();
     }

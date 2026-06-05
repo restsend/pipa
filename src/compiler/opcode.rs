@@ -465,10 +465,13 @@ pub struct Bytecode {
     pub constants: Vec<crate::value::JSValue>,
     pub locals_count: u32,
     pub param_count: u16,
-    pub line_number_table: Option<crate::compiler::location::LineNumberTable>,
+    pub line_number_table: Option<std::sync::Arc<crate::compiler::location::LineNumberTable>>,
     pub ic_table: crate::compiler::InlineCacheTable,
 
     pub shared_ic_table_ptr: *mut crate::compiler::InlineCacheTable,
+
+    pub shared_nested_bytecodes_ptr:
+        *mut std::cell::UnsafeCell<Vec<(u32, std::sync::Arc<NestedBytecode>)>>,
 
     pub shared_code_ptr: *const u8,
     pub shared_code_len: usize,
@@ -477,7 +480,7 @@ pub struct Bytecode {
     pub uses_arguments: bool,
     pub is_strict: bool,
     pub var_name_to_slot: std::rc::Rc<Vec<(u32, u16)>>,
-    pub nested_bytecodes: std::collections::HashMap<u32, std::sync::Arc<NestedBytecode>>,
+    pub nested_bytecodes: Vec<(u32, std::sync::Arc<NestedBytecode>)>,
     pub is_simple_constructor: bool,
     pub simple_constructor_props: Vec<(crate::runtime::atom::Atom, u16, u16)>,
     pub cached_constructor_atoms: Vec<crate::runtime::atom::Atom>,
@@ -495,7 +498,7 @@ pub struct NestedBytecode {
     pub uses_arguments: bool,
     pub is_strict: bool,
     pub var_name_to_slot: std::rc::Rc<Vec<(u32, u16)>>,
-    pub line_number_table: Option<crate::compiler::location::LineNumberTable>,
+    pub line_number_table: Option<std::sync::Arc<crate::compiler::location::LineNumberTable>>,
 
     pub parent_bytecode_span: u32,
 
@@ -508,6 +511,8 @@ pub struct NestedBytecode {
     pub source_text: Option<String>,
 
     pub ic_table: std::cell::UnsafeCell<crate::compiler::InlineCacheTable>,
+
+    pub nested_bytecodes: std::cell::UnsafeCell<Vec<(u32, std::sync::Arc<NestedBytecode>)>>,
 }
 
 unsafe impl Sync for NestedBytecode {}
@@ -536,11 +541,12 @@ impl Bytecode {
             line_number_table: None,
             ic_table: crate::compiler::InlineCacheTable::new(),
             shared_ic_table_ptr: std::ptr::null_mut(),
+            shared_nested_bytecodes_ptr: std::ptr::null_mut(),
             shared_code_ptr: std::ptr::null(),
             shared_code_len: 0,
             shared_const_ptr: std::ptr::null(),
             shared_const_len: 0,
-            nested_bytecodes: std::collections::HashMap::new(),
+            nested_bytecodes: Vec::new(),
             is_simple_constructor: false,
             simple_constructor_props: Vec::new(),
             cached_constructor_final_shape: None,
@@ -635,7 +641,11 @@ impl Bytecode {
 
             let mut operands = String::new();
             match op {
-                Opcode::Nop | Opcode::End | Opcode::Catch | Opcode::Finally | Opcode::EndFinally => {}
+                Opcode::Nop
+                | Opcode::End
+                | Opcode::Catch
+                | Opcode::Finally
+                | Opcode::EndFinally => {}
                 Opcode::ResetPerIterVar => {
                     let a = read_u16(1);
                     write!(operands, " r{}", a).unwrap();
@@ -1134,11 +1144,12 @@ impl Bytecode {
             line_number_table: None,
             ic_table: crate::compiler::InlineCacheTable::new(),
             shared_ic_table_ptr: std::ptr::null_mut(),
+            shared_nested_bytecodes_ptr: std::ptr::null_mut(),
             shared_code_ptr: std::ptr::null(),
             shared_code_len: 0,
             shared_const_ptr: std::ptr::null(),
             shared_const_len: 0,
-            nested_bytecodes: std::collections::HashMap::new(),
+            nested_bytecodes: Vec::new(),
             is_simple_constructor: false,
             simple_constructor_props: Vec::new(),
             cached_constructor_final_shape: None,
@@ -1225,7 +1236,7 @@ mod tests {
             uses_arguments: false,
             is_strict: false,
             var_name_to_slot: std::rc::Rc::new(Vec::new()),
-            nested_bytecodes: std::collections::HashMap::new(),
+            nested_bytecodes: Vec::new(),
             is_simple_constructor: false,
             simple_constructor_props: Vec::new(),
             cached_constructor_final_shape: None,
@@ -1234,6 +1245,7 @@ mod tests {
             shared_code_len: 0,
             shared_const_ptr: std::ptr::null(),
             shared_const_len: 0,
+            shared_nested_bytecodes_ptr: std::ptr::null_mut(),
         };
 
         let output = bytecode.disassemble();
@@ -1288,7 +1300,7 @@ mod tests {
             uses_arguments: false,
             is_strict: false,
             var_name_to_slot: std::rc::Rc::new(Vec::new()),
-            nested_bytecodes: std::collections::HashMap::new(),
+            nested_bytecodes: Vec::new(),
             is_simple_constructor: false,
             simple_constructor_props: Vec::new(),
             cached_constructor_final_shape: None,
@@ -1297,6 +1309,7 @@ mod tests {
             shared_code_len: 0,
             shared_const_ptr: std::ptr::null(),
             shared_const_len: 0,
+            shared_nested_bytecodes_ptr: std::ptr::null_mut(),
         };
 
         let output = bytecode.disassemble();
@@ -1345,7 +1358,7 @@ mod tests {
             uses_arguments: false,
             is_strict: false,
             var_name_to_slot: std::rc::Rc::new(Vec::new()),
-            nested_bytecodes: std::collections::HashMap::new(),
+            nested_bytecodes: Vec::new(),
             is_simple_constructor: false,
             simple_constructor_props: Vec::new(),
             cached_constructor_final_shape: None,
@@ -1354,6 +1367,7 @@ mod tests {
             shared_code_len: 0,
             shared_const_ptr: std::ptr::null(),
             shared_const_len: 0,
+            shared_nested_bytecodes_ptr: std::ptr::null_mut(),
         };
 
         let output = bytecode.disassemble();

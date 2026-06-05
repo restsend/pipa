@@ -2,7 +2,6 @@ use crate::object::array_obj::JSArrayObject;
 use crate::object::function::JSFunction;
 use crate::object::object::JSObject;
 use crate::object::object::SmallPropVec;
-use crate::util::FxHashSet;
 use crate::value::JSValue;
 use std::env;
 
@@ -216,7 +215,6 @@ pub struct GcHeap {
 
     pub deleted_props_count: usize,
 
-    traced_functions: FxHashSet<usize>,
     nursery_pinned_streak_limit: usize,
     debug: GcDebugConfig,
     debug_stats: GcDebugStats,
@@ -248,7 +246,7 @@ impl GcHeap {
             last_minor_survivor_count: 0,
             minor_collections: 0,
             deleted_props_count: 0,
-            traced_functions: FxHashSet::default(),
+
             debug: GcDebugConfig::from_env(),
             debug_stats: GcDebugStats::default(),
             prop_pool: Vec::new(),
@@ -399,25 +397,12 @@ impl GcHeap {
     }
 
     pub fn mark_value(&mut self, value: &JSValue) {
-        if value.is_object() {
-            let ptr = value.get_ptr();
-            self.mark(ptr);
-        } else if value.is_string() {
-        } else if value.is_function() {
-            let ptr = value.get_ptr();
-            if self.mark(ptr) {
-                let func = value.as_function();
-                self.trace_function(func);
-            }
+        if value.is_object() || value.is_function() {
+            self.mark(value.get_ptr());
         }
     }
 
     fn trace_function(&mut self, func: &JSFunction) {
-        let ptr = func as *const JSFunction as usize;
-        if !self.traced_functions.insert(ptr) {
-            return;
-        }
-
         func.base.for_each_property(|_atom, value, _attrs| {
             self.mark_value(&value);
         });
@@ -449,7 +434,7 @@ impl GcHeap {
             for (_, upvalue) in &uv.upvalues {
                 self.mark_value(upvalue);
             }
-            for (_, upvalue_cell) in &uv.upvalue_cells {
+            for upvalue_cell in &uv.upvalue_slots {
                 self.mark_value(&upvalue_cell.get());
             }
         }
@@ -865,7 +850,6 @@ impl GcHeap {
             *m = 0;
         }
         self.gray_stack.clear();
-        self.traced_functions.clear();
 
         self.mark_roots(roots);
 
@@ -938,7 +922,6 @@ impl GcHeap {
             *m = 0;
         }
         self.gray_stack.clear();
-        self.traced_functions.clear();
 
         self.mark_roots(roots);
 
@@ -1138,28 +1121,6 @@ impl GcHeap {
                     }
                     TAG_ARRAY => {
                         let arr = &mut *(self.objects[idx] as *mut JSArrayObject);
-                        arr.header.clean_stale_properties(self);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    fn clean_stale_properties_on_live_objects(&mut self) {
-        for (idx, &ptr) in self.objects.iter().enumerate() {
-            if ptr == 0 || self.marks[idx] == COLOR_WHITE {
-                continue;
-            }
-            let tag = self.tags[idx];
-            unsafe {
-                match tag {
-                    TAG_OBJECT | TAG_FUNCTION => {
-                        let obj = &mut *(ptr as *mut JSObject);
-                        obj.clean_stale_properties(self);
-                    }
-                    TAG_ARRAY => {
-                        let arr = &mut *(ptr as *mut JSArrayObject);
                         arr.header.clean_stale_properties(self);
                     }
                     _ => {}

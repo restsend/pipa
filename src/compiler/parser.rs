@@ -174,7 +174,12 @@ impl Parser {
             }
             Some((TokenType::Keyword, "var")) => self.parse_variable_declaration(),
             Some((TokenType::Keyword, "let")) => {
-                let is_decl = self.peek_at("[") || self.peek_at("{") || self.peek_token.as_ref().map_or(false, |t| matches!(t.token_type, TokenType::Identifier) || (matches!(t.token_type, TokenType::Keyword) && t.value != "in"));
+                let is_decl = self.peek_at("[")
+                    || self.peek_at("{")
+                    || self.peek_token.as_ref().map_or(false, |t| {
+                        matches!(t.token_type, TokenType::Identifier)
+                            || (matches!(t.token_type, TokenType::Keyword) && t.value != "in")
+                    });
                 if is_decl {
                     self.parse_variable_declaration()
                 } else {
@@ -716,7 +721,16 @@ impl Parser {
         if is_var {
             let kind = match self.cur_value() {
                 "var" => VariableKind::Var,
-                "let" if self.peek_at("[") || self.peek_at("{") || self.peek_token.as_ref().map_or(false, |t| matches!(t.token_type, TokenType::Identifier) || (matches!(t.token_type, TokenType::Keyword) && t.value != "in")) => VariableKind::Let,
+                "let"
+                    if self.peek_at("[")
+                        || self.peek_at("{")
+                        || self.peek_token.as_ref().map_or(false, |t| {
+                            matches!(t.token_type, TokenType::Identifier)
+                                || (matches!(t.token_type, TokenType::Keyword) && t.value != "in")
+                        }) =>
+                {
+                    VariableKind::Let
+                }
                 "const" => VariableKind::Const,
                 _ => {
                     if self.cur_value() == "let" {

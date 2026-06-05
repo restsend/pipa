@@ -12,11 +12,9 @@ fn unwrap_wrapper_object(ctx: &mut JSContext, obj: &JSObject) -> Option<JSValue>
         if val.is_int() || val.is_float() {
             let proto = obj.prototype;
             if let Some(pp) = proto {
-                unsafe {
-                    if let Some(ntp) = ctx.get_number_prototype() {
-                        if pp == ntp as usize as *mut JSObject {
-                            return Some(val);
-                        }
+                if let Some(ntp) = ctx.get_number_prototype() {
+                    if pp == ntp as usize as *mut JSObject {
+                        return Some(val);
                     }
                 }
             }
@@ -24,11 +22,9 @@ fn unwrap_wrapper_object(ctx: &mut JSContext, obj: &JSObject) -> Option<JSValue>
         if val.is_string() {
             let proto = obj.prototype;
             if let Some(pp) = proto {
-                unsafe {
-                    if let Some(stp) = ctx.get_string_prototype() {
-                        if pp == stp as usize as *mut JSObject {
-                            return Some(val);
-                        }
+                if let Some(stp) = ctx.get_string_prototype() {
+                    if pp == stp as usize as *mut JSObject {
+                        return Some(val);
                     }
                 }
             }
@@ -47,17 +43,25 @@ pub fn json_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else if args[0].is_null() {
         "null".to_string()
     } else if args[0].is_bool() {
-        if args[0].is_truthy() { "true".to_string() } else { "false".to_string() }
+        if args[0].is_truthy() {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        }
     } else if args[0].is_int() {
         format!("{}", args[0].get_int())
     } else if args[0].is_float() {
         format!("{}", args[0].to_number())
     } else if args[0].is_symbol() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert a Symbol value to a string")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Cannot convert a Symbol value to a string")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -69,11 +73,16 @@ pub fn json_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     match super::json_parser::JsonParser::new(&text).parse_value(ctx) {
         Ok(v) => v,
         Err(_) => {
-            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
             if let Some(proto) = ctx.get_syntax_error_prototype() {
                 err.prototype = Some(proto);
             }
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("JSON.parse: unexpected character")));
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("JSON.parse: unexpected character")),
+            );
             let ptr = Box::into_raw(Box::new(err)) as usize;
             ctx.runtime_mut().gc_heap_mut().track(ptr);
             ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -256,11 +265,15 @@ fn jsvalue_to_json_internal(
     }
 
     if value.is_bigint() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("BigInt value cannot be serialized in JSON")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("BigInt value cannot be serialized in JSON")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -278,11 +291,16 @@ fn jsvalue_to_json_internal(
         let ptr = value.get_ptr() as usize;
 
         if seen.contains(&ptr) {
-            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
             if let Some(proto) = ctx.get_type_error_prototype() {
                 err.prototype = Some(proto);
             }
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Converting circular structure to JSON")));
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("Converting circular structure to JSON")),
+            );
             let eptr = Box::into_raw(Box::new(err)) as usize;
             ctx.runtime_mut().gc_heap_mut().track(eptr);
             ctx.pending_exception = Some(JSValue::new_object(eptr));

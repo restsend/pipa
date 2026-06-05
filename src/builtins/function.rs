@@ -9,8 +9,14 @@ fn throw_type_error(ctx: &mut JSContext, message: &str) {
     if let Some(ptr) = ctx.get_register_vm_ptr() {
         let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
         let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(message)));
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern(message)),
+        );
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -20,37 +26,35 @@ fn throw_type_error(ctx: &mut JSContext, message: &str) {
     }
 }
 
-fn create_builtin_method(ctx: &mut JSContext, name: &str, arity: u32, display_name: &str) -> JSValue {
+fn create_builtin_method(
+    ctx: &mut JSContext,
+    name: &str,
+    arity: u32,
+    display_name: &str,
+) -> JSValue {
     let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
     func.set_builtin_marker(ctx, name);
     if let Some(fn_proto_ptr) = ctx.get_function_prototype() {
         func.base.set_prototype_raw(fn_proto_ptr);
     }
     {
-        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_int(arity as i64));
+        let mut desc =
+            crate::object::object::PropertyDescriptor::new_data(JSValue::new_int(arity as i64));
         desc.writable = false;
         desc.enumerable = false;
         desc.configurable = true;
-        func.base.define_property_ext(
-            ctx.common_atoms.length,
-            desc,
-            true,
-            true,
-            true,
-        );
+        func.base
+            .define_property_ext(ctx.common_atoms.length, desc, true, true, true);
     }
     {
-        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(ctx.intern(display_name)));
+        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(
+            ctx.intern(display_name),
+        ));
         desc.writable = false;
         desc.enumerable = false;
         desc.configurable = true;
-        func.base.define_property_ext(
-            ctx.common_atoms.name,
-            desc,
-            true,
-            true,
-            true,
-        );
+        func.base
+            .define_property_ext(ctx.common_atoms.name, desc, true, true, true);
     }
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -97,26 +101,16 @@ pub fn init_function(ctx: &mut JSContext) {
         desc.writable = false;
         desc.enumerable = false;
         desc.configurable = true;
-        proto_obj.define_property_ext(
-            ctx.common_atoms.length,
-            desc,
-            true,
-            true,
-            true,
-        );
+        proto_obj.define_property_ext(ctx.common_atoms.length, desc, true, true, true);
     }
     {
-        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(ctx.intern("")));
+        let mut desc = crate::object::object::PropertyDescriptor::new_data(JSValue::new_string(
+            ctx.intern(""),
+        ));
         desc.writable = false;
         desc.enumerable = false;
         desc.configurable = true;
-        proto_obj.define_property_ext(
-            ctx.common_atoms.name,
-            desc,
-            true,
-            true,
-            true,
-        );
+        proto_obj.define_property_ext(ctx.common_atoms.name, desc, true, true, true);
     }
     // Throw TypeError accessors for .caller and .arguments.
     // Per spec, bound and strict mode functions throw when accessing these.
@@ -134,7 +128,8 @@ pub fn init_function(ctx: &mut JSContext) {
             enumerable: false,
             configurable: true,
         };
-        proto_obj.ensure_extra()
+        proto_obj
+            .ensure_extra()
             .accessors
             .get_or_insert_with(|| Box::new(FxHashMap::default()))
             .insert(ctx.intern("caller"), entry);
@@ -146,7 +141,8 @@ pub fn init_function(ctx: &mut JSContext) {
             enumerable: false,
             configurable: true,
         };
-        proto_obj.ensure_extra()
+        proto_obj
+            .ensure_extra()
             .accessors
             .get_or_insert_with(|| Box::new(FxHashMap::default()))
             .insert(ctx.intern("arguments"), entry);
@@ -214,14 +210,28 @@ pub fn init_function(ctx: &mut JSContext) {
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
-        crate::builtins::global::set_non_enumerable(global_obj, ctx.common_atoms.function, function_value);
-        crate::builtins::global::set_non_enumerable(global_obj, ctx.intern("FunctionPrototype"), proto_value);
+        crate::builtins::global::set_non_enumerable(
+            global_obj,
+            ctx.common_atoms.function,
+            function_value,
+        );
+        crate::builtins::global::set_non_enumerable(
+            global_obj,
+            ctx.intern("FunctionPrototype"),
+            proto_value,
+        );
     }
 }
 
 pub fn register_builtins(ctx: &mut JSContext) {
-    ctx.register_builtin("function_bind", HostFunction::method("bind", 1, function_bind));
-    ctx.register_builtin("function_call", HostFunction::method("call", 1, function_call));
+    ctx.register_builtin(
+        "function_bind",
+        HostFunction::method("bind", 1, function_bind),
+    );
+    ctx.register_builtin(
+        "function_call",
+        HostFunction::method("call", 1, function_call),
+    );
     ctx.register_builtin(
         "function_apply",
         HostFunction::method("apply", 2, function_apply),
@@ -234,7 +244,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "function_length",
         HostFunction::method("length", 0, function_length),
     );
-    ctx.register_builtin("function_name", HostFunction::method("name", 0, function_name));
+    ctx.register_builtin(
+        "function_name",
+        HostFunction::method("name", 0, function_name),
+    );
     ctx.register_builtin(
         "function_constructor",
         HostFunction::ctor("Function", 1, function_constructor),
@@ -402,11 +415,15 @@ fn function_bind(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let this_val = &args[0];
     if !this_val.is_function() && !this_val.is_object() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a function")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not a function")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -417,11 +434,16 @@ fn function_bind(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if is_bound {
         let obj = this_val.as_object();
         if obj.get(ctx.common_atoms.__boundFn).is_none() {
-            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
             if let Some(proto) = ctx.get_type_error_prototype() {
                 err.prototype = Some(proto);
             }
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a function")));
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("this is not a function")),
+            );
             let eptr = Box::into_raw(Box::new(err)) as usize;
             ctx.runtime_mut().gc_heap_mut().track(eptr);
             ctx.pending_exception = Some(JSValue::new_object(eptr));
@@ -489,7 +511,11 @@ fn function_bind(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         let obj = this_val.as_object();
         if let Some(n) = obj.get(ctx.common_atoms.name) {
-            if n.is_string() { ctx.get_atom_str(n.get_atom()).to_string() } else { String::new() }
+            if n.is_string() {
+                ctx.get_atom_str(n.get_atom()).to_string()
+            } else {
+                String::new()
+            }
         } else {
             String::new()
         }
@@ -532,44 +558,58 @@ fn function_call(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         call_args.push(arg.clone());
     }
 
-     if let Some(ptr) = ctx.get_register_vm_ptr() {
-         let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
-         let result = vm.call_function_with_this(ctx, *this_val, this_arg, &call_args);
-         match result {
-             Ok(val) => val,
-             Err(msg) => {
-                 let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-                 let msg_only = if let Some(idx) = msg.find(": ") {
-                     msg[idx + 2..].to_string()
-                 } else {
-                     msg.clone()
-                 };
-                 err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(&msg_only)));
-                 if msg.contains("TypeError") {
-                     err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-                     if let Some(proto) = ctx.get_type_error_prototype() {
-                         err.prototype = Some(proto);
-                     }
-                 } else if msg.contains("RangeError") {
-                     err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
-                     if let Some(proto) = ctx.get_range_error_prototype() {
-                         err.prototype = Some(proto);
-                     }
-                 } else {
-                     err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("Error")));
-                     if let Some(proto) = ctx.get_error_prototype() {
-                         err.prototype = Some(proto);
-                     }
-                 }
-                 let err_ptr = Box::into_raw(Box::new(err)) as usize;
-                 ctx.runtime_mut().gc_heap_mut().track(err_ptr);
-                 vm.pending_throw = Some(JSValue::new_object(err_ptr));
-                 JSValue::undefined()
-             }
-         }
-     } else {
-         JSValue::undefined()
-     }
+    if let Some(ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+        let result = vm.call_function_with_this(ctx, *this_val, this_arg, &call_args);
+        match result {
+            Ok(val) => val,
+            Err(msg) => {
+                let mut err = crate::object::object::JSObject::new_typed(
+                    crate::object::object::ObjectType::Error,
+                );
+                let msg_only = if let Some(idx) = msg.find(": ") {
+                    msg[idx + 2..].to_string()
+                } else {
+                    msg.clone()
+                };
+                err.set(
+                    ctx.common_atoms.message,
+                    JSValue::new_string(ctx.intern(&msg_only)),
+                );
+                if msg.contains("TypeError") {
+                    err.set(
+                        ctx.common_atoms.name,
+                        JSValue::new_string(ctx.intern("TypeError")),
+                    );
+                    if let Some(proto) = ctx.get_type_error_prototype() {
+                        err.prototype = Some(proto);
+                    }
+                } else if msg.contains("RangeError") {
+                    err.set(
+                        ctx.common_atoms.name,
+                        JSValue::new_string(ctx.intern("RangeError")),
+                    );
+                    if let Some(proto) = ctx.get_range_error_prototype() {
+                        err.prototype = Some(proto);
+                    }
+                } else {
+                    err.set(
+                        ctx.common_atoms.name,
+                        JSValue::new_string(ctx.intern("Error")),
+                    );
+                    if let Some(proto) = ctx.get_error_prototype() {
+                        err.prototype = Some(proto);
+                    }
+                }
+                let err_ptr = Box::into_raw(Box::new(err)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(err_ptr);
+                vm.pending_throw = Some(JSValue::new_object(err_ptr));
+                JSValue::undefined()
+            }
+        }
+    } else {
+        JSValue::undefined()
+    }
 }
 
 fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -606,25 +646,39 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     return match result {
                         Ok(val) => val,
                         Err(msg) => {
-                            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+                            let mut err = crate::object::object::JSObject::new_typed(
+                                crate::object::object::ObjectType::Error,
+                            );
                             let msg_only = if let Some(idx) = msg.find(": ") {
                                 msg[idx + 2..].to_string()
                             } else {
                                 msg.clone()
                             };
-                            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(&msg_only)));
+                            err.set(
+                                ctx.common_atoms.message,
+                                JSValue::new_string(ctx.intern(&msg_only)),
+                            );
                             if msg.contains("TypeError") {
-                                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                                err.set(
+                                    ctx.common_atoms.name,
+                                    JSValue::new_string(ctx.intern("TypeError")),
+                                );
                                 if let Some(proto) = ctx.get_type_error_prototype() {
                                     err.prototype = Some(proto);
                                 }
                             } else if msg.contains("RangeError") {
-                                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+                                err.set(
+                                    ctx.common_atoms.name,
+                                    JSValue::new_string(ctx.intern("RangeError")),
+                                );
                                 if let Some(proto) = ctx.get_range_error_prototype() {
                                     err.prototype = Some(proto);
                                 }
                             } else {
-                                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("Error")));
+                                err.set(
+                                    ctx.common_atoms.name,
+                                    JSValue::new_string(ctx.intern("Error")),
+                                );
                                 if let Some(proto) = ctx.get_error_prototype() {
                                     err.prototype = Some(proto);
                                 }
@@ -745,7 +799,11 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else {
             call_args = &[];
         }
-    } else if args.len() > 2 && !args[2].is_null() && !args[2].is_undefined() && !args[2].is_object() {
+    } else if args.len() > 2
+        && !args[2].is_null()
+        && !args[2].is_undefined()
+        && !args[2].is_object()
+    {
         throw_type_error(ctx, "CreateListFromArrayLike called on non-object");
         return JSValue::undefined();
     } else {
@@ -781,18 +839,15 @@ fn function_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let arity = js_func.arity as usize;
 
         let params: Vec<String> = (0..arity).map(|i| format!("a{}", i)).collect();
-        let param_str = params.join(", ");
+        let _param_str = params.join(", ");
 
         if js_func.is_builtin() {
             if func_name.is_empty() {
-                JSValue::new_string(
-                    ctx.intern(&format!("function() {{ [native code] }}")),
-                )
+                JSValue::new_string(ctx.intern(&format!("function() {{ [native code] }}")))
             } else {
-                JSValue::new_string(ctx.intern(&format!(
-                    "function {}() {{ [native code] }}",
-                    func_name
-                )))
+                JSValue::new_string(
+                    ctx.intern(&format!("function {}() {{ [native code] }}", func_name)),
+                )
             }
         } else {
             let prefix = if js_func.is_async() { "async " } else { "" };

@@ -191,7 +191,11 @@ impl VM {
 
     fn cleanup_handlers_for_frame(&mut self) {
         let fi = self.frame_index;
-        while self.exception_handlers.last().map_or(false, |h| h.frame_index == fi) {
+        while self
+            .exception_handlers
+            .last()
+            .map_or(false, |h| h.frame_index == fi)
+        {
             self.exception_handlers.pop();
         }
     }
@@ -391,8 +395,7 @@ impl VM {
         self.cached_registers_base = base;
         self.cached_has_upvalue_sync = false;
         self.cached_upvalue_sync_bitset = 0;
-        self.cached_registers_ptr =
-            unsafe { self.registers.as_mut_ptr().add(base) };
+        self.cached_registers_ptr = unsafe { self.registers.as_mut_ptr().add(base) };
         self.cached_ic_table_ptr = frame.ic_table_ptr;
         if let Some(fptr) = function_ptr {
             if frame.has_upvalues {
@@ -536,8 +539,7 @@ impl VM {
         self.cached_registers_base = base;
         self.cached_has_upvalue_sync = false;
         self.cached_upvalue_sync_bitset = 0;
-        self.cached_registers_ptr =
-            unsafe { self.registers.as_mut_ptr().add(base) };
+        self.cached_registers_ptr = unsafe { self.registers.as_mut_ptr().add(base) };
         self.cached_ic_table_ptr = ic_table_ptr;
         if let Some(fptr) = function_ptr {
             if frame.has_upvalues {
@@ -909,7 +911,7 @@ impl VM {
                         gen_obj.prototype = Some(proto_ptr);
                     }
                     gen_obj.set_generator_state(crate::object::object::GeneratorState {
-                        bytecode: Box::new((**rb).clone()),
+                        bytecode: Box::new(rb.clone()),
                         snapshot: result_snapshot,
                         pc: result_pc,
                         done: result_done,
@@ -982,22 +984,27 @@ impl VM {
                 }
                 Ok(true)
             } else if js_func.is_builtin() {
-                if is_call_new && !ctx.builtin_is_constructor(
-                    &js_func.builtin_atom.map(|ba| ctx.get_atom_str(ba).to_string()).unwrap_or_default()
-                ) {
+                if is_call_new
+                    && !ctx.builtin_is_constructor(
+                        &js_func
+                            .builtin_atom
+                            .map(|ba| ctx.get_atom_str(ba).to_string())
+                            .unwrap_or_default(),
+                    )
+                {
                     self.set_pending_type_error(ctx, "not a constructor");
                     if let Some(exc) = self.pending_throw.take() {
                         match self.dispatch_throw_value(ctx, exc) {
                             ThrowDispatch::Caught => return Ok(false),
                             ThrowDispatch::Uncaught(e) => return Err(e),
-                        ThrowDispatch::AsyncComplete(ExecutionOutcome::Complete(v)) => {
-                            self.set_reg(dst, v);
-                            return Ok(false);
-                        }
-                        ThrowDispatch::AsyncComplete(ExecutionOutcome::Yield(v)) => {
-                            self.set_reg(dst, v);
-                            return Ok(false);
-                        }
+                            ThrowDispatch::AsyncComplete(ExecutionOutcome::Complete(v)) => {
+                                self.set_reg(dst, v);
+                                return Ok(false);
+                            }
+                            ThrowDispatch::AsyncComplete(ExecutionOutcome::Yield(v)) => {
+                                self.set_reg(dst, v);
+                                return Ok(false);
+                            }
                         }
                     }
                     return Ok(false);
@@ -1770,12 +1777,13 @@ impl VM {
 
         if let Some(ref rb) = js_func.bytecode {
             if js_func.is_generator() {
-                let snapshot_this =
-                    if !js_func.is_strict() && (this_value.is_undefined() || this_value.is_null()) {
-                        ctx.global()
-                    } else {
-                        this_value
-                    };
+                let snapshot_this = if !js_func.is_strict()
+                    && (this_value.is_undefined() || this_value.is_null())
+                {
+                    ctx.global()
+                } else {
+                    this_value
+                };
                 let min_slots = 1 + args.len();
                 let snapshot_len = (rb.locals_count as usize).max(min_slots);
                 let mut snapshot = vec![JSValue::undefined(); snapshot_len];
@@ -1798,7 +1806,7 @@ impl VM {
                     gen_obj.prototype = Some(proto_ptr);
                 }
                 gen_obj.set_generator_state(crate::object::object::GeneratorState {
-                    bytecode: Box::new((**rb).clone()),
+                    bytecode: Box::new(rb.clone()),
                     snapshot: result_snapshot,
                     pc: result_pc,
                     done: result_done,
@@ -1840,7 +1848,10 @@ impl VM {
             let result = self.execute_inner(ctx, rb, false, 0, false);
             let return_value = self.get_reg(0);
 
-            let pending_exc = result.as_ref().err().and_then(|_| self.pending_throw.take());
+            let pending_exc = result
+                .as_ref()
+                .err()
+                .and_then(|_| self.pending_throw.take());
 
             while self.frame_index > saved_frame_index {
                 self.pop_frame(JSValue::undefined());
@@ -2433,7 +2444,9 @@ impl VM {
                                     }
                                     _ => {
                                         self.set_reg(dst, JSValue::undefined());
-                                        return Ok(ExecutionOutcome::Complete(JSValue::undefined()));
+                                        return Ok(
+                                            ExecutionOutcome::Complete(JSValue::undefined()),
+                                        );
                                     }
                                 },
                             }
@@ -2746,7 +2759,10 @@ impl VM {
                         let a_int = Self::get_bigint_int(&a).unwrap_or(0);
                         let b_int = Self::get_bigint_int(&b).unwrap_or(0);
                         if b_int < 0 {
-                            self.set_pending_type_error(ctx, "BigInt exponent must be non-negative");
+                            self.set_pending_type_error(
+                                ctx,
+                                "BigInt exponent must be non-negative",
+                            );
                             JSValue::undefined()
                         } else {
                             Self::create_bigint(a_int.pow(b_int as u32))
@@ -3524,7 +3540,10 @@ impl VM {
 
                         // If catch_pc equals finally_pc, the exception should run the
                         // finally body first (then rethrow)
-                        if handler.finally_pc.map_or(false, |fp| fp == handler.catch_pc) {
+                        if handler
+                            .finally_pc
+                            .map_or(false, |fp| fp == handler.catch_pc)
+                        {
                             self.finally_rethrow = Some(value);
                             self.pc = handler.catch_pc;
                         } else {
@@ -4346,7 +4365,8 @@ impl VM {
                     } else if obj_val.is_symbol() && key_val.is_symbol() {
                         if let Some(proto_ptr) = ctx.get_symbol_prototype() {
                             let proto_obj = unsafe { &*proto_ptr };
-                            let sym_key = crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id());
+                            let sym_key =
+                                crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id());
                             proto_obj.get(sym_key).unwrap_or(JSValue::undefined())
                         } else {
                             JSValue::undefined()
@@ -4387,7 +4407,12 @@ impl VM {
                                     proto = pobj.prototype;
                                 }
                                 if let Some(setter) = setter_found {
-                                    let _ = self.call_function_with_this(ctx, setter, obj_val, &[value]);
+                                    let _ = self.call_function_with_this(
+                                        ctx,
+                                        setter,
+                                        obj_val,
+                                        &[value],
+                                    );
                                 } else if idx > 100_000 {
                                     let len_atom = ctx.common_atoms.length;
                                     let old_len = arr
@@ -4403,7 +4428,8 @@ impl VM {
                                         );
                                     }
                                     let key_atom = self.int_atom(idx, ctx);
-                                    arr.header.set_cached(key_atom, value, ctx.shape_cache_mut());
+                                    arr.header
+                                        .set_cached(key_atom, value, ctx.shape_cache_mut());
                                     arr.header.clear_dense_array_flag();
                                 } else {
                                     while arr.elements.len() < idx {
@@ -5519,22 +5545,27 @@ impl VM {
                     while let Some(ptr) = current_ptr {
                         // Stop at built-in prototypes (their methods should be non-enumerable)
                         if let Some(obj_proto) = obj_proto_ptr {
-                            if ptr == obj_proto { break; }
+                            if ptr == obj_proto {
+                                break;
+                            }
                         }
                         if let Some(arr_proto) = arr_proto_ptr {
-                            if ptr == arr_proto { break; }
+                            if ptr == arr_proto {
+                                break;
+                            }
                         }
                         if let Some(str_proto) = str_proto_ptr {
-                            if ptr == str_proto { break; }
+                            if ptr == str_proto {
+                                break;
+                            }
                         }
                         let js_obj = unsafe { &*(ptr as *const crate::object::object::JSObject) };
                         let mut int_keys: Vec<i64> = Vec::new();
                         let mut str_keys: Vec<crate::runtime::atom::Atom> = Vec::new();
                         // Handle dense array indices
                         if js_obj.is_dense_array() {
-                            let arr_obj = unsafe {
-                                &*(ptr as *mut crate::object::array_obj::JSArrayObject)
-                            };
+                            let arr_obj =
+                                unsafe { &*(ptr as *mut crate::object::array_obj::JSArrayObject) };
                             for i in 0..arr_obj.elements.len() {
                                 let idx_atom = ctx.intern(i.to_string().as_str());
                                 if !seen.contains(&idx_atom.0) {
@@ -6242,7 +6273,7 @@ impl VM {
                                 }
                                 gen_obj.set_generator_state(
                                     crate::object::object::GeneratorState {
-                                        bytecode: Box::new((**rb).clone()),
+                                        bytecode: Box::new(rb.clone()),
                                         snapshot,
                                         pc: 0,
                                         done: false,
@@ -6327,7 +6358,24 @@ impl VM {
                                 &*(parent_ptr as *const crate::object::function::JSFunction)
                             };
                             if let Some(bc) = parent_func.bytecode.as_ref() {
-                                bc.nested_bytecodes.get(&(newfunc_start_pc as u32)).cloned()
+                                // First check the instance's own nested_bytecodes
+                                let found = bc
+                                    .nested_bytecodes
+                                    .iter()
+                                    .find(|(k, _)| *k == newfunc_start_pc as u32)
+                                    .map(|(_, v)| v.clone());
+                                if found.is_some() {
+                                    found
+                                } else if !bc.shared_nested_bytecodes_ptr.is_null() {
+                                    // Fall back to the shared NestedBytecode's nested_bytecodes
+                                    // (persists across re-creations of the parent closure)
+                                    unsafe { &*(*bc.shared_nested_bytecodes_ptr).get() }
+                                        .iter()
+                                        .find(|(k, _)| *k == newfunc_start_pc as u32)
+                                        .map(|(_, v)| v.clone())
+                                } else {
+                                    None
+                                }
                             } else {
                                 None
                             }
@@ -6436,7 +6484,7 @@ impl VM {
                             line_table.add_entry(off, line);
                         }
                         let line_number_table_opt = if line_table_entry_count > 0 {
-                            Some(line_table)
+                            Some(std::sync::Arc::new(line_table))
                         } else {
                             None
                         };
@@ -6459,13 +6507,28 @@ impl VM {
                                 &mut *(parent_ptr as *mut crate::object::function::JSFunction)
                             };
                             if let Some(bc) = parent_func.bytecode.as_mut() {
-                                let nb = if let Some(existing) =
-                                    bc.nested_bytecodes.get(&(newfunc_start_pc as u32))
-                                {
-                                    let arc = existing.clone();
-                                    nb_for_ic = Some(arc.clone());
-                                    arc
+                                let key = newfunc_start_pc as u32;
+                                // Check instance's own nested_bytecodes first
+                                let found_nb = bc
+                                    .nested_bytecodes
+                                    .iter()
+                                    .find(|(k, _)| *k == key)
+                                    .map(|(_, v)| v.clone())
+                                    .or_else(|| {
+                                        if !bc.shared_nested_bytecodes_ptr.is_null() {
+                                            // Check shared NestedBytecode's nested_bytecodes
+                                            unsafe { &*(*bc.shared_nested_bytecodes_ptr).get() }
+                                                .iter()
+                                                .find(|(k, _)| *k == key)
+                                                .map(|(_, v)| v.clone())
+                                        } else {
+                                            None
+                                        }
+                                    });
+                                if let Some(existing) = found_nb {
+                                    nb_for_ic = Some(existing.clone());
                                 } else {
+                                    // Create new NestedBytecode
                                     let nb = std::sync::Arc::new(
                                         crate::compiler::opcode::NestedBytecode {
                                             code: fb_code.clone(),
@@ -6484,14 +6547,23 @@ impl VM {
                                             ic_table: std::cell::UnsafeCell::new(
                                                 crate::compiler::InlineCacheTable::new(),
                                             ),
+                                            nested_bytecodes: std::cell::UnsafeCell::new(Vec::new()),
                                         },
                                     );
                                     nb_for_ic = Some(nb.clone());
-                                    bc.nested_bytecodes
-                                        .insert(newfunc_start_pc as u32, nb.clone());
-                                    nb
-                                };
-                                let _ = nb;
+                                    // Store in instance's nested_bytecodes
+                                    bc.nested_bytecodes.push((key, nb.clone()));
+                                    // Also store in shared NestedBytecode's nested_bytecodes
+                                    // so sub-sub-closures persist across re-creations of this closure
+                                    if !bc.shared_nested_bytecodes_ptr.is_null() {
+                                        let shared = unsafe {
+                                            &mut *(*bc.shared_nested_bytecodes_ptr).get()
+                                        };
+                                        if !shared.iter().any(|(k, _)| *k == key) {
+                                            shared.push((key, nb.clone()));
+                                        }
+                                    }
+                                }
                             }
                         }
                         (
@@ -6521,7 +6593,7 @@ impl VM {
                     func.set_uses_arguments(uses_arguments);
                     func.set_is_strict(is_strict);
                     func.line_number_table = line_number_table_opt.clone();
-                    func.bytecode = Some(Box::new(Bytecode {
+                    func.bytecode = Some(Bytecode {
                         code: fb_code,
                         constants: fb_constants,
                         locals_count,
@@ -6529,6 +6601,7 @@ impl VM {
                         line_number_table: line_number_table_opt,
                         ic_table: crate::compiler::InlineCacheTable::new(),
                         shared_ic_table_ptr: std::ptr::null_mut(),
+                        shared_nested_bytecodes_ptr: std::ptr::null_mut(),
                         shared_code_ptr: std::ptr::null(),
                         shared_code_len: 0,
                         shared_const_ptr: std::ptr::null(),
@@ -6536,17 +6609,19 @@ impl VM {
                         uses_arguments,
                         is_strict,
                         var_name_to_slot: func_var_name_to_slot,
-                        nested_bytecodes: std::collections::HashMap::new(),
+                        nested_bytecodes: Vec::new(),
                         is_simple_constructor: false,
                         simple_constructor_props: Vec::new(),
                         cached_constructor_final_shape: None,
                         cached_constructor_atoms: Vec::new(),
-                    }));
+                    });
 
                     let effective_nb = nb_for_ic.or_else(|| cached.clone());
                     if let Some(ref nb_arc) = effective_nb {
                         if let Some(bc) = func.bytecode.as_mut() {
                             bc.shared_ic_table_ptr = nb_arc.ic_table.get();
+                            bc.shared_nested_bytecodes_ptr =
+                                &nb_arc.nested_bytecodes as *const _ as *mut _;
 
                             if bc.code.is_empty() {
                                 bc.shared_code_ptr = nb_arc.code.as_ptr();
@@ -6562,6 +6637,14 @@ impl VM {
 
                     let inherited_sentinel = u16::MAX as usize;
                     let current_frame_base = self.frames[self.frame_index].registers_base;
+                    if !upvalue_descs.is_empty() {
+                        let n = upvalue_descs.len();
+                        let uv = func.upvalues_mut();
+                        uv.upvalue_slot_atoms.reserve(n);
+                        uv.upvalue_slots.reserve(n);
+                        uv.upvalue_cells.reserve(n);
+                        uv.upvalue_local_indices.reserve(n);
+                    }
                     for (atom_id, local_idx_raw) in &upvalue_descs {
                         let atom = crate::runtime::atom::Atom(*atom_id);
                         let local_idx = *local_idx_raw as usize;
@@ -6585,25 +6668,25 @@ impl VM {
                                 .and_then(|m| m.get(&local_idx_u16))
                             {
                                 existing.clone()
-                             } else {
-                              let new_cell =
-                                      std::rc::Rc::new(std::cell::Cell::new(initial_value));
-                                  // Always create the sync map entry so that
-                                  // later assignments to the register also
-                                  // update the upvalue cell. This is needed
-                                  // for closures that capture let variables
-                                  // before initialization (function hoisting).
-                                  current_frame
-                                      .upvalue_sync_map
-                                      .get_or_insert_with(|| Box::new(FxHashMap::default()))
-                                      .insert(local_idx_u16, new_cell.clone());
-                                  if local_idx_u16 < 64 {
-                                      current_frame.upvalue_sync_bitset |= 1u64 << local_idx_u16;
-                                      self.cached_upvalue_sync_bitset |= 1u64 << local_idx_u16;
-                                  }
-                                  self.cached_has_upvalue_sync = true;
-                                  new_cell
-                             }
+                            } else {
+                                let new_cell =
+                                    std::rc::Rc::new(std::cell::Cell::new(initial_value));
+                                // Always create the sync map entry so that
+                                // later assignments to the register also
+                                // update the upvalue cell. This is needed
+                                // for closures that capture let variables
+                                // before initialization (function hoisting).
+                                current_frame
+                                    .upvalue_sync_map
+                                    .get_or_insert_with(|| Box::new(FxHashMap::default()))
+                                    .insert(local_idx_u16, new_cell.clone());
+                                if local_idx_u16 < 64 {
+                                    current_frame.upvalue_sync_bitset |= 1u64 << local_idx_u16;
+                                    self.cached_upvalue_sync_bitset |= 1u64 << local_idx_u16;
+                                }
+                                self.cached_has_upvalue_sync = true;
+                                new_cell
+                            }
                         } else if let Some(parent_ptr) = self.frames[self.frame_index].function_ptr
                         {
                             let parent_func = unsafe {
@@ -6680,7 +6763,10 @@ impl VM {
                 Opcode::CheckTdz => {
                     let reg = self.read_u16_pc();
                     if self.get_reg(reg).is_tdz() {
-                        self.set_pending_reference_error(ctx, "Cannot access variable before initialization");
+                        self.set_pending_reference_error(
+                            ctx,
+                            "Cannot access variable before initialization",
+                        );
                         if let Some(exc) = self.pending_throw.take() {
                             match self.dispatch_throw_value(ctx, exc) {
                                 ThrowDispatch::Caught => continue,
@@ -6826,8 +6912,7 @@ impl VM {
 
                             if let Some(fn_val) = iter_fn {
                                 if fn_val.is_function() {
-                                    match self.call_function_with_this(ctx, fn_val, iterable, &[])
-                                    {
+                                    match self.call_function_with_this(ctx, fn_val, iterable, &[]) {
                                         Ok(iterator) => {
                                             if iterator.is_object() {
                                                 iterator
@@ -6856,10 +6941,10 @@ impl VM {
                         if let Some(exc) = self.pending_throw.take() {
                             let disp = self.dispatch_throw_value(ctx, exc);
                             match disp {
-                                ThrowDispatch::Caught => {},
+                                ThrowDispatch::Caught => {}
                                 ThrowDispatch::Uncaught(e) => return Err(e),
                                 ThrowDispatch::AsyncComplete(o) => match o {
-                                    ExecutionOutcome::Complete(_) => {},
+                                    ExecutionOutcome::Complete(_) => {}
                                     _ => return Err("get_iterator error".to_string()),
                                 },
                             }
@@ -6971,9 +7056,8 @@ impl VM {
 
                         if let Some(next_fn_val) = next_fn {
                             if next_fn_val.is_function() {
-                                match self.call_function_with_this(
-                                    ctx, next_fn_val, iter_val, &[],
-                                ) {
+                                match self.call_function_with_this(ctx, next_fn_val, iter_val, &[])
+                                {
                                     Ok(result) => {
                                         if result.is_object() {
                                             let result_obj = result.as_object();
@@ -7168,7 +7252,6 @@ impl VM {
     }
 
     #[inline(always)]
-    #[inline(always)]
     fn read_u16_pc(&mut self) -> u16 {
         let val =
             unsafe { std::ptr::read_unaligned(self.cached_code_ptr.add(self.pc) as *const u16) };
@@ -7203,7 +7286,11 @@ impl VM {
     ) -> Option<JSValue> {
         if !obj_val.is_object_like()
             && !obj_val.is_function()
-            && (obj_val.is_int() || obj_val.is_float() || obj_val.is_string() || obj_val.is_bool() || obj_val.is_symbol())
+            && (obj_val.is_int()
+                || obj_val.is_float()
+                || obj_val.is_string()
+                || obj_val.is_bool()
+                || obj_val.is_symbol())
         {
             if obj_val.is_string() && atom == ctx.common_atoms.length {
                 let len = ctx.string_char_count(obj_val.get_atom()) as i64;
@@ -7947,7 +8034,16 @@ impl VM {
             let js_obj = unsafe { JSValue::object_from_ptr_mut(ptr) };
             let ic_table_ptr = self.cached_ic_table_ptr;
 
-            if let Some(shape_id) = js_obj.get_shape_id() {
+            // For shapeless objects with no properties yet, treat as root shape for IC
+            // (all new objects start at root shape before any property is assigned)
+            let effective_shape_id = js_obj.get_shape_id().or_else(|| {
+                if js_obj.props_len() == 0 {
+                    Some(crate::object::shape::ShapeId::root())
+                } else {
+                    None
+                }
+            });
+            if let Some(shape_id) = effective_shape_id {
                 if !ic_table_ptr.is_null() {
                     let ic_table = unsafe { &*ic_table_ptr };
                     if let Some(ic) = ic_table.get(ic_pc) {
@@ -7999,7 +8095,9 @@ impl VM {
                     } else {
                         let r = self.proto_chain_has_accessors(obj_val, atom);
                         if !r.0 {
-                            unsafe { (*ic_table_ptr).set_write_no_accessor(ic_pc); }
+                            unsafe {
+                                (*ic_table_ptr).set_write_no_accessor(ic_pc);
+                            }
                         }
                         r
                     }
@@ -8061,6 +8159,16 @@ impl VM {
                                         ic.insert_transition(pre_id, offset as u32, new_shape_ptr);
                                     } else {
                                         ic.insert(shape_id, offset as u32, None);
+                                    }
+                                } else if pre_props_len == 0 {
+                                    // Object was shapeless with no props (at root state)
+                                    // Record transition from root shape so future IC lookups hit
+                                    if let Some(new_shape_ptr) = js_obj.get_shape_ptr() {
+                                        ic.insert_transition(
+                                            crate::object::shape::ShapeId::root(),
+                                            offset as u32,
+                                            new_shape_ptr,
+                                        );
                                     }
                                 } else {
                                     ic.insert(shape_id, offset as u32, None);
@@ -8850,7 +8958,7 @@ mod tests {
             uses_arguments: false,
             is_strict: false,
             var_name_to_slot: std::rc::Rc::new(Vec::new()),
-            nested_bytecodes: std::collections::HashMap::new(),
+            nested_bytecodes: Vec::new(),
             is_simple_constructor: false,
             simple_constructor_props: Vec::new(),
             cached_constructor_final_shape: None,
@@ -8859,6 +8967,7 @@ mod tests {
             shared_code_len: 0,
             shared_const_ptr: std::ptr::null(),
             shared_const_len: 0,
+            shared_nested_bytecodes_ptr: std::ptr::null_mut(),
         }
     }
 

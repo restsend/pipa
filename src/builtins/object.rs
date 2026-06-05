@@ -125,9 +125,7 @@ fn get_symbol_to_string_tag_atom(ctx: &mut JSContext) -> Option<Atom> {
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let arity = ctx
-        .get_builtin_arity(name)
-        .unwrap_or(1);
+    let arity = ctx.get_builtin_arity(name).unwrap_or(1);
     let mut func = crate::object::function::JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
@@ -136,42 +134,55 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 }
 
 pub fn init_object(ctx: &mut JSContext) {
-    fn set_ne(obj: &mut crate::object::object::JSObject, key: crate::runtime::atom::Atom, val: crate::value::JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+    fn set_ne(
+        obj: &mut crate::object::object::JSObject,
+        key: crate::runtime::atom::Atom,
+        val: crate::value::JSValue,
+    ) {
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let object_atom = ctx.common_atoms.object;
 
     let proto_atom = ctx.intern("ObjectPrototype");
     let mut proto_obj = JSObject::new();
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.has_own_property,
         create_builtin_function(ctx, "object_hasOwnProperty"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.value_of,
         create_builtin_function(ctx, "object_valueOf"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.to_string,
         create_builtin_function(ctx, "object_toString"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.is_prototype_of,
         create_builtin_function(ctx, "object_isPrototypeOf"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.property_is_enumerable,
         create_builtin_function(ctx, "object_property_is_enumerable"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.common_atoms.to_locale_string,
         create_builtin_function(ctx, "object_to_locale_string"),
     );
@@ -626,46 +637,49 @@ fn object_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_object(result_ptr)
 }
 
-    fn object_assign(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-        if args.is_empty() {
-            throw_type_error_obj(ctx, "Object.assign requires at least 1 argument");
-            return JSValue::undefined();
-        }
+fn object_assign(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
+        throw_type_error_obj(ctx, "Object.assign requires at least 1 argument");
+        return JSValue::undefined();
+    }
 
-        let target = &args[0];
-        let to = if target.is_object() || target.is_function() {
-            target.clone()
-        } else if target.is_undefined() || target.is_null() {
-            throw_type_error_obj(ctx, "Object.assign cannot convert undefined or null to object");
-            return JSValue::undefined();
+    let target = &args[0];
+    let to = if target.is_object() || target.is_function() {
+        target.clone()
+    } else if target.is_undefined() || target.is_null() {
+        throw_type_error_obj(
+            ctx,
+            "Object.assign cannot convert undefined or null to object",
+        );
+        return JSValue::undefined();
+    } else {
+        object_to_object(ctx, target)
+    };
+
+    if !to.is_object() {
+        return to;
+    }
+
+    let to_obj = to.as_object_mut();
+
+    for arg in args.iter().skip(1) {
+        let from = if arg.is_object() || arg.is_function() {
+            arg.as_object()
+        } else if arg.is_string() {
+            continue;
         } else {
-            object_to_object(ctx, target)
+            continue;
         };
 
-        if !to.is_object() {
-            return to;
-        }
-
-        let to_obj = to.as_object_mut();
-
-        for arg in args.iter().skip(1) {
-            let from = if arg.is_object() || arg.is_function() {
-                arg.as_object()
-            } else if arg.is_string() {
-                continue;
-            } else {
-                continue;
-            };
-
-            from.for_each_property(|key, val, attrs| {
-                if attrs & crate::object::object::ATTR_ENUMERABLE != 0 {
-                    to_obj.set(key, val);
-                }
-            });
-        }
-
-        to
+        from.for_each_property(|key, val, attrs| {
+            if attrs & crate::object::object::ATTR_ENUMERABLE != 0 {
+                to_obj.set(key, val);
+            }
+        });
     }
+
+    to
+}
 
 fn object_create(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let mut new_obj = JSObject::new();
@@ -687,9 +701,18 @@ fn object_create(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let value = desc_obj.get(ctx.intern("value"));
             let getter = desc_obj.get(ctx.intern("get"));
             let setter = desc_obj.get(ctx.intern("set"));
-            let writable = desc_obj.get(ctx.intern("writable")).map(|v| v.is_truthy()).unwrap_or(false);
-            let enumerable = desc_obj.get(ctx.intern("enumerable")).map(|v| v.is_truthy()).unwrap_or(false);
-            let configurable = desc_obj.get(ctx.intern("configurable")).map(|v| v.is_truthy()).unwrap_or(false);
+            let writable = desc_obj
+                .get(ctx.intern("writable"))
+                .map(|v| v.is_truthy())
+                .unwrap_or(false);
+            let enumerable = desc_obj
+                .get(ctx.intern("enumerable"))
+                .map(|v| v.is_truthy())
+                .unwrap_or(false);
+            let configurable = desc_obj
+                .get(ctx.intern("configurable"))
+                .map(|v| v.is_truthy())
+                .unwrap_or(false);
 
             let desc = if getter.is_some() || setter.is_some() {
                 crate::object::object::PropertyDescriptor {
@@ -718,27 +741,27 @@ fn object_create(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_object(ptr)
 }
 
-    fn object_get_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-        if args.is_empty() {
-            return JSValue::null();
-        }
-        let obj_val = &args[0];
-        if obj_val.is_symbol() {
-            if let Some(proto_ptr) = ctx.get_symbol_prototype() {
-                return JSValue::new_object(proto_ptr as usize);
-            }
-            return JSValue::null();
-        }
-        if !is_object_like(obj_val) {
-            return JSValue::null();
-        }
-
-        let obj = obj_val.as_object();
-        if let Some(proto_ptr) = obj.prototype {
+fn object_get_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
+        return JSValue::null();
+    }
+    let obj_val = &args[0];
+    if obj_val.is_symbol() {
+        if let Some(proto_ptr) = ctx.get_symbol_prototype() {
             return JSValue::new_object(proto_ptr as usize);
         }
-        JSValue::null()
+        return JSValue::null();
     }
+    if !is_object_like(obj_val) {
+        return JSValue::null();
+    }
+
+    let obj = obj_val.as_object();
+    if let Some(proto_ptr) = obj.prototype {
+        return JSValue::new_object(proto_ptr as usize);
+    }
+    JSValue::null()
+}
 
 fn object_set_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 || !is_object_like(&args[0]) {
@@ -1144,19 +1167,28 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let has_configurable = desc_obj.find_offset(_ctx.intern("configurable")).is_some();
 
     let enumerable = if has_enumerable {
-        desc_obj.get(_ctx.intern("enumerable")).map(|v| v.is_truthy()).unwrap_or(false)
+        desc_obj
+            .get(_ctx.intern("enumerable"))
+            .map(|v| v.is_truthy())
+            .unwrap_or(false)
     } else {
         // Need to get the existing value - we handle this below
         // by checking has_enumerable in the define_property flow
         false // placeholder, handled by has_enumerable flag
     };
     let writable = if has_writable {
-        desc_obj.get(_ctx.intern("writable")).map(|v| v.is_truthy()).unwrap_or(false)
+        desc_obj
+            .get(_ctx.intern("writable"))
+            .map(|v| v.is_truthy())
+            .unwrap_or(false)
     } else {
         false
     };
     let configurable = if has_configurable {
-        desc_obj.get(_ctx.intern("configurable")).map(|v| v.is_truthy()).unwrap_or(false)
+        desc_obj
+            .get(_ctx.intern("configurable"))
+            .map(|v| v.is_truthy())
+            .unwrap_or(false)
     } else {
         false
     };
@@ -1181,7 +1213,13 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     };
 
-    obj_ref.define_property_ext(prop_atom, pd, has_writable, has_enumerable, has_configurable);
+    obj_ref.define_property_ext(
+        prop_atom,
+        pd,
+        has_writable,
+        has_enumerable,
+        has_configurable,
+    );
     obj.clone()
 }
 
@@ -1305,11 +1343,15 @@ fn object_get_own_property_descriptors(ctx: &mut JSContext, args: &[JSValue]) ->
 
 fn object_get_own_property_names(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() || args[0].is_null() || args[0].is_undefined() {
-        let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
+        let mut err =
+            crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Object.getOwnPropertyNames called on non-object")));
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Object.getOwnPropertyNames called on non-object")),
+        );
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
@@ -1324,7 +1366,10 @@ fn object_get_own_property_names(ctx: &mut JSContext, args: &[JSValue]) -> JSVal
         if let Some(proto) = ctx.get_object_prototype() {
             wrapper.prototype = Some(proto);
         }
-        wrapper.set(ctx.common_atoms.length, JSValue::new_int(arg.get_atom().0 as i64));
+        wrapper.set(
+            ctx.common_atoms.length,
+            JSValue::new_int(arg.get_atom().0 as i64),
+        );
         let ptr = Box::into_raw(Box::new(wrapper)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         JSValue::new_object(ptr)

@@ -26,7 +26,10 @@ fn array_get(obj: &JSObject, index: usize, ctx: &mut JSContext) -> Option<crate:
 use crate::value::JSValue;
 
 fn safe_array_len(obj: &JSObject, len_atom: crate::runtime::atom::Atom) -> u64 {
-    obj.get(len_atom).as_ref().map(|v| js_to_length(v)).unwrap_or(0)
+    obj.get(len_atom)
+        .as_ref()
+        .map(|v| js_to_length(v))
+        .unwrap_or(0)
 }
 
 fn init_array_length(obj: &mut JSObject, len: i64, ctx: &mut JSContext) {
@@ -68,24 +71,29 @@ pub fn init_array(ctx: &mut JSContext) {
     let array_atom = ctx.common_atoms.array;
 
     fn set_ne(obj: &mut JSObject, key: crate::runtime::atom::Atom, val: JSValue) {
-        obj.define_property(key, crate::object::object::PropertyDescriptor {
-            value: Some(val),
-            writable: true,
-            enumerable: false,
-            configurable: true,
-            get: None,
-            set: None,
-        });
+        obj.define_property(
+            key,
+            crate::object::object::PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
     }
 
     let mut array_func = JSFunction::new_builtin(array_atom, 1);
     array_func.set_builtin_marker(ctx, "array_constructor");
 
-    set_ne(&mut array_func.base,
+    set_ne(
+        &mut array_func.base,
         ctx.intern("isArray"),
         create_builtin_function(ctx, "array_isArray"),
     );
-    set_ne(&mut array_func.base,
+    set_ne(
+        &mut array_func.base,
         ctx.intern("fromAsync"),
         create_builtin_function(ctx, "array_fromAsync"),
     );
@@ -101,129 +109,170 @@ pub fn init_array(ctx: &mut JSContext) {
 
     let proto_atom = ctx.intern("ArrayPrototype");
     let mut proto_obj = JSObject::new();
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("push"),
         create_builtin_function(ctx, "array_push"),
     );
-    set_ne(&mut proto_obj,ctx.intern("pop"), create_builtin_function(ctx, "array_pop"));
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("pop"),
+        create_builtin_function(ctx, "array_pop"),
+    );
+    set_ne(
+        &mut proto_obj,
         ctx.intern("shift"),
         create_builtin_function(ctx, "array_shift"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("unshift"),
         create_builtin_function(ctx, "array_unshift"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("concat"),
         create_builtin_function(ctx, "array_concat"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("slice"),
         create_builtin_function(ctx, "array_slice"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("indexOf"),
         create_builtin_function(ctx, "array_indexOf"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("includes"),
         create_builtin_function(ctx, "array_includes"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("join"),
         create_builtin_function(ctx, "array_join"),
     );
     init_array_length(&mut proto_obj, 0, ctx);
 
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("forEach"),
         create_builtin_function(ctx, "array_forEach"),
     );
-    set_ne(&mut proto_obj,ctx.intern("map"), create_builtin_function(ctx, "array_map"));
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("map"),
+        create_builtin_function(ctx, "array_map"),
+    );
+    set_ne(
+        &mut proto_obj,
         ctx.intern("filter"),
         create_builtin_function(ctx, "array_filter"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("reduce"),
         create_builtin_function(ctx, "array_reduce"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("every"),
         create_builtin_function(ctx, "array_every"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("some"),
         create_builtin_function(ctx, "array_some"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("find"),
         create_builtin_function(ctx, "array_find"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("findIndex"),
         create_builtin_function(ctx, "array_findIndex"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("reduceRight"),
         create_builtin_function(ctx, "array_reduceRight"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("sort"),
         create_builtin_function(ctx, "array_sort"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("reverse"),
         create_builtin_function(ctx, "array_reverse"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("fill"),
         create_builtin_function(ctx, "array_fill"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("splice"),
         create_builtin_function(ctx, "array_splice"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("flat"),
         create_builtin_function(ctx, "array_flat"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("flatMap"),
         create_builtin_function(ctx, "array_flatMap"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("findLast"),
         create_builtin_function(ctx, "array_findLast"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("findLastIndex"),
         create_builtin_function(ctx, "array_findLastIndex"),
     );
-    set_ne(&mut proto_obj,ctx.intern("at"), create_builtin_function(ctx, "array_at"));
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("at"),
+        create_builtin_function(ctx, "array_at"),
+    );
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toSorted"),
         create_builtin_function(ctx, "array_toSorted"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toReversed"),
         create_builtin_function(ctx, "array_toReversed"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("with"),
         create_builtin_function(ctx, "array_with"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("lastIndexOf"),
         create_builtin_function(ctx, "array_lastIndexOf"),
     );
-    set_ne(&mut proto_obj,
+    set_ne(
+        &mut proto_obj,
         ctx.intern("toSpliced"),
         create_builtin_function(ctx, "array_toSpliced"),
     );
 
-    set_ne(&mut proto_obj,ctx.common_atoms.constructor, array_value);
+    set_ne(&mut proto_obj, ctx.common_atoms.constructor, array_value);
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto_obj.prototype = Some(obj_proto_ptr);
@@ -254,7 +303,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "array_unshift",
         HostFunction::method("unshift", 1, array_unshift),
     );
-    ctx.register_builtin("array_concat", HostFunction::method("concat", 1, array_concat));
+    ctx.register_builtin(
+        "array_concat",
+        HostFunction::method("concat", 1, array_concat),
+    );
     ctx.register_builtin("array_slice", HostFunction::method("slice", 2, array_slice));
     ctx.register_builtin(
         "array_indexOf",
@@ -279,8 +331,14 @@ pub fn register_builtins(ctx: &mut JSContext) {
         HostFunction::method("forEach", 1, array_for_each),
     );
     ctx.register_builtin("array_map", HostFunction::method("map", 1, array_map));
-    ctx.register_builtin("array_filter", HostFunction::method("filter", 1, array_filter));
-    ctx.register_builtin("array_reduce", HostFunction::method("reduce", 2, array_reduce));
+    ctx.register_builtin(
+        "array_filter",
+        HostFunction::method("filter", 1, array_filter),
+    );
+    ctx.register_builtin(
+        "array_reduce",
+        HostFunction::method("reduce", 2, array_reduce),
+    );
     ctx.register_builtin("array_every", HostFunction::method("every", 1, array_every));
     ctx.register_builtin("array_some", HostFunction::method("some", 1, array_some));
     ctx.register_builtin("array_find", HostFunction::method("find", 1, array_find));
@@ -298,7 +356,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         HostFunction::method("reverse", 0, array_reverse),
     );
     ctx.register_builtin("array_fill", HostFunction::method("fill", 1, array_fill));
-    ctx.register_builtin("array_splice", HostFunction::method("splice", 2, array_splice));
+    ctx.register_builtin(
+        "array_splice",
+        HostFunction::method("splice", 2, array_splice),
+    );
     ctx.register_builtin("array_flat", HostFunction::method("flat", 0, array_flat));
     ctx.register_builtin(
         "array_flatMap",
@@ -1359,7 +1420,10 @@ fn array_reverse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).as_ref().map(|v| js_to_length(v)).unwrap_or(0)
+        arr.get(len_atom)
+            .as_ref()
+            .map(|v| js_to_length(v))
+            .unwrap_or(0)
     };
     if len > 10_000_000 {
         return this;
@@ -1442,13 +1506,20 @@ fn array_splice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        arr.get(len_atom).as_ref().map(|v| js_to_length(v)).unwrap_or(0)
+        arr.get(len_atom)
+            .as_ref()
+            .map(|v| js_to_length(v))
+            .unwrap_or(0)
     };
     let start = args
         .get(1)
         .map(|v| {
             let n = v.to_number();
-            let i = if n < 0.0 { (len as f64 + n).max(0.0) as u64 } else { n.min(len as f64) as u64 };
+            let i = if n < 0.0 {
+                (len as f64 + n).max(0.0) as u64
+            } else {
+                n.min(len as f64) as u64
+            };
             i.min(len)
         })
         .unwrap_or(0);

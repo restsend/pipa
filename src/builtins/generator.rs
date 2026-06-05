@@ -35,9 +35,7 @@ pub fn init_generator(ctx: &mut JSContext) {
     let sym_iter_func = create_builtin_function(ctx, "generator_symbol_iterator");
     let sym_iter_val = crate::builtins::symbol::get_symbol_iterator(ctx);
     if sym_iter_val.is_symbol() {
-        let sym_atom = crate::runtime::atom::Atom(
-            0x40000000 | sym_iter_val.get_symbol_id(),
-        );
+        let sym_atom = crate::runtime::atom::Atom(0x40000000 | sym_iter_val.get_symbol_id());
         gen_proto.set(sym_atom, sym_iter_func);
     }
 

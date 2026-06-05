@@ -22,7 +22,11 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
         format!("{}", truncated as i64)
     } else if input_val.is_bool() {
-        if input_val.get_bool() { "true".to_string() } else { "false".to_string() }
+        if input_val.get_bool() {
+            "true".to_string()
+        } else {
+            "false".to_string()
+        }
     } else if input_val.is_null() {
         "null".to_string()
     } else if input_val.is_undefined() {
@@ -79,7 +83,12 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
         match prim {
             Some(Some(s)) => s,
-            _ => return crate::builtins::global::throw_type_error(ctx, "Cannot convert object to primitive value"),
+            _ => {
+                return crate::builtins::global::throw_type_error(
+                    ctx,
+                    "Cannot convert object to primitive value",
+                );
+            }
         }
     } else {
         return JSValue::new_float(f64::NAN);
@@ -125,7 +134,9 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     if let Some(ptr) = ctx.get_register_vm_ptr() {
                         let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
                         match vm.call_function_with_this(ctx, val_of, *ra, &[]) {
-                            Ok(result) if result.is_int() => radix_num = Some(result.get_int() as f64),
+                            Ok(result) if result.is_int() => {
+                                radix_num = Some(result.get_int() as f64)
+                            }
                             Ok(result) if result.is_float() => radix_num = Some(result.get_float()),
                             Ok(result) if result.is_bool() => {
                                 radix_num = Some(if result.get_bool() { 1.0 } else { 0.0 });
@@ -150,8 +161,12 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                                         radix_num = Some(v);
                                     }
                                 }
-                                Ok(result) if result.is_int() => radix_num = Some(result.get_int() as f64),
-                                Ok(result) if result.is_float() => radix_num = Some(result.get_float()),
+                                Ok(result) if result.is_int() => {
+                                    radix_num = Some(result.get_int() as f64)
+                                }
+                                Ok(result) if result.is_float() => {
+                                    radix_num = Some(result.get_float())
+                                }
                                 _ => {}
                             }
                         }
@@ -163,7 +178,12 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
             match radix_num {
                 Some(v) => v,
-                None => return crate::builtins::global::throw_type_error(ctx, "Cannot convert object to primitive value"),
+                None => {
+                    return crate::builtins::global::throw_type_error(
+                        ctx,
+                        "Cannot convert object to primitive value",
+                    );
+                }
             }
         } else {
             0.0
@@ -172,7 +192,9 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             0
         } else {
             let r = (n.trunc() as i64 & 0xFFFFFFFF) as i32;
-            if r == 1 { return JSValue::new_float(f64::NAN); }
+            if r == 1 {
+                return JSValue::new_float(f64::NAN);
+            }
             r
         }
     } else {
@@ -210,7 +232,10 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let final_val = sign * result;
-    if final_val >= -(1i64 << 47) as f64 && final_val < (1i64 << 47) as f64 && final_val == final_val.trunc() {
+    if final_val >= -(1i64 << 47) as f64
+        && final_val < (1i64 << 47) as f64
+        && final_val == final_val.trunc()
+    {
         JSValue::new_int(final_val as i64)
     } else {
         JSValue::new_float(final_val)
@@ -276,7 +301,8 @@ pub fn global_parsefloat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                         match vm.call_function_with_this(ctx, value_of, *input, &[]) {
                             Ok(result) => {
                                 if result.is_string() {
-                                    result_str = Some(ctx.get_atom_str(result.get_atom()).to_string());
+                                    result_str =
+                                        Some(ctx.get_atom_str(result.get_atom()).to_string());
                                 } else if result.is_int() {
                                     result_str = Some(result.get_int().to_string());
                                 } else if result.is_float() {
@@ -294,9 +320,17 @@ pub fn global_parsefloat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             None => {
                 if let Some(ptr) = ctx.get_register_vm_ptr() {
                     let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
-                    let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-                    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert object to primitive value")));
-                    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                    let mut err = crate::object::object::JSObject::new_typed(
+                        crate::object::object::ObjectType::Error,
+                    );
+                    err.set(
+                        ctx.common_atoms.message,
+                        JSValue::new_string(ctx.intern("Cannot convert object to primitive value")),
+                    );
+                    err.set(
+                        ctx.common_atoms.name,
+                        JSValue::new_string(ctx.intern("TypeError")),
+                    );
                     if let Some(proto) = ctx.get_type_error_prototype() {
                         err.prototype = Some(proto);
                     }

@@ -6,7 +6,7 @@ use crate::runtime::io_reactor::{IoReactor, ReactorTask, SseTask};
 use crate::value::JSValue;
 
 pub fn register_eventsource(ctx: &mut JSContext) {
-    ctx.register_builtin("EventSource", HostFunction::new("EventSource", 1, es_ctor));
+    ctx.register_builtin("EventSource", HostFunction::ctor("EventSource", 1, es_ctor));
     ctx.register_builtin("es_close", HostFunction::method("close", 1, es_close));
 }
 

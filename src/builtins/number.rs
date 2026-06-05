@@ -39,8 +39,14 @@ pub fn number_to_exponential(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
         } else {
             let mut err = crate::object::object::JSObject::new();
-            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Number")));
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("TypeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("this is not a Number")),
+            );
             if let Some(proto) = ctx.get_type_error_prototype() {
                 err.prototype = Some(proto);
             }
@@ -51,8 +57,14 @@ pub fn number_to_exponential(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     } else {
         let mut err = crate::object::object::JSObject::new();
-        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
-        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("this is not a Number")));
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not a Number")),
+        );
         if let Some(proto) = ctx.get_type_error_prototype() {
             err.prototype = Some(proto);
         }
@@ -115,12 +127,25 @@ pub fn number_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let radix = if args.len() > 1 && !args[1].is_undefined() {
         let r = match js_to_number_value(ctx, &args[1]) {
             Ok(f) => f as i32,
-            Err(()) => return throw_type_error_if_no_exception(ctx, "toString() radix cannot be converted to a number"),
+            Err(()) => {
+                return throw_type_error_if_no_exception(
+                    ctx,
+                    "toString() radix cannot be converted to a number",
+                );
+            }
         };
         if !(2..=36).contains(&r) {
-            let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
-            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
-            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("radix must be between 2 and 36")));
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("RangeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("radix must be between 2 and 36")),
+            );
             if let Some(proto) = ctx.get_range_error_prototype() {
                 err.prototype = Some(proto);
             }
@@ -182,10 +207,18 @@ pub fn number_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 if f.is_nan() {
                     "NaN".to_string()
                 } else if f.is_infinite() {
-                    if f.is_sign_positive() { "Infinity".to_string() } else { "-Infinity".to_string() }
+                    if f.is_sign_positive() {
+                        "Infinity".to_string()
+                    } else {
+                        "-Infinity".to_string()
+                    }
                 } else if radix != 10 {
                     let n = f as i64;
-                    if n < 0 { format!("-{}", format_radix((-n) as u64, radix as u32)) } else { format_radix(n as u64, radix as u32) }
+                    if n < 0 {
+                        format!("-{}", format_radix((-n) as u64, radix as u32))
+                    } else {
+                        format_radix(n as u64, radix as u32)
+                    }
                 } else if f == f.floor() && f.is_finite() && f.abs() < 1e15 {
                     format!("{}", f as i64)
                 } else {
