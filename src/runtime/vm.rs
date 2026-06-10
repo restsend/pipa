@@ -4518,7 +4518,33 @@ impl VM {
                                 }
                             }
                         } else {
-                            js_obj.set_cached(sym_key, value, ctx.shape_cache_mut());
+                            let pre_offset = js_obj.find_offset(sym_key);
+                            if pre_offset.is_some() && !js_obj.is_prop_writable_at(pre_offset) {
+                                if self.frames[self.frame_index].is_strict_frame {
+                                    self.set_pending_type_error(
+                                        ctx,
+                                        "Cannot assign to read only property",
+                                    );
+                                    if let Some(exc) = self.pending_throw.take() {
+                                        match self.dispatch_throw_value(ctx, exc) {
+                                            ThrowDispatch::Caught => {}
+                                            ThrowDispatch::Uncaught(e) => return Err(e),
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            } else {
+                                js_obj.set_cached(sym_key, value, ctx.shape_cache_mut());
+                            }
+                        }
+                    } else if !obj_val.is_object_like() && self.frames[self.frame_index].is_strict_frame {
+                        self.set_pending_type_error(ctx, "Cannot assign to a primitive value");
+                        if let Some(exc) = self.pending_throw.take() {
+                            match self.dispatch_throw_value(ctx, exc) {
+                                ThrowDispatch::Caught => {}
+                                ThrowDispatch::Uncaught(e) => return Err(e),
+                                _ => {}
+                            }
                         }
                     }
                     self.set_reg(obj_reg, obj_val);
@@ -4681,10 +4707,9 @@ impl VM {
                     if key_val.is_string() {
                         self.set_named_prop(ctx, obj_val, value, key_val.get_atom(), usize::MAX);
                     } else if key_val.is_symbol() && obj_val.is_object_like() {
-                        let js_obj = unsafe { JSValue::object_from_ptr_mut(obj_val.get_ptr()) };
                         let sym_key =
                             crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id());
-                        js_obj.set_cached(sym_key, value, ctx.shape_cache_mut());
+                        self.set_named_prop(ctx, obj_val, value, sym_key, usize::MAX);
                     } else if key_val.is_int() && obj_val.is_object_like() {
                         if obj_val.is_object() {
                             let js_obj_check =
@@ -8040,6 +8065,12 @@ impl VM {
         atom: crate::runtime::atom::Atom,
         ic_pc: usize,
     ) -> bool {
+        if !obj_val.is_object_like() {
+            if self.frames[self.frame_index].is_strict_frame {
+                self.set_pending_type_error(ctx, "Cannot assign to a primitive value");
+            }
+            return false;
+        }
         if obj_val.is_object_like() {
             let ptr = obj_val.get_ptr();
             let js_obj = unsafe { JSValue::object_from_ptr_mut(ptr) };
