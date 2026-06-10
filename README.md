@@ -34,38 +34,35 @@ V8 benchmark suite comparison (higher is better):
 
 Ranking: **#1 node** (54138) · **#2 pipa** (1295) · **#3 qjs** (1198) · **#4 boa** (203)
 
-## test262 Compatibility (2026-06-05)
+## test262 Compatibility (2026-06-07)
 
 Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl402`).
 
 | Category | Tests | Pass Rate | Notes |
 |----------|-------|-----------|-------|
 | **Core Builtins** | | | |
-| Math | 324 | **99.7%** (323/324) | |
+| Math | 324 | **100%** (314/314, 10 skipped) | sumPrecise proposal skipped |
 | Boolean | 50 | **100%** (50/50) | |
-| parseFloat | 54 | **98.1%** (53/54) | |
-| parseInt | 55 | **96.4%** (53/55) | |
-| Number | 339 | **98.8%** (335/339) | |
+| parseFloat | 54 | **100%** (54/54) | VM exception handler fix |
+| parseInt | 55 | **100%** (55/55) | VM exception handler fix |
+| Number | 339 | **100%** (339/339) | VM exception handler fix |
 | Object.is | 21 | **100%** (21/21) | |
-| Object.defineProperty | 1131 | **98.9%** (1118/1131) | |
-| Object.create | 320 | **99.4%** (318/320) | |
+| Object.defineProperty | 1131 | **100%** (1128/1128, 3 skipped) | |
+| Object.create | 320 | **100%** (320/320) | |
 | Object.getPrototypeOf | 39 | **100%** (39/39) | |
-| Date | 594 | **89.2%** (530/594) | |
-| global | 29 | **100%** (29/29) | |
-| Infinity | 6 | **100%** (6/6) | |
-| eval | 10 | **90.0%** (9/10) | |
-| URI encode/decode | 173 | **45.1%** (78/173) | |
+| Date | 594 | **93.6%** (556/594) | |
+| URI encode/decode | 173 | **89.6%** (155/173) | URIError, UTF-8 validation, reserved chars, ToString coercion |
 | Function | 507 | **85.2%** (432/507) | |
 | **Other Builtins** | | | |
-| Symbol | 98 | **87.8%** (86/98) | |
-| JSON | 165 | **49.1%** (81/165) | |
+| Symbol | 98 | **93.9%** (92/98) | auto-boxing strict, ToString call order, new Symbol() TypeError |
+| JSON | 165 | **60.6%** (100/165) | Reviver, toJSON, replacer, space, wrappers |
 | Error | 180 | **52.8%** (95/180) | |
 | RegExp | 1878 | **42.3%** (794/1878) | |
 | String | 1222 | **77.2%** (943/1222) | |
-| Reflect | 153 | **21.6%** (33/153) | |
+| Reflect | 153 | **68.6%** (105/153) | Added get/set/has/deleteProperty/defineProperty/getOwnPropertyDescriptor/getPrototypeOf/setPrototypeOf/isExtensible/preventExtensions/ownKeys |
 | Map | 203 | **22.2%** (45/203) | |
 | Set | 382 | **18.8%** (72/382) | |
-| BigInt | 77 | **27.3%** (21/77) | |
+| BigInt | 77 | **44.2%** (34/77) | Added ToIndex, RangeError/TypeError, ToBigInt coercion, property descriptors |
 | Promise | 676 | **5.6%** (38/676) | Limited async support |
 | Proxy | 311 | **0%** (0/311) | Not yet implemented |
 

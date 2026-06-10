@@ -162,6 +162,9 @@ impl<'a> JsonParser<'a> {
                     n = n * 10 + (b - b'0') as u64;
                 }
                 let i = if negative {
+                    if n == 0 {
+                        return Ok(JSValue::new_float(-0.0f64));
+                    }
                     if n <= i64::MAX as u64 + 1 {
                         n.wrapping_neg() as i64
                     } else {

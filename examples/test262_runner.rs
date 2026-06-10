@@ -258,6 +258,8 @@ fn run_test(
         "ExportDefault",
         "ExportAllFrom",
         "ImportAssertions",
+        "Math.sumPrecise",
+        "class-fields-private",
         "RegExp Unicode Sets",
         " Symbols",
         "Proxy",

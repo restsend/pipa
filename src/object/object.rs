@@ -967,6 +967,7 @@ impl JSObject {
         self.shape = Some(new_shape);
         self.shape_id_cache = unsafe { (*new_shape.as_ptr()).id.0 };
         self.update_property_map(atom);
+        self.track_property_order(atom);
     }
 
     #[inline(always)]
@@ -1030,7 +1031,8 @@ impl JSObject {
         getter: Option<JSValue>,
         setter: Option<JSValue>,
     ) {
-        self.ensure_extra()
+        let extra = self.ensure_extra();
+        extra
             .accessors
             .get_or_insert_with(|| Box::new(FxHashMap::default()))
             .insert(
@@ -1042,6 +1044,13 @@ impl JSObject {
                     configurable: true,
                 },
             );
+        let order = extra
+            .property_order
+            .get_or_insert_with(|| Box::new(Vec::new()));
+        if let Some(pos) = order.iter().position(|a| *a == prop) {
+            order.remove(pos);
+        }
+        order.push(prop);
     }
 
     pub fn define_non_enumerable_accessor(
@@ -1483,14 +1492,14 @@ impl JSObject {
     }
 
     fn track_property_order(&mut self, prop: Atom) {
-        if let Some(ref mut extra) = self.extra {
-            let order = extra
-                .property_order
-                .get_or_insert_with(|| Box::new(Vec::new()));
-            if !order.contains(&prop) {
-                order.push(prop);
-            }
+        let extra = self.ensure_extra();
+        let order = extra
+            .property_order
+            .get_or_insert_with(|| Box::new(Vec::new()));
+        if let Some(pos) = order.iter().position(|a| *a == prop) {
+            order.remove(pos);
         }
+        order.push(prop);
     }
 
     pub fn get_own(&self, prop: Atom) -> Option<JSValue> {
@@ -1511,10 +1520,15 @@ impl JSObject {
 
     pub fn own_properties(&self) -> Vec<(Atom, JSValue)> {
         let mut result = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         // Use the property order vector if available, otherwise fall back to props order
         if let Some(ref extra) = self.extra {
             if let Some(ref order) = extra.property_order {
                 for atom in order.iter() {
+                    // Skip Symbol-keyed properties
+                    if atom.0 & 0x40000000 != 0 {
+                        continue;
+                    }
                     // Check if it's a data property
                     if let Some(offset) = self.find_offset(*atom) {
                         if offset < self.props.len() {
@@ -1522,7 +1536,7 @@ impl JSObject {
                             if slot.attrs == ATTR_DELETED {
                                 continue;
                             }
-                            if slot.attrs & ATTR_ENUMERABLE != 0 {
+                            if slot.attrs & ATTR_ENUMERABLE != 0 && seen.insert(slot.atom) {
                                 result.push((slot.atom, slot.value));
                             }
                             continue;
@@ -1533,28 +1547,38 @@ impl JSObject {
                         if let Some(entry) = accs.get(atom) {
                             if entry.enumerable {
                                 if let Some(getter) = entry.get {
-                                    result.push((*atom, getter));
+                                    if seen.insert(*atom) {
+                                        result.push((*atom, getter));
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                return result;
             }
         }
-        // Fallback: iterate props then accessors (for objects without property_order)
+        // Append remaining enumerable data props not yet seen
         for slot in &self.props {
             if slot.attrs == ATTR_DELETED {
                 continue;
             }
-            if slot.attrs & ATTR_ENUMERABLE != 0 {
+            if slot.atom.0 & 0x40000000 != 0 {
+                continue;
+            }
+            if slot.attrs & ATTR_ENUMERABLE != 0 && !seen.contains(&slot.atom) {
+                seen.insert(slot.atom);
                 result.push((slot.atom, slot.value));
             }
         }
+        // Append remaining enumerable accessor props not yet seen
         if let Some(ref extra) = self.extra {
             if let Some(ref accs) = extra.accessors {
                 for (atom, entry) in accs.iter() {
-                    if entry.enumerable {
+                    if atom.0 & 0x40000000 != 0 {
+                        continue;
+                    }
+                    if entry.enumerable && !seen.contains(atom) {
+                        seen.insert(*atom);
                         if let Some(getter) = entry.get {
                             result.push((*atom, getter));
                         }
@@ -1621,6 +1645,28 @@ impl JSObject {
             }
         }
         None
+    }
+
+    pub fn has_property_order(&self) -> bool {
+        self.extra.as_ref().and_then(|e| e.property_order.as_ref()).is_some()
+    }
+
+    pub fn property_order_keys(&self) -> Vec<Atom> {
+        if let Some(ref extra) = self.extra {
+            if let Some(ref order) = extra.property_order {
+                return order.iter().copied().collect();
+            }
+        }
+        Vec::new()
+    }
+
+    pub fn accessor_keys(&self) -> Vec<(Atom, usize)> {
+        if let Some(ref extra) = self.extra {
+            if let Some(ref accs) = extra.accessors {
+                return accs.keys().map(|k| (*k, 0)).collect();
+            }
+        }
+        Vec::new()
     }
 
     pub fn define_property(&mut self, prop: Atom, desc: PropertyDescriptor) -> bool {

@@ -12,6 +12,7 @@ pub struct JSRuntime {
     interrupt: AtomicBool,
     module_registry: ModuleRegistry,
     next_symbol_id: u32,
+    symbol_registry: Option<usize>,
 
     pub argv: Vec<String>,
 }
@@ -25,6 +26,7 @@ impl JSRuntime {
             interrupt: AtomicBool::new(false),
             module_registry: ModuleRegistry::new(),
             next_symbol_id: 1,
+            symbol_registry: None,
             argv: Vec::new(),
         }
     }
@@ -86,6 +88,14 @@ impl JSRuntime {
         let id = self.next_symbol_id;
         self.next_symbol_id += 1;
         id
+    }
+
+    pub fn symbol_registry(&self) -> Option<usize> {
+        self.symbol_registry
+    }
+
+    pub fn set_symbol_registry(&mut self, ptr: Option<usize>) {
+        self.symbol_registry = ptr;
     }
 
     pub fn set_argv(&mut self, args: Vec<String>) {

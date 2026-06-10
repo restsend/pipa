@@ -272,7 +272,11 @@ pub struct JSContext {
     reference_error_prototype: Option<usize>,
     syntax_error_prototype: Option<usize>,
     range_error_prototype: Option<usize>,
+    uri_error_prototype: Option<usize>,
+    eval_error_prototype: Option<usize>,
     symbol_prototype: Option<usize>,
+    bool_prototype: Option<usize>,
+    bigint_prototype: Option<usize>,
     weakref_prototype: Option<usize>,
     finalization_registry_prototype: Option<usize>,
     pub finalization_registries: std::cell::RefCell<Vec<usize>>,
@@ -344,7 +348,11 @@ impl JSContext {
             reference_error_prototype: None,
             syntax_error_prototype: None,
             range_error_prototype: None,
+            uri_error_prototype: None,
+            eval_error_prototype: None,
             symbol_prototype: None,
+            bool_prototype: None,
+            bigint_prototype: None,
             weakref_prototype: None,
             finalization_registry_prototype: None,
             finalization_registries: std::cell::RefCell::new(Vec::new()),
@@ -604,6 +612,22 @@ impl JSContext {
         self.number_prototype.map(|p| p as *mut JSObject)
     }
 
+    pub fn get_bool_prototype(&self) -> Option<*mut JSObject> {
+        self.bool_prototype.map(|p| p as *mut JSObject)
+    }
+
+    pub fn set_bool_prototype(&mut self, ptr: usize) {
+        self.bool_prototype = Some(ptr);
+    }
+
+    pub fn get_bigint_prototype(&self) -> Option<*mut JSObject> {
+        self.bigint_prototype.map(|p| p as *mut JSObject)
+    }
+
+    pub fn set_bigint_prototype(&mut self, ptr: usize) {
+        self.bigint_prototype = Some(ptr);
+    }
+
     pub fn get_array_prototype(&self) -> Option<*mut JSObject> {
         self.array_prototype.map(|p| p as *mut JSObject)
     }
@@ -684,12 +708,28 @@ impl JSContext {
         self.range_error_prototype.map(|p| p as *mut JSObject)
     }
 
+    pub fn set_uri_error_prototype(&mut self, ptr: usize) {
+        self.uri_error_prototype = Some(ptr);
+    }
+
+    pub fn get_uri_error_prototype(&self) -> Option<*mut JSObject> {
+        self.uri_error_prototype.map(|p| p as *mut JSObject)
+    }
+
     pub fn set_syntax_error_prototype(&mut self, ptr: usize) {
         self.syntax_error_prototype = Some(ptr);
     }
 
     pub fn get_syntax_error_prototype(&self) -> Option<*mut JSObject> {
         self.syntax_error_prototype.map(|p| p as *mut JSObject)
+    }
+
+    pub fn set_eval_error_prototype(&mut self, ptr: usize) {
+        self.eval_error_prototype = Some(ptr);
+    }
+
+    pub fn get_eval_error_prototype(&self) -> Option<*mut JSObject> {
+        self.eval_error_prototype.map(|p| p as *mut JSObject)
     }
 
     pub fn set_symbol_prototype(&mut self, ptr: usize) {
@@ -791,6 +831,14 @@ impl JSContext {
 
     pub fn get_current_module(&self) -> Option<&str> {
         self.current_module_specifier.as_deref()
+    }
+
+    pub fn get_symbol_registry_ptr(&self) -> Option<usize> {
+        self.runtime().symbol_registry()
+    }
+
+    pub fn set_symbol_registry_ptr(&mut self, ptr: Option<usize>) {
+        self.runtime_mut().set_symbol_registry(ptr);
     }
 
     pub fn set_import_meta(&mut self, ptr: Option<usize>) {

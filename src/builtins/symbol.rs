@@ -47,27 +47,61 @@ fn symbol_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         None
     } else {
         let desc_val = args[0];
-        if desc_val.is_string() {
-            Some(desc_val.get_atom())
-        } else if desc_val.is_undefined() {
+        if desc_val.is_undefined() {
             None
         } else if desc_val.is_symbol() {
             throw_type_error(ctx, "Cannot convert a Symbol value to a string");
             return JSValue::undefined();
+        } else if let Some(atom) = to_string_via_vm(ctx, desc_val) {
+            Some(atom)
         } else {
-            let s = if desc_val.is_int() {
-                desc_val.get_int().to_string()
-            } else if desc_val.is_float() {
-                desc_val.get_float().to_string()
-            } else if desc_val.is_bool() {
-                desc_val.get_bool().to_string()
-            } else {
-                String::new()
-            };
-            Some(ctx.intern(&s))
+            throw_type_error(ctx, "Cannot convert object to primitive value");
+            return JSValue::undefined();
         }
     };
     create_symbol(ctx, desc)
+}
+
+fn to_string_via_vm(ctx: &mut JSContext, value: JSValue) -> Option<Atom> {
+    if value.is_string() { return Some(value.get_atom()); }
+    if value.is_int() { return Some(ctx.intern(&value.get_int().to_string())); }
+    if value.is_float() { return Some(ctx.intern(&value.get_float().to_string())); }
+    if value.is_bool() { return Some(ctx.intern(if value.get_bool() { "true" } else { "false" })); }
+    if value.is_undefined() { return Some(ctx.intern("undefined")); }
+    if value.is_null() { return Some(ctx.intern("null")); }
+    if value.is_symbol() { return None; }
+    if value.is_object() {
+        if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+            let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+            let obj = value.as_object();
+            let to_string_val = obj.get(ctx.common_atoms.to_string);
+            let to_string_is_callable = to_string_val.map_or(false, |v| v.is_function());
+            if to_string_is_callable {
+                let f = to_string_val.unwrap();
+                if let Ok(r) = vm.call_function_with_this(ctx, f, value.clone(), &[]) {
+                    if !r.is_object() {
+                        return to_string_via_vm(ctx, r);
+                    }
+                } else {
+                    return None;
+                }
+            }
+            let value_of_val = obj.get(ctx.common_atoms.value_of);
+            let value_of_is_callable = value_of_val.map_or(false, |v| v.is_function());
+            if value_of_is_callable {
+                let f = value_of_val.unwrap();
+                if let Ok(r) = vm.call_function_with_this(ctx, f, value.clone(), &[]) {
+                    if !r.is_object() {
+                        return to_string_via_vm(ctx, r);
+                    }
+                } else {
+                    return None;
+                }
+            }
+        }
+        return None;
+    }
+    None
 }
 
 fn symbol_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -75,18 +109,8 @@ fn symbol_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         JSValue::new_string(ctx.intern("undefined"))
     } else {
         let v = args[0];
-        if v.is_string() {
-            v
-        } else if v.is_int() {
-            JSValue::new_string(ctx.intern(&v.get_int().to_string()))
-        } else if v.is_float() {
-            JSValue::new_string(ctx.intern(&v.get_float().to_string()))
-        } else if v.is_bool() {
-            JSValue::new_string(ctx.intern(if v.get_bool() { "true" } else { "false" }))
-        } else if v.is_undefined() {
-            JSValue::new_string(ctx.intern("undefined"))
-        } else if v.is_null() {
-            JSValue::new_string(ctx.intern("null"))
+        if let Some(atom) = to_string_via_vm(ctx, v) {
+            JSValue::new_string(atom)
         } else if v.is_symbol() {
             throw_type_error(ctx, "Can't convert symbol to string");
             return JSValue::undefined();
@@ -96,77 +120,50 @@ fn symbol_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
     let key = key_val.get_atom();
 
-    let global = ctx.global();
-    if global.is_object() {
-        let global_obj = global.as_object_mut();
-        let reg_atom = ctx.intern("__symbol_registry__");
-        if let Some(reg) = global_obj.get(reg_atom) {
-            if reg.is_object() {
-                let reg_obj = reg.as_object_mut();
-                let len_atom = ctx.common_atoms.length;
-                let len = reg_obj
-                    .get(len_atom)
-                    .map(|v| v.get_int() as usize)
-                    .unwrap_or(0);
-                for i in 0..len {
-                    let idx_atom = ctx.intern(&i.to_string());
-                    if let Some(entry) = reg_obj.get(idx_atom) {
-                        if entry.is_object() {
-                            let entry_obj = entry.as_object_mut();
-                            let desc_atom = ctx.intern("description");
-                            if let Some(desc) = entry_obj.get(desc_atom) {
-                                if desc.is_string() && desc.get_atom() == key {
-                                    let sym_atom = ctx.intern("symbol");
-                                    if let Some(sym) = entry_obj.get(sym_atom) {
-                                        return sym;
-                                    }
-                                }
-                            }
+    let reg = if let Some(ptr) = ctx.get_symbol_registry_ptr() {
+        unsafe { &mut *(ptr as *mut JSObject) }
+    } else {
+        let mut new_reg = JSObject::new_array();
+        new_reg.set(ctx.common_atoms.length, JSValue::new_int(0));
+        let reg_ptr = Box::into_raw(Box::new(new_reg)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(reg_ptr);
+        ctx.runtime_mut().gc_heap_mut().extra_roots.push(JSValue::new_object(reg_ptr));
+        ctx.set_symbol_registry_ptr(Some(reg_ptr));
+        unsafe { &mut *(reg_ptr as *mut JSObject) }
+    };
+
+    let len_atom = ctx.common_atoms.length;
+    let len = reg.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0);
+    for i in 0..len {
+        let idx_atom = ctx.intern(&i.to_string());
+        if let Some(entry) = reg.get(idx_atom) {
+            if entry.is_object() {
+                let entry_obj = entry.as_object_mut();
+                let desc_atom = ctx.intern("description");
+                if let Some(desc) = entry_obj.get(desc_atom) {
+                    if desc.is_string() && desc.get_atom() == key {
+                        let sym_atom = ctx.intern("symbol");
+                        if let Some(sym) = entry_obj.get(sym_atom) {
+                            return sym;
                         }
                     }
                 }
             }
         }
-
-        let new_sym = create_symbol(ctx, Some(key));
-
-        let reg = if let Some(r) = global_obj.get(reg_atom) {
-            if r.is_object() {
-                unsafe { JSValue::object_from_ptr_mut(r.get_ptr()) }
-            } else {
-                let mut new_reg = JSObject::new_array();
-                new_reg.set(ctx.common_atoms.length, JSValue::new_int(0));
-                let reg_ptr = Box::into_raw(Box::new(new_reg)) as usize;
-                let val = JSValue::new_object(reg_ptr);
-                global_obj.set(reg_atom, val);
-
-                unsafe { JSValue::object_from_ptr_mut(reg_ptr) }
-            }
-        } else {
-            let mut new_reg = JSObject::new_array();
-            new_reg.set(ctx.common_atoms.length, JSValue::new_int(0));
-            let reg_ptr = Box::into_raw(Box::new(new_reg)) as usize;
-            let val = JSValue::new_object(reg_ptr);
-            global_obj.set(reg_atom, val);
-
-            unsafe { JSValue::object_from_ptr_mut(reg_ptr) }
-        };
-
-        let len_atom = ctx.common_atoms.length;
-        let len = reg.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0);
-        let mut entry = JSObject::new();
-        entry.set(ctx.intern("description"), JSValue::new_string(key));
-        entry.set(ctx.intern("symbol"), new_sym);
-        let entry_ptr = Box::into_raw(Box::new(entry)) as usize;
-        let entry_val = JSValue::new_object(entry_ptr);
-        let idx_atom = ctx.intern(&len.to_string());
-        reg.set(idx_atom, entry_val);
-        reg.set(len_atom, JSValue::new_int((len + 1) as i64));
-
-        return new_sym;
     }
 
-    create_symbol(ctx, Some(key))
+    let new_sym = create_symbol(ctx, Some(key));
+
+    let mut entry = JSObject::new();
+    entry.set(ctx.intern("description"), JSValue::new_string(key));
+    entry.set(ctx.intern("symbol"), new_sym);
+    let entry_ptr = Box::into_raw(Box::new(entry)) as usize;
+    let entry_val = JSValue::new_object(entry_ptr);
+    let idx_atom = ctx.intern(&len.to_string());
+    reg.set(idx_atom, entry_val);
+    reg.set(len_atom, JSValue::new_int((len + 1) as i64));
+
+    new_sym
 }
 
 fn symbol_key_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -180,31 +177,24 @@ fn symbol_key_for(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
 
-    let global = ctx.global();
-    if global.is_object() {
-        let global_obj = global.as_object();
-        let reg_atom = ctx.intern("__symbol_registry__");
-        if let Some(reg) = global_obj.get(reg_atom) {
-            if reg.is_object() {
-                let reg_obj = reg.as_object();
-                let len_atom = ctx.common_atoms.length;
-                let len = reg_obj
-                    .get(len_atom)
-                    .map(|v| v.get_int() as usize)
-                    .unwrap_or(0);
-                for i in 0..len {
-                    let idx_atom = ctx.intern(&i.to_string());
-                    if let Some(entry) = reg_obj.get(idx_atom) {
-                        if entry.is_object() {
-                            let entry_obj = entry.as_object();
-                            let sym_atom = ctx.intern("symbol");
-                            if let Some(sym) = entry_obj.get(sym_atom) {
-                                if sym.strict_eq(&sym_val) {
-                                    let desc_atom = ctx.intern("description");
-                                    if let Some(desc) = entry_obj.get(desc_atom) {
-                                        return desc;
-                                    }
-                                }
+    if let Some(ptr) = ctx.get_symbol_registry_ptr() {
+        let reg = unsafe { &*(ptr as *const JSObject) };
+        let len_atom = ctx.common_atoms.length;
+        let len = reg
+            .get(len_atom)
+            .map(|v| v.get_int() as usize)
+            .unwrap_or(0);
+        for i in 0..len {
+            let idx_atom = ctx.intern(&i.to_string());
+            if let Some(entry) = reg.get(idx_atom) {
+                if entry.is_object() {
+                    let entry_obj = entry.as_object();
+                    let sym_atom = ctx.intern("symbol");
+                    if let Some(sym) = entry_obj.get(sym_atom) {
+                        if sym.strict_eq(&sym_val) {
+                            let desc_atom = ctx.intern("description");
+                            if let Some(desc) = entry_obj.get(desc_atom) {
+                                return desc;
                             }
                         }
                     }
@@ -728,7 +718,7 @@ pub fn init_symbol(ctx: &mut JSContext) {
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "symbol_constructor",
-        HostFunction::new("Symbol", 0, symbol_constructor),
+        HostFunction::ctor("Symbol", 0, symbol_constructor),
     );
     ctx.register_builtin("symbol_for", HostFunction::new("for", 1, symbol_for));
     ctx.register_builtin(

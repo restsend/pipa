@@ -34,6 +34,7 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else if input_val.is_object() {
         let obj = input_val.as_object();
         let mut prim: Option<Option<String>> = None;
+        let mut threw_error = false;
         if let Some(to_str) = obj.get(ctx.intern("toString")) {
             if to_str.is_function() {
                 if let Some(ptr) = ctx.get_register_vm_ptr() {
@@ -51,10 +52,15 @@ pub fn global_parseint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                         Ok(_) => {
                             prim = Some(None);
                         }
-                        _ => {}
+                        Err(_) => {
+                            threw_error = true;
+                        }
                     }
                 }
             }
+        }
+        if threw_error {
+            return JSValue::undefined();
         }
         if let Some(Some(_)) = prim {
         } else {
@@ -274,6 +280,7 @@ pub fn global_parsefloat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else if input.is_object() {
         let obj = input.as_object();
         let mut result_str: Option<String> = None;
+        let mut threw_error = false;
         if let Some(to_str) = obj.get(ctx.intern("toString")) {
             if to_str.is_function() {
                 if let Some(ptr) = ctx.get_register_vm_ptr() {
@@ -288,10 +295,15 @@ pub fn global_parsefloat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                                 result_str = Some(result.get_float().to_string());
                             }
                         }
-                        _ => {}
+                        Err(_) => {
+                            threw_error = true;
+                        }
                     }
                 }
             }
+        }
+        if threw_error {
+            return JSValue::undefined();
         }
         if result_str.is_none() {
             if let Some(value_of) = obj.get(ctx.intern("valueOf")) {

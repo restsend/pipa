@@ -34,6 +34,7 @@ use crate::object::function::JSFunction;
 use crate::object::object::JSObject;
 use crate::object::object::ObjectType;
 use crate::object::object::PropertyDescriptor;
+use crate::runtime::atom::Atom;
 use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 use std::collections::HashSet;
@@ -573,25 +574,499 @@ fn global_eval(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 }
 
+fn extract_array_like(ctx: &mut JSContext, arg_list: &JSValue) -> Result<Vec<JSValue>, ()> {
+    if !arg_list.is_object() {
+        return Err(());
+    }
+    let mut call_args = Vec::new();
+    let obj = arg_list.as_object();
+    let len_val = obj.get(ctx.common_atoms.length);
+    if ctx.pending_exception.is_some() { return Err(()); }
+    let len = match len_val {
+        Some(v) if v.is_int() => v.get_int() as usize,
+        Some(v) if v.is_float() => v.get_float() as usize,
+        _ => 0,
+    };
+    if len > 1000000 { return Err(()); }
+    for i in 0..len {
+        let key = ctx.int_atom_mut(i);
+        if let Some(v) = obj.get(key) {
+            if ctx.pending_exception.is_some() { return Err(()); }
+            call_args.push(v);
+        } else {
+            call_args.push(JSValue::undefined());
+        }
+    }
+    Ok(call_args)
+}
+
+fn reflect_get(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.get requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    if args.len() < 2 { return JSValue::undefined(); }
+    let key_val = &args[1];
+    let key = if key_val.is_string() {
+        key_val.get_atom()
+    } else if key_val.is_symbol() {
+        crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id())
+    } else if key_val.is_int() {
+        let i = key_val.get_int();
+        if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
+    } else {
+        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        ctx.intern(&s)
+    };
+    let receiver = args.get(2).copied().unwrap_or(args[0]);
+    let target = args[0].as_object();
+    let mut current: Option<&JSObject> = Some(target);
+    let mut depth = 0u32;
+    while let Some(obj) = current {
+        depth += 1;
+        if depth > 1000 { break; }
+        if let Some(desc) = obj.get_own_descriptor(key) {
+            if let Some(value) = desc.value {
+                return value;
+            }
+            if let Some(getter) = desc.get {
+                if getter.is_function() {
+                    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+                        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+                        if let Ok(result) = vm.call_function_with_this(ctx, getter, receiver, &[]) {
+                            return result;
+                        }
+                    }
+                }
+            }
+            return JSValue::undefined();
+        }
+        if let Some(proto_ptr) = obj.prototype_ptr() {
+            if proto_ptr.is_null() { break; }
+            current = Some(unsafe { &*proto_ptr });
+        } else {
+            break;
+        }
+    }
+    JSValue::undefined()
+}
+
+fn reflect_set(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.len() < 3 || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.set requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let target = args[0];
+    let key_val = &args[1];
+    let value = args[2].clone();
+    let key = if key_val.is_string() {
+        key_val.get_atom()
+    } else if key_val.is_symbol() {
+        crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id())
+    } else if key_val.is_int() {
+        let i = key_val.get_int();
+        if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
+    } else {
+        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        ctx.intern(&s)
+    };
+    target.as_object_mut().set(key, value);
+    JSValue::bool(true)
+}
+
+fn reflect_has(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.has requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    if args.len() < 2 { return JSValue::bool(false); }
+    let key_val = &args[1];
+    let key = if key_val.is_string() {
+        key_val.get_atom()
+    } else if key_val.is_symbol() {
+        crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id())
+    } else if key_val.is_int() {
+        let i = key_val.get_int();
+        if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
+    } else {
+        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        ctx.intern(&s)
+    };
+    JSValue::bool(args[0].as_object().has_property(key))
+}
+
+fn reflect_delete_property(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.deleteProperty requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    if args.len() < 2 { return JSValue::bool(true); }
+    let key_val = &args[1];
+    let key = if key_val.is_string() {
+        key_val.get_atom()
+    } else if key_val.is_symbol() {
+        crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id())
+    } else if key_val.is_int() {
+        let i = key_val.get_int();
+        if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
+    } else {
+        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        ctx.intern(&s)
+    };
+    let result = args[0].as_object_mut().delete(key);
+    JSValue::bool(result)
+}
+
+fn reflect_define_property(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.len() < 3 || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.defineProperty requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let key_val = &args[1];
+    let key = if key_val.is_string() {
+        key_val.get_atom()
+    } else if key_val.is_symbol() {
+        crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id())
+    } else if key_val.is_int() {
+        let i = key_val.get_int();
+        if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
+    } else {
+        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        ctx.intern(&s)
+    };
+    let attrs = &args[2];
+    let mut desc = PropertyDescriptor::default();
+    if attrs.is_object() {
+        let obj = attrs.as_object();
+        if let Some(v) = obj.get(ctx.intern("value")) { desc.value = Some(v); }
+        if let Some(v) = obj.get(ctx.intern("writable")) { desc.writable = v.is_truthy(); }
+        if let Some(v) = obj.get(ctx.intern("enumerable")) { desc.enumerable = v.is_truthy(); }
+        if let Some(v) = obj.get(ctx.intern("configurable")) { desc.configurable = v.is_truthy(); }
+        if let Some(v) = obj.get(ctx.intern("get")) { desc.get = Some(v); }
+        if let Some(v) = obj.get(ctx.intern("set")) { desc.set = Some(v); }
+    }
+    if desc.get.is_some() || desc.set.is_some() {
+        desc.value = None;
+        desc.writable = false;
+    }
+    if let Some(v) = desc.value {
+        if v.is_undefined() && desc.get.is_none() && desc.set.is_none() {
+            desc.value = None;
+        }
+    }
+    let result = args[0].as_object_mut().define_property(key, desc);
+    JSValue::bool(result)
+}
+
+fn reflect_get_own_property_descriptor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.getOwnPropertyDescriptor requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    if args.len() < 2 { return JSValue::undefined(); }
+    let key_val = &args[1];
+    let key = if key_val.is_string() {
+        key_val.get_atom()
+    } else if key_val.is_symbol() {
+        crate::runtime::atom::Atom(0x40000000 | key_val.get_symbol_id())
+    } else if key_val.is_int() {
+        let i = key_val.get_int();
+        if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
+    } else {
+        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        ctx.intern(&s)
+    };
+    if let Some(desc) = args[0].as_object().get_own_descriptor(key) {
+        let mut result = JSObject::new();
+        if let Some(v) = desc.value {
+            result.set(ctx.intern("value"), v);
+        } else {
+            result.set(ctx.intern("value"), JSValue::undefined());
+        }
+        result.set(ctx.intern("writable"), JSValue::bool(desc.writable));
+        result.set(ctx.intern("enumerable"), JSValue::bool(desc.enumerable));
+        result.set(ctx.intern("configurable"), JSValue::bool(desc.configurable));
+        if let Some(g) = desc.get {
+            result.set(ctx.intern("get"), g);
+        } else {
+            result.set(ctx.intern("get"), JSValue::undefined());
+        }
+        if let Some(s) = desc.set {
+            result.set(ctx.intern("set"), s);
+        } else {
+            result.set(ctx.intern("set"), JSValue::undefined());
+        }
+        let ptr = Box::into_raw(Box::new(result)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        return JSValue::new_object(ptr);
+    }
+    JSValue::undefined()
+}
+
+fn reflect_get_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.getPrototypeOf requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    if let Some(proto_ptr) = args[0].as_object().prototype_ptr() {
+        JSValue::new_object(proto_ptr as usize)
+    } else {
+        JSValue::null()
+    }
+}
+
+fn reflect_set_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.setPrototypeOf requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let proto_val = if args.len() >= 2 { &args[1] } else { &JSValue::null() };
+    if !proto_val.is_object_like() && !proto_val.is_null() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.setPrototypeOf requires an object or null")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let obj = args[0].as_object_mut();
+    if proto_val.is_null() {
+        obj.set_prototype_raw(std::ptr::null_mut());
+    } else if proto_val.is_object() {
+        obj.set_prototype_raw(proto_val.get_ptr() as *mut JSObject);
+    }
+    JSValue::bool(true)
+}
+
+fn reflect_is_extensible(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.isExtensible requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    JSValue::bool(args[0].as_object().extensible())
+}
+
+fn reflect_prevent_extensions(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.preventExtensions requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    args[0].as_object_mut().set_extensible(false);
+    JSValue::bool(true)
+}
+
+fn reflect_own_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object_like() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.ownKeys requires an object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let obj = args[0].as_object();
+    let order: Vec<Atom> = if obj.has_property_order() {
+        obj.property_order_keys()
+    } else {
+        Vec::new()
+    };
+    let has_order = !order.is_empty();
+    let mut string_keys: Vec<(Atom, usize)> = Vec::new();
+    let mut symbol_keys: Vec<Atom> = Vec::new();
+    if has_order {
+        for (ord_idx, atom) in order.iter().enumerate() {
+            if obj.find_offset(*atom).is_none() {
+                continue;
+            }
+            let is_symbol = atom.0 & 0x40000000 != 0;
+            if is_symbol {
+                symbol_keys.push(*atom);
+            } else {
+                string_keys.push((*atom, ord_idx));
+            }
+        }
+    } else {
+        for (idx, slot) in obj.iter_props().enumerate() {
+            if obj.find_offset(slot.atom).is_none() {
+                continue;
+            }
+            let is_symbol = slot.atom.0 & 0x40000000 != 0;
+            if is_symbol {
+                symbol_keys.push(slot.atom);
+            } else {
+                string_keys.push((slot.atom, idx));
+            }
+        }
+    }
+    let acc_keys = obj.accessor_keys();
+    for (atom, _ord) in &acc_keys {
+        let is_symbol = atom.0 & 0x40000000 != 0;
+        if is_symbol {
+            if !symbol_keys.contains(atom) {
+                symbol_keys.push(*atom);
+            }
+        } else {
+            if !string_keys.iter().any(|(a, _)| a == atom) {
+                string_keys.push((*atom, string_keys.len()));
+            }
+        }
+    }
+    string_keys.sort_by(|a, b| {
+        let a_str = ctx.get_atom_str(a.0);
+        let b_str = ctx.get_atom_str(b.0);
+        let a_int: Option<i64> = a_str.parse().ok();
+        let b_int: Option<i64> = b_str.parse().ok();
+        match (a_int, b_int) {
+            (Some(ai), Some(bi)) => ai.cmp(&bi),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.1.cmp(&b.1),
+        }
+    });
+    let mut result = crate::object::object::JSObject::new_array();
+    let mut idx = 0usize;
+    for (atom, _) in &string_keys {
+        if atom.0 & 0x40000000 == 0 {
+            let s = ctx.get_atom_str(*atom).to_string();
+            result.set(ctx.int_atom_mut(idx), JSValue::new_string(ctx.intern(&s)));
+            idx += 1;
+        }
+    }
+    for atom in &symbol_keys {
+        let sym_id = atom.0 & 0x7FFFFFFF;
+        let sym = JSValue::new_symbol_with_id(crate::builtins::symbol::NO_DESCRIPTION, sym_id);
+        result.set(ctx.int_atom_mut(idx), sym);
+        idx += 1;
+    }
+    result.set(ctx.common_atoms.length, JSValue::new_int(idx as i64));
+    let ptr = Box::into_raw(Box::new(result)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    JSValue::new_object(ptr)
+}
+
 fn init_reflect(ctx: &mut JSContext) {
-    ctx.register_builtin(
-        "reflect_construct",
-        HostFunction::new("construct", 2, reflect_construct),
-    );
-    ctx.register_builtin(
-        "reflect_apply",
-        HostFunction::new("apply", 3, reflect_apply),
-    );
+    ctx.register_builtin("reflect_construct", HostFunction::new("construct", 2, reflect_construct));
+    ctx.register_builtin("reflect_apply", HostFunction::new("apply", 3, reflect_apply));
+    ctx.register_builtin("reflect_get", HostFunction::new("get", 2, reflect_get));
+    ctx.register_builtin("reflect_set", HostFunction::new("set", 3, reflect_set));
+    ctx.register_builtin("reflect_has", HostFunction::new("has", 2, reflect_has));
+    ctx.register_builtin("reflect_delete_property", HostFunction::new("deleteProperty", 2, reflect_delete_property));
+    ctx.register_builtin("reflect_define_property", HostFunction::new("defineProperty", 3, reflect_define_property));
+    ctx.register_builtin("reflect_get_own_property_descriptor", HostFunction::new("getOwnPropertyDescriptor", 2, reflect_get_own_property_descriptor));
+    ctx.register_builtin("reflect_get_prototype_of", HostFunction::new("getPrototypeOf", 1, reflect_get_prototype_of));
+    ctx.register_builtin("reflect_set_prototype_of", HostFunction::new("setPrototypeOf", 2, reflect_set_prototype_of));
+    ctx.register_builtin("reflect_is_extensible", HostFunction::new("isExtensible", 1, reflect_is_extensible));
+    ctx.register_builtin("reflect_prevent_extensions", HostFunction::new("preventExtensions", 1, reflect_prevent_extensions));
+    ctx.register_builtin("reflect_own_keys", HostFunction::new("ownKeys", 1, reflect_own_keys));
 
     let reflect_atom = ctx.intern("Reflect");
     let mut reflect_obj = JSObject::new();
-    reflect_obj.set(
-        ctx.intern("construct"),
-        create_builtin_function(ctx, "reflect_construct"),
-    );
-    reflect_obj.set(
-        ctx.intern("apply"),
-        create_builtin_function(ctx, "reflect_apply"),
+    let methods = [
+        ("construct", "reflect_construct"),
+        ("apply", "reflect_apply"),
+        ("get", "reflect_get"),
+        ("set", "reflect_set"),
+        ("has", "reflect_has"),
+        ("deleteProperty", "reflect_delete_property"),
+        ("defineProperty", "reflect_define_property"),
+        ("getOwnPropertyDescriptor", "reflect_get_own_property_descriptor"),
+        ("getPrototypeOf", "reflect_get_prototype_of"),
+        ("setPrototypeOf", "reflect_set_prototype_of"),
+        ("isExtensible", "reflect_is_extensible"),
+        ("preventExtensions", "reflect_prevent_extensions"),
+        ("ownKeys", "reflect_own_keys"),
+    ];
+    for (name, builtin_name) in &methods {
+        let val = create_builtin_function(ctx, builtin_name);
+        let key = ctx.intern(name);
+        reflect_obj.define_property(
+            key,
+            PropertyDescriptor {
+                value: Some(val),
+                writable: true,
+                enumerable: false,
+                configurable: true,
+                get: None,
+                set: None,
+            },
+        );
+    }
+    let tag_key = symbol::get_symbol_to_string_tag_prop_key(ctx);
+    reflect_obj.define_property_ext(
+        tag_key,
+        PropertyDescriptor {
+            value: Some(JSValue::new_string(ctx.intern("Reflect"))),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        },
+        true, true, true,
     );
     let reflect_ptr = Box::into_raw(Box::new(reflect_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(reflect_ptr);
@@ -605,60 +1080,72 @@ fn init_reflect(ctx: &mut JSContext) {
 fn reflect_construct(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() || !args[0].is_function() {
         let mut err = JSObject::new();
-        err.set(
-            ctx.common_atoms.name,
-            JSValue::new_string(ctx.intern("TypeError")),
-        );
-        err.set(
-            ctx.common_atoms.message,
-            JSValue::new_string(ctx.intern("Reflect.construct requires a constructor")),
-        );
-        if let Some(proto) = ctx.get_type_error_prototype() {
-            err.prototype = Some(proto);
-        }
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.construct requires a constructor")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
     let target = args[0];
-    let new_target = if args.len() >= 3 && args[2].is_function() {
-        args[2]
-    } else {
-        target
-    };
-    let is_ctor = if new_target.is_function() {
+    let new_target = if args.len() >= 3 { args[2] } else { target };
+    let arg_list = args.get(1).copied().unwrap_or(JSValue::undefined());
+
+    if new_target.is_function() {
         let f = new_target.as_function();
         if f.is_builtin() {
-            ctx.builtin_is_constructor(
-                &f.builtin_atom
-                    .map(|ba| ctx.get_atom_str(ba).to_string())
-                    .unwrap_or_default(),
-            )
-        } else {
-            true
+            let builtin_name = f.builtin_atom
+                .map(|ba| ctx.get_atom_str(ba).to_string())
+                .unwrap_or_default();
+            if !ctx.builtin_is_constructor(&builtin_name) {
+                let mut err = JSObject::new();
+                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("newTarget is not a constructor")));
+                if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+                let ptr = Box::into_raw(Box::new(err)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(ptr);
+                ctx.pending_exception = Some(JSValue::new_object(ptr));
+                return JSValue::undefined();
+            }
         }
-    } else {
-        false
-    };
-    if !is_ctor {
+    }
+
+    if arg_list.is_undefined() || arg_list.is_null() {
         let mut err = JSObject::new();
-        err.set(
-            ctx.common_atoms.name,
-            JSValue::new_string(ctx.intern("TypeError")),
-        );
-        err.set(
-            ctx.common_atoms.message,
-            JSValue::new_string(ctx.intern("newTarget is not a constructor")),
-        );
-        if let Some(proto) = ctx.get_type_error_prototype() {
-            err.prototype = Some(proto);
-        }
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.construct requires an arguments list")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
+
+    let call_args = match extract_array_like(ctx, &arg_list) {
+        Ok(v) => v,
+        Err(()) => return JSValue::undefined(),
+    };
+
+    if target.is_function() {
+        let f = target.as_function();
+        if f.is_builtin() {
+            let builtin_name = f.builtin_atom
+                .map(|ba| ctx.get_atom_str(ba).to_string())
+                .unwrap_or_default();
+            if !ctx.builtin_is_constructor(&builtin_name) {
+                let mut err = JSObject::new();
+                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("target is not a constructor")));
+                if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+                let ptr = Box::into_raw(Box::new(err)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(ptr);
+                ctx.pending_exception = Some(JSValue::new_object(ptr));
+                return JSValue::undefined();
+            }
+        }
+    }
+
     let proto_key = ctx.common_atoms.prototype;
     let proto_val = if new_target.is_function() {
         new_target.as_function().base.get(proto_key)
@@ -673,29 +1160,63 @@ fn reflect_construct(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else if let Some(op) = ctx.get_object_prototype() {
         obj.prototype = Some(op);
     }
-    let ptr = Box::into_raw(Box::new(obj)) as usize;
-    ctx.runtime_mut().gc_heap_mut().track(ptr);
-    JSValue::new_object(ptr)
+    let obj_ptr = Box::into_raw(Box::new(obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(obj_ptr);
+    let new_obj = JSValue::new_object(obj_ptr);
+
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        match vm.call_function_with_this(ctx, target, new_obj, &call_args) {
+            Ok(result) => {
+                if result.is_object_like() {
+                    return result;
+                }
+                return new_obj;
+            }
+            Err(_e) => {
+                return JSValue::undefined();
+            }
+        }
+    }
+    new_obj
 }
 
 fn reflect_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 3 || !args[0].is_function() {
         let mut err = JSObject::new();
-        err.set(
-            ctx.common_atoms.name,
-            JSValue::new_string(ctx.intern("TypeError")),
-        );
-        err.set(
-            ctx.common_atoms.message,
-            JSValue::new_string(ctx.intern("Reflect.apply requires a function")),
-        );
-        if let Some(proto) = ctx.get_type_error_prototype() {
-            err.prototype = Some(proto);
-        }
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.apply requires a function")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
         let ptr = Box::into_raw(Box::new(err)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
+    }
+    let target = args[0];
+    let this_arg = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let arg_list = args.get(2).copied().unwrap_or(JSValue::undefined());
+    if !arg_list.is_object() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Reflect.apply requires an array-like object")));
+        if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let call_args = match extract_array_like(ctx, &arg_list) {
+        Ok(v) => v,
+        Err(()) => return JSValue::undefined(),
+    };
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        match vm.call_function_with_this(ctx, target, this_arg, &call_args) {
+            Ok(result) => return result,
+            Err(_e) => {
+                return JSValue::undefined();
+            }
+        }
     }
     JSValue::undefined()
 }

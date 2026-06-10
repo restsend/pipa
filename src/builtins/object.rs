@@ -691,6 +691,37 @@ fn object_create(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     // Handle property descriptors (second argument)
+    if args.len() > 1 {
+        if args[1].is_null() {
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
+            if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+            err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Cannot convert undefined or null to object")));
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+        if args[1].is_string() {
+            let s = ctx.get_atom_str(args[1].get_atom());
+            if !s.is_empty() {
+                // ToObject(string) creates a String wrapper; its enumerable indices
+                // hold string values which cause TypeError in ToPropertyDescriptor
+                let mut err = crate::object::object::JSObject::new_typed(
+                    crate::object::object::ObjectType::Error,
+                );
+                if let Some(proto) = ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Property description must be an object")));
+                let ptr = Box::into_raw(Box::new(err)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(ptr);
+                ctx.pending_exception = Some(JSValue::new_object(ptr));
+                return JSValue::undefined();
+            }
+        }
+    }
     if args.len() > 1 && args[1].is_object() {
         let props_obj = args[1].as_object();
         for (atom, desc_val) in props_obj.own_properties() {
@@ -1146,7 +1177,16 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return obj.clone();
     }
     if !descriptor.is_object() {
-        return obj.clone();
+        let mut err = crate::object::object::JSObject::new_typed(
+            crate::object::object::ObjectType::Error,
+        );
+        if let Some(proto) = _ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+        err.set(_ctx.common_atoms.name, JSValue::new_string(_ctx.intern("TypeError")));
+        err.set(_ctx.common_atoms.message, JSValue::new_string(_ctx.intern("Property description must be an object")));
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        _ctx.runtime_mut().gc_heap_mut().track(ptr);
+        _ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     }
     let Some(prop_atom) = to_property_atom(_ctx, prop) else {
         return obj.clone();
@@ -1212,6 +1252,23 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             set: None,
         }
     };
+
+    // Array exotic object: length is always non-configurable
+    if obj_ref.is_array() {
+        let len_atom = _ctx.intern("length");
+        if prop_atom == len_atom && has_configurable && pd.configurable {
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
+            if let Some(proto) = _ctx.get_type_error_prototype() { err.prototype = Some(proto); }
+            err.set(_ctx.common_atoms.name, JSValue::new_string(_ctx.intern("TypeError")));
+            err.set(_ctx.common_atoms.message, JSValue::new_string(_ctx.intern("Cannot redefine property: length")));
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            _ctx.runtime_mut().gc_heap_mut().track(ptr);
+            _ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+    }
 
     obj_ref.define_property_ext(
         prop_atom,
