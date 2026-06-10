@@ -1015,6 +1015,17 @@ impl VM {
                     .builtin_atom
                     .map(|ba| ctx.get_atom_str(ba).to_string())
                     .unwrap_or_default();
+                if is_call_new && builtin_name == "symbol_constructor" {
+                    self.set_pending_type_error(ctx, "Symbol is not a constructor");
+                    if let Some(exc) = self.pending_throw.take() {
+                        match self.dispatch_throw_value(ctx, exc) {
+                            ThrowDispatch::Caught => return Ok(false),
+                            ThrowDispatch::Uncaught(e) => return Err(e),
+                            _ => {}
+                        }
+                    }
+                    return Ok(false);
+                }
                 let needs_callee = Self::builtin_needs_callee(&builtin_name);
                 let pass_this = is_call_method && !needs_callee;
                 let builtin_arg_count = argc as usize
