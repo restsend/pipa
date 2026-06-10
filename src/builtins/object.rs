@@ -794,15 +794,61 @@ fn object_get_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::null()
 }
 
-fn object_set_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn object_set_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 || !is_object_like(&args[0]) {
         return JSValue::null();
     }
 
     let obj = args[0].as_object_mut();
     if args[1].is_object() {
-        obj.prototype = Some(args[1].get_ptr() as *mut JSObject);
-    } else {
+        let new_proto = args[1].get_ptr() as *mut JSObject;
+        // Object.prototype is immutable
+        if let Some(proto_ptr) = ctx.get_object_prototype() {
+            if obj as *mut JSObject == proto_ptr {
+                // Check if the new prototype is the same as current (null for Object.prototype)
+                if obj.prototype != Some(new_proto) {
+                    let mut err = crate::object::object::JSObject::new_typed(
+                        crate::object::object::ObjectType::Error,
+                    );
+                    if let Some(proto) = ctx.get_type_error_prototype() {
+                        err.prototype = Some(proto);
+                    }
+                    err.set(
+                        ctx.common_atoms.message,
+                        JSValue::new_string(ctx.intern("Object.prototype is immutable")),
+                    );
+                    let eptr = Box::into_raw(Box::new(err)) as usize;
+                    ctx.runtime_mut().gc_heap_mut().track(eptr);
+                    ctx.pending_exception = Some(JSValue::new_object(eptr));
+                    return JSValue::undefined();
+                }
+            }
+        }
+        // Check for prototype chain cycles
+        let mut current = new_proto;
+        let mut depth = 0u32;
+        while let Some(ptr) = unsafe { current.as_ref() }.and_then(|o| o.prototype) {
+            if ptr == obj as *mut JSObject || depth > 1000 {
+                let mut err = crate::object::object::JSObject::new_typed(
+                    crate::object::object::ObjectType::Error,
+                );
+                if let Some(proto) = ctx.get_type_error_prototype() {
+                    err.prototype = Some(proto);
+                }
+                err.set(
+                    ctx.common_atoms.message,
+                    JSValue::new_string(ctx.intern("Cyclic __proto__ value")),
+                );
+                let eptr = Box::into_raw(Box::new(err)) as usize;
+                    ctx.runtime_mut().gc_heap_mut().track(eptr);
+                ctx.pending_exception = Some(JSValue::new_object(eptr));
+                return JSValue::undefined();
+            }
+            current = ptr;
+            depth += 1;
+        }
+        obj.prototype = Some(new_proto);
+    } else if args[1].is_null() {
         obj.prototype = None;
     }
 

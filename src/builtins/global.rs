@@ -879,11 +879,37 @@ fn reflect_set_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
-    let obj = args[0].as_object_mut();
+    let obj = args[0].as_object();
     if proto_val.is_null() {
-        obj.set_prototype_raw(std::ptr::null_mut());
-    } else if proto_val.is_object() {
-        obj.set_prototype_raw(proto_val.get_ptr() as *mut JSObject);
+        if let Some(proto_ptr) = ctx.get_object_prototype() {
+            if obj as *const JSObject as *mut JSObject == proto_ptr {
+                return JSValue::bool(false);
+            }
+        }
+        let obj_mut = args[0].as_object_mut();
+        obj_mut.set_prototype_raw(std::ptr::null_mut());
+        return JSValue::bool(true);
+    }
+    if proto_val.is_object() {
+        // Object.prototype is immutable
+        if let Some(proto_ptr) = ctx.get_object_prototype() {
+            if obj as *const JSObject as *mut JSObject == proto_ptr {
+                return JSValue::bool(false);
+            }
+        }
+        // Check for cycles
+        let new_proto = proto_val.get_ptr() as *mut JSObject;
+        let mut current = new_proto;
+        let mut depth = 0u32;
+        while let Some(ptr) = unsafe { current.as_ref() }.and_then(|o| o.prototype) {
+            if ptr == obj as *const JSObject as *mut JSObject || depth > 1000 {
+                return JSValue::bool(false);
+            }
+            current = ptr;
+            depth += 1;
+        }
+        let obj_mut = args[0].as_object_mut();
+        obj_mut.set_prototype_raw(proto_val.get_ptr() as *mut JSObject);
     }
     JSValue::bool(true)
 }
