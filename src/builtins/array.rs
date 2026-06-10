@@ -5,6 +5,27 @@ use crate::object::function::JSFunction;
 use crate::object::object::JSObject;
 use crate::runtime::context::JSContext;
 
+fn throw_type_error(ctx: &mut JSContext, msg: &str) {
+    let mut err = JSObject::new();
+    if let Some(proto_ptr) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto_ptr);
+    }
+    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(msg)));
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+}
+
+#[inline(always)]
+fn require_object_coercible(ctx: &mut JSContext, val: &JSValue) -> bool {
+    if val.is_undefined() || val.is_null() {
+        throw_type_error(ctx, "Cannot convert undefined or null to object");
+        return false;
+    }
+    true
+}
+
 #[inline(always)]
 fn array_get(obj: &JSObject, index: usize, ctx: &mut JSContext) -> Option<crate::value::JSValue> {
     if obj.is_array() {
@@ -1002,14 +1023,19 @@ fn call_callback(
 }
 
 fn array_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         return JSValue::undefined();
     }
 
@@ -1020,8 +1046,8 @@ fn array_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
-            let _ = call_callback(ctx, *callback, &callback_args);
+            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            let _ = call_callback(ctx, callback, &callback_args);
         }
     }
 
@@ -1029,18 +1055,19 @@ fn array_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        let mut result = new_jsarray_with_proto(ctx);
-        result
-            .header
-            .set_length(ctx.common_atoms.length, JSValue::new_int(0));
-        return alloc_jsarray(result, ctx);
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
+        return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         let mut result = new_jsarray_with_proto(ctx);
         result
             .header
@@ -1057,8 +1084,8 @@ fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
-            if let Ok(mapped_value) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            if let Ok(mapped_value) = call_callback(ctx, callback, &callback_args) {
                 result.push(mapped_value);
             }
         }
@@ -1071,18 +1098,19 @@ fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_filter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        let mut result = new_jsarray_with_proto(ctx);
-        result
-            .header
-            .set_length(ctx.common_atoms.length, JSValue::new_int(0));
-        return alloc_jsarray(result, ctx);
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
+        return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         let mut result = new_jsarray_with_proto(ctx);
         result
             .header
@@ -1099,8 +1127,8 @@ fn array_filter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
-            if let Ok(test_result) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            if let Ok(test_result) = call_callback(ctx, callback, &callback_args) {
                 if test_result.is_truthy() {
                     result.push(value);
                 }
@@ -1115,14 +1143,19 @@ fn array_filter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         return JSValue::undefined();
     }
 
@@ -1135,6 +1168,7 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         if args.len() > 2 {
             return args[2];
         }
+        throw_type_error(ctx, "Reduce of empty array with no initial value");
         return JSValue::undefined();
     }
 
@@ -1150,8 +1184,8 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in start_index..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![accumulator, value, JSValue::new_int(i as i64), *this];
-            if let Ok(result) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![accumulator, value, JSValue::new_int(i as i64), this];
+            if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 accumulator = result;
             }
         }
@@ -1161,14 +1195,19 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_every(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::bool(true);
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
+        return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         return JSValue::bool(true);
     }
 
@@ -1179,8 +1218,8 @@ fn array_every(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
-            if let Ok(result) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 if !result.is_truthy() {
                     return JSValue::bool(false);
                 }
@@ -1192,14 +1231,19 @@ fn array_every(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_some(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::bool(false);
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
+        return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         return JSValue::bool(false);
     }
 
@@ -1210,8 +1254,8 @@ fn array_some(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
-            if let Ok(result) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 if result.is_truthy() {
                     return JSValue::bool(true);
                 }
@@ -1223,14 +1267,19 @@ fn array_some(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_find(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         return JSValue::undefined();
     }
 
@@ -1241,8 +1290,8 @@ fn array_find(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
-            if let Ok(result) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 if result.is_truthy() {
                     return value;
                 }
@@ -1254,14 +1303,19 @@ fn array_find(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_find_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::new_int(-1);
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
+        return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         return JSValue::new_int(-1);
     }
 
@@ -1272,8 +1326,8 @@ fn array_find_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), *this];
-            if let Ok(result) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 if result.is_truthy() {
                     return JSValue::new_int(i as i64);
                 }
@@ -1285,14 +1339,19 @@ fn array_find_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_reduce_right(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
 
-    let this = &args[0];
-    let callback = &args[1];
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
 
-    if !this.is_object() || !callback.is_function() {
+    if !this.is_object() {
         return JSValue::undefined();
     }
 
@@ -1321,8 +1380,8 @@ fn array_reduce_right(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     while end_index >= 0 {
         if let Some(value) = array_get(obj, end_index as usize, ctx) {
-            let callback_args = vec![accumulator, value, JSValue::new_int(end_index), *this];
-            if let Ok(result) = call_callback(ctx, *callback, &callback_args) {
+            let callback_args = vec![accumulator, value, JSValue::new_int(end_index), this];
+            if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 accumulator = result;
             }
         }
@@ -1742,11 +1801,14 @@ fn array_flat_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_find_last(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
-    let this = args[0];
-    let callback = args[1];
+
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+
     if !this.is_object() {
         return JSValue::undefined();
     }
@@ -1770,11 +1832,14 @@ fn array_find_last(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::undefined()
 }
 fn array_find_last_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
-        return JSValue::new_int(-1);
+    let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
+
+    if !require_object_coercible(ctx, &this) {
+        return JSValue::undefined();
     }
-    let this = args[0];
-    let callback = args[1];
+
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+
     if !this.is_object() {
         return JSValue::new_int(-1);
     }
