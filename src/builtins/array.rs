@@ -1952,6 +1952,11 @@ fn array_to_sorted(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if !this.is_object() {
         return JSValue::undefined();
     }
+    let comparefn = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !comparefn.is_undefined() && !comparefn.is_function() {
+        throw_type_error(ctx, "Comparison function is not callable");
+        return JSValue::undefined();
+    }
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
@@ -1964,7 +1969,7 @@ fn array_to_sorted(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         })
         .collect();
 
-    let cmp_fn = args.get(1).copied().filter(|v| v.is_function());
+    let cmp_fn = if comparefn.is_function() { Some(comparefn) } else { None };
     let n = elements.len();
     for i in 1..n {
         let mut j = i;
