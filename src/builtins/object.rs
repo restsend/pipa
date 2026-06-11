@@ -48,7 +48,7 @@ fn object_to_object(ctx: &mut JSContext, value: &JSValue) -> JSValue {
     }
     if value.is_bool() {
         let mut obj = JSObject::new();
-        if let Some(proto_ptr) = ctx.get_object_prototype() {
+        if let Some(proto_ptr) = ctx.get_bool_prototype() {
             obj.prototype = Some(proto_ptr);
         }
         obj.set(ctx.common_atoms.__value__, *value);

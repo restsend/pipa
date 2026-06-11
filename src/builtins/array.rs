@@ -50,17 +50,34 @@ fn safe_array_len_with_ctx(obj: &JSObject, len_atom: crate::runtime::atom::Atom,
     let val = obj.get(len_atom);
     match &val {
         Some(v) => {
-            if v.is_string() {
-                let s = ctx.get_atom_str(v.get_atom());
+            let actual = if v.is_function() {
+                let this_val = JSValue::new_object(obj as *const _ as usize);
+                match call_callback_with_this(ctx, *v, this_val, &[]) {
+                    Ok(result) => result,
+                    Err(_) => return 0,
+                }
+            } else {
+                *v
+            };
+            if actual.is_string() {
+                let s = ctx.get_atom_str(actual.get_atom());
                 let n: f64 = s.parse().unwrap_or(f64::NAN);
                 if n.is_nan() || n <= 0.0 { 0 }
                 else if n.is_infinite() { u64::MAX }
                 else { n as u64 }
             } else {
-                js_to_length(v)
+                js_to_length(&actual)
             }
         }
         None => 0,
+    }
+}
+
+fn to_object_or_return_undefined(val: JSValue, ctx: &mut JSContext) -> JSValue {
+    if val.is_object() {
+        val
+    } else {
+        crate::builtins::object::object_to_object(ctx, &val)
     }
 }
 
@@ -1214,18 +1231,24 @@ fn array_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
-        return JSValue::undefined();
-    }
+    let this_obj = if this.is_object() {
+        this
+    } else {
+        crate::builtins::object::object_to_object(ctx, &this)
+    };
 
-    let obj = this.as_object();
+    let obj = if this_obj.is_object() {
+        this_obj.as_object()
+    } else {
+        return JSValue::undefined();
+    };
 
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            let callback_args = vec![value, JSValue::new_int(i as i64), this_obj];
             let _ = call_callback_with_this(ctx, callback, this_arg, &callback_args);
         }
     }
@@ -1248,15 +1271,21 @@ fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
+    let this_obj = if this.is_object() {
+        this
+    } else {
+        crate::builtins::object::object_to_object(ctx, &this)
+    };
+
+    let obj = if this_obj.is_object() {
+        this_obj.as_object()
+    } else {
         let mut result = new_jsarray_with_proto(ctx);
         result
             .header
             .set_length(ctx.common_atoms.length, JSValue::new_int(0));
         return alloc_jsarray(result, ctx);
-    }
-
-    let obj = this.as_object();
+    };
 
     let length_atom = ctx.common_atoms.length;
 
@@ -1266,7 +1295,7 @@ fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            let callback_args = vec![value, JSValue::new_int(i as i64), this_obj];
             if let Ok(mapped_value) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
                 result.push(mapped_value);
             }
@@ -1294,15 +1323,8 @@ fn array_filter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
-        let mut result = new_jsarray_with_proto(ctx);
-        result
-            .header
-            .set_length(ctx.common_atoms.length, JSValue::new_int(0));
-        return alloc_jsarray(result, ctx);
-    }
-
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
@@ -1311,7 +1333,7 @@ fn array_filter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            let callback_args = vec![value, JSValue::new_int(i as i64), this_obj];
             if let Ok(test_result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
                 if test_result.is_truthy() {
                     result.push(value);
@@ -1339,11 +1361,8 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
 
-    if !this.is_object() {
-        return JSValue::undefined();
-    }
-
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
@@ -1368,7 +1387,7 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     for i in start_index..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![accumulator, value, JSValue::new_int(i as i64), this];
+            let callback_args = vec![accumulator, value, JSValue::new_int(i as i64), this_obj];
             if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 accumulator = result;
             }
@@ -1384,6 +1403,34 @@ fn array_every(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
+
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
+
+    let length_atom = ctx.common_atoms.length;
+    let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
+
+    for i in 0..len {
+        if let Some(value) = array_get(obj, i as usize, ctx) {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this_obj];
+            if let Ok(test_result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
+                if !test_result.is_truthy() {
+                    return JSValue::bool(false);
+                }
+            }
+        }
+    }
+
+    JSValue::bool(true)
+}
 
     let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
     if !callback.is_function() {
@@ -1431,20 +1478,17 @@ fn array_some(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
-        return JSValue::bool(false);
-    }
-
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), this];
-            if let Ok(result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
-                if result.is_truthy() {
+            let callback_args = vec![value, JSValue::new_int(i as i64), this_obj];
+            if let Ok(test_result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
+                if test_result.is_truthy() {
                     return JSValue::bool(true);
                 }
             }
@@ -1469,18 +1513,15 @@ fn array_find(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
-        return JSValue::undefined();
-    }
-
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            let callback_args = vec![value, JSValue::new_int(i as i64), this_obj];
             if let Ok(result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
                 if result.is_truthy() {
                     return value;
@@ -1507,18 +1548,15 @@ fn array_find_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
-        return JSValue::new_int(-1);
-    }
-
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
 
     for i in 0..len {
         if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), this];
+            let callback_args = vec![value, JSValue::new_int(i as i64), this_obj];
             if let Ok(result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
                 if result.is_truthy() {
                     return JSValue::new_int(i as i64);
@@ -1543,11 +1581,8 @@ fn array_reduce_right(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
 
-    if !this.is_object() {
-        return JSValue::undefined();
-    }
-
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
     let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
@@ -1572,7 +1607,7 @@ fn array_reduce_right(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     while end_index >= 0 {
         if let Some(value) = array_get(obj, end_index as usize, ctx) {
-            let callback_args = vec![accumulator, value, JSValue::new_int(end_index), this];
+            let callback_args = vec![accumulator, value, JSValue::new_int(end_index), this_obj];
             if let Ok(result) = call_callback(ctx, callback, &callback_args) {
                 accumulator = result;
             }
