@@ -267,6 +267,7 @@ pub struct JSContext {
     set_prototype: Option<usize>,
     weakmap_prototype: Option<usize>,
     weakset_prototype: Option<usize>,
+    dataview_prototype: Option<usize>,
     error_prototype: Option<usize>,
     type_error_prototype: Option<usize>,
     reference_error_prototype: Option<usize>,
@@ -343,6 +344,7 @@ impl JSContext {
             set_prototype: None,
             weakmap_prototype: None,
             weakset_prototype: None,
+            dataview_prototype: None,
             error_prototype: None,
             type_error_prototype: None,
             reference_error_prototype: None,
@@ -672,8 +674,16 @@ impl JSContext {
         self.weakset_prototype = Some(ptr);
     }
 
+    pub fn set_dataview_prototype(&mut self, ptr: usize) {
+        self.dataview_prototype = Some(ptr);
+    }
+
     pub fn get_weakset_prototype(&self) -> Option<*mut JSObject> {
         self.weakset_prototype.map(|p| p as *mut JSObject)
+    }
+
+    pub fn get_dataview_prototype(&self) -> Option<*mut JSObject> {
+        self.dataview_prototype.map(|p| p as *mut JSObject)
     }
 
     pub fn set_error_prototype(&mut self, ptr: usize) {
