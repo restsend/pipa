@@ -4260,6 +4260,13 @@ impl VM {
                             }
                             let atom = self.int_atom(idx as usize, ctx);
                             js_obj.get(atom).unwrap_or(JSValue::undefined())
+                        } else if js_obj.obj_type() == crate::object::object::ObjectType::TypedArray {
+                            let idx = key_val.get_int() as usize;
+                            if let Some(val) = crate::builtins::typedarray::ta_get_element(ctx, js_obj, idx) {
+                                self.set_reg(dst, val);
+                                continue;
+                            }
+                            JSValue::undefined()
                         } else {
                             let idx = key_val.get_int();
                             if idx >= 0 {
@@ -4465,6 +4472,9 @@ impl VM {
                                     }
                                 }
                             }
+                        } else if js_obj.obj_type() == crate::object::object::ObjectType::TypedArray {
+                            let idx = key_val.get_int() as usize;
+                            crate::builtins::typedarray::ta_set_element(ctx, js_obj, idx, value);
                         } else {
                             let idx = key_val.get_int();
                             if idx >= 0 && js_obj.maybe_set_indexed(idx as usize, value) {

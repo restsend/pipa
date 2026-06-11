@@ -65,6 +65,9 @@ fn create_typed_array(
 
     let mut obj = JSObject::new_typed(ObjectType::TypedArray);
     obj.set_typed_array_kind(kind);
+    if let Some(ta_proto_ptr) = ctx.get_typed_array_prototype() {
+        obj.prototype = Some(ta_proto_ptr);
+    }
 
     obj.set(ctx.intern("buffer"), buffer);
     obj.set(
@@ -126,11 +129,32 @@ fn typed_array_from_args(
             return Ok(result);
         }
 
-        let len = obj.get_array_elements().map(|e| e.len()).unwrap_or(0);
+        let len = obj.get(ctx.common_atoms.length)
+            .map(|v| v.get_int() as usize)
+            .unwrap_or(0);
 
         let bytes_per_element = kind.bytes_per_element();
         let buffer = create_array_buffer(ctx, len * bytes_per_element);
         let result = create_typed_array(ctx, kind, buffer, 0, Some(len))?;
+
+        if result.is_object() {
+            let mut result_obj = result.as_object_mut();
+            for i in 0..len {
+                let val = if obj.is_array() && obj.is_dense_array() {
+                    let ptr = obj as *const JSObject as usize;
+                    let arr = unsafe { &*(ptr as *const crate::object::array_obj::JSArrayObject) };
+                    arr.get(i)
+                } else {
+                    obj.get_indexed(i).or_else(|| {
+                        let key = ctx.int_atom_mut(i);
+                        obj.get(key)
+                    })
+                };
+                if let Some(v) = val {
+                    ta_set_element(ctx, &mut result_obj, i, v);
+                }
+            }
+        }
 
         return Ok(result);
     }
@@ -716,6 +740,778 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     JSValue::new_function(ptr)
 }
 
+fn ta_check_this(args: &[JSValue], ctx: &mut JSContext) -> bool {
+    if args.is_empty() || !args[0].is_object() {
+        throw_type_error(ctx, "Method called on incompatible receiver");
+        return false;
+    }
+    let obj = args[0].as_object();
+    if obj.obj_type() != ObjectType::TypedArray {
+        throw_type_error(ctx, "Method called on incompatible receiver");
+        return false;
+    }
+    true
+}
+
+fn ta_get_length(ctx: &mut JSContext, obj: &JSObject) -> usize {
+    obj.get(ctx.common_atoms.length)
+        .map(|v| v.get_int() as usize)
+        .unwrap_or(0)
+}
+
+pub fn ta_get_element(ctx: &mut JSContext, obj: &JSObject, index: usize) -> Option<JSValue> {
+    let kind = obj.get_typed_array_kind()?;
+    let bpe = kind.bytes_per_element();
+    let byte_offset = obj.get(ctx.intern("byteOffset"))
+        .map(|v| v.get_int() as usize)
+        .unwrap_or(0);
+    let buffer = obj.get(ctx.intern("buffer"))?;
+    if !buffer.is_object() { return None; }
+    let buf_obj = buffer.as_object();
+    let data = get_array_buffer_data(&buf_obj)?;
+    let byte_index = byte_offset + index * bpe;
+    if byte_index + bpe > data.data.len() { return None; }
+    let bytes = &data.data[byte_index..byte_index + bpe];
+    Some(match kind {
+        TypedArrayKind::Int8 => JSValue::new_int(bytes[0] as i8 as i64),
+        TypedArrayKind::Uint8 | TypedArrayKind::Uint8Clamped => JSValue::new_int(bytes[0] as i64),
+        TypedArrayKind::Int16 => JSValue::new_int(i16::from_le_bytes([bytes[0], bytes[1]]) as i64),
+        TypedArrayKind::Uint16 => JSValue::new_int(u16::from_le_bytes([bytes[0], bytes[1]]) as i64),
+        TypedArrayKind::Int32 => JSValue::new_int(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64),
+        TypedArrayKind::Uint32 => JSValue::new_int(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64),
+        TypedArrayKind::Float32 => JSValue::new_float(f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as f64),
+        TypedArrayKind::Float64 => JSValue::new_float(f64::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]])),
+        TypedArrayKind::BigInt64 => {
+            let val = i64::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]]);
+            let mut bi_obj = crate::object::object::JSObject::new_bigint();
+            bi_obj.set_bigint_value(val as i128);
+            JSValue::new_bigint(Box::into_raw(Box::new(bi_obj)) as usize)
+        }
+        TypedArrayKind::BigUint64 => {
+            let val = u64::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7]]);
+            let mut bi_obj = crate::object::object::JSObject::new_bigint();
+            bi_obj.set_bigint_value(val as i128);
+            JSValue::new_bigint(Box::into_raw(Box::new(bi_obj)) as usize)
+        }
+    })
+}
+
+pub fn ta_set_element(ctx: &mut JSContext, obj: &mut JSObject, index: usize, value: JSValue) -> bool {
+    let kind = match obj.get_typed_array_kind() {
+        Some(k) => k,
+        None => return false,
+    };
+    let bpe = kind.bytes_per_element();
+    let byte_offset = obj.get(ctx.intern("byteOffset"))
+        .map(|v| v.get_int() as usize)
+        .unwrap_or(0);
+    let buffer = match obj.get(ctx.intern("buffer")) {
+        Some(b) => b,
+        None => return false,
+    };
+    if !buffer.is_object() { return false; }
+    let buf_obj = buffer.as_object();
+    let data = match get_array_buffer_data(&buf_obj) {
+        Some(d) => d,
+        None => return false,
+    };
+    let byte_index = byte_offset + index * bpe;
+    if byte_index + bpe > data.data.len() { return false; }
+    let num = value.to_number();
+    match kind {
+        TypedArrayKind::Int8 => {
+            let v = num as i8;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::Uint8 | TypedArrayKind::Uint8Clamped => {
+            let v = num as u8;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::Int16 => {
+            let v = num as i16;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::Uint16 => {
+            let v = num as u16;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::Int32 => {
+            let v = num as i32;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::Uint32 => {
+            let v = num as u32;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::Float32 => {
+            let v = num as f32;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::Float64 => {
+            let v = num;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+        TypedArrayKind::BigInt64 | TypedArrayKind::BigUint64 => {
+            let v = num as i64;
+            data.data[byte_index..byte_index + bpe].copy_from_slice(&v.to_le_bytes());
+        }
+    }
+    true
+}
+
+fn ta_call_callback(
+    ctx: &mut JSContext,
+    callback: JSValue,
+    this_value: JSValue,
+    args: &[JSValue],
+) -> Result<JSValue, String> {
+    if let Some(ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+        vm.call_function_with_this(ctx, callback, this_value, args)
+    } else {
+        Err("call_callback: VM not available".to_string())
+    }
+}
+
+fn typed_array_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            let _ = ta_call_callback(ctx, callback, this_arg, &cb_args);
+        }
+    }
+    JSValue::undefined()
+}
+
+fn typed_array_every(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                Ok(result) => {
+                    if !result.is_truthy() {
+                        return JSValue::new_int(0);
+                    }
+                }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+    JSValue::new_int(1)
+}
+
+fn typed_array_some(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                Ok(result) => {
+                    if result.is_truthy() {
+                        return JSValue::bool(true);
+                    }
+                }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+    JSValue::new_int(0)
+}
+
+fn typed_array_find(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                Ok(result) => {
+                    if result.is_truthy() {
+                        return val;
+                    }
+                }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+    JSValue::undefined()
+}
+
+fn typed_array_find_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                Ok(result) => {
+                    if result.is_truthy() {
+                        return JSValue::new_int(i as i64);
+                    }
+                }
+                Err(_) => return JSValue::new_int(-1),
+            }
+        }
+    }
+    JSValue::new_int(-1)
+}
+
+fn typed_array_find_last(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let mut result = JSValue::undefined();
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                Ok(res) => {
+                    if res.is_truthy() {
+                        result = val;
+                    }
+                }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+    result
+}
+
+fn typed_array_find_last_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let mut result = JSValue::new_int(-1);
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                Ok(res) => {
+                    if res.is_truthy() {
+                        result = JSValue::new_int(i as i64);
+                    }
+                }
+                Err(_) => return JSValue::new_int(-1),
+            }
+        }
+    }
+    result
+}
+
+fn typed_array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let mut acc = JSValue::undefined();
+    let mut start = 0;
+    if len == 0 {
+        if args.len() < 3 {
+            throw_type_error(ctx, "Reduce of empty array with no initial value");
+            return JSValue::undefined();
+        }
+        acc = args[2];
+    } else if args.len() >= 3 {
+        acc = args[2];
+    } else {
+        start = 1;
+        acc = ta_get_element(ctx, obj, 0).unwrap_or(JSValue::undefined());
+    }
+    for i in start..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![acc, val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, JSValue::undefined(), &cb_args) {
+                Ok(res) => { acc = res; }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+    acc
+}
+
+fn typed_array_reduce_right(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let mut acc = JSValue::undefined();
+    let mut end = len;
+    if len == 0 {
+        if args.len() < 3 {
+            throw_type_error(ctx, "Reduce of empty array with no initial value");
+            return JSValue::undefined();
+        }
+        acc = args[2];
+    } else if args.len() >= 3 {
+        acc = args[2];
+    } else {
+        end -= 1;
+        acc = ta_get_element(ctx, obj, end).unwrap_or(JSValue::undefined());
+    }
+    for i in (0..end).rev() {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![acc, val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, JSValue::undefined(), &cb_args) {
+                Ok(res) => { acc = res; }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+    acc
+}
+
+fn typed_array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let kind = obj.get_typed_array_kind().unwrap_or(TypedArrayKind::Int32);
+    let result = typed_array_from_args(ctx, kind, &[
+        JSValue::new_int(len as i64),
+    ]);
+    match result {
+        Ok(r) => {
+            let result_obj = r.as_object_mut();
+            for i in 0..len {
+                if let Some(val) = ta_get_element(ctx, obj, i) {
+                    let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+                    match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                        Ok(mapped) => { ta_set_element(ctx, result_obj, i, mapped); }
+                        Err(_) => return JSValue::undefined(),
+                    }
+                }
+            }
+            r
+        }
+        Err(_) => JSValue::undefined(),
+    }
+}
+
+fn typed_array_filter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
+    }
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let kind = obj.get_typed_array_kind().unwrap_or(TypedArrayKind::Int32);
+    let mut result: Vec<JSValue> = Vec::new();
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            let cb_args = vec![val, JSValue::new_int(i as i64), args[0]];
+            match ta_call_callback(ctx, callback, this_arg, &cb_args) {
+                Ok(res) => {
+                    if res.is_truthy() {
+                        result.push(val);
+                    }
+                }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+    let result_val = typed_array_from_args(ctx, kind, &[
+        JSValue::new_int(result.len() as i64),
+    ]);
+    match result_val {
+        Ok(r) => {
+            let result_obj = r.as_object_mut();
+            for (i, val) in result.iter().enumerate() {
+                ta_set_element(ctx, result_obj, i, *val);
+            }
+            r
+        }
+        Err(_) => JSValue::undefined(),
+    }
+}
+
+fn typed_array_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let search = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let from_index = if args.len() >= 3 {
+        let v = args[2].to_number() as i64;
+        if v < 0 { (len as i64 + v).max(0) as usize } else { (v as usize).min(len) }
+    } else {
+        0
+    };
+    for i in from_index..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            if val.strict_eq(&search) {
+                return JSValue::new_int(i as i64);
+            }
+        }
+    }
+    JSValue::new_int(-1)
+}
+
+fn typed_array_last_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let search = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let from_index = if args.len() >= 3 {
+        let v = args[2].to_number() as i64;
+        if v < 0 { 0 } else { (v as usize).min(len.saturating_sub(1)) }
+    } else {
+        len.saturating_sub(1)
+    };
+    for i in (0..=from_index).rev() {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            if val.strict_eq(&search) {
+                return JSValue::new_int(i as i64);
+            }
+        }
+    }
+    JSValue::new_int(-1)
+}
+
+fn typed_array_includes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let search = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let from_index = if args.len() >= 3 {
+        let v = args[2].to_number() as i64;
+        if v < 0 { (len as i64 + v).max(0) as usize } else { (v as usize).min(len) }
+    } else {
+        0
+    };
+    for i in from_index..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            if val.strict_eq(&search) {
+                return JSValue::bool(true);
+            }
+            if search.is_float() && val.is_float() {
+                let sv = search.to_number();
+                let vv = val.to_number();
+                if sv.is_nan() && vv.is_nan() {
+                    return JSValue::bool(true);
+                }
+            }
+        }
+    }
+    JSValue::new_int(0)
+}
+
+fn typed_array_join(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let separator = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let sep_str = if separator.is_undefined() {
+        ",".to_string()
+    } else if separator.is_string() {
+        ctx.get_atom_str(separator.get_atom()).to_string()
+    } else if separator.is_int() {
+        separator.get_int().to_string()
+    } else if separator.is_float() {
+        separator.get_float().to_string()
+    } else if separator.is_bool() {
+        separator.get_bool().to_string()
+    } else if separator.is_null() {
+        "null".to_string()
+    } else {
+        ",".to_string()
+    };
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj);
+    let mut parts = Vec::new();
+    for i in 0..len {
+        if let Some(val) = ta_get_element(ctx, obj, i) {
+            if val.is_undefined() || val.is_null() {
+                parts.push(String::new());
+            } else if val.is_string() {
+                parts.push(ctx.get_atom_str(val.get_atom()).to_string());
+            } else if val.is_int() {
+                parts.push(val.get_int().to_string());
+            } else if val.is_float() {
+                parts.push(val.get_float().to_string());
+            } else if val.is_bool() {
+                parts.push(val.get_bool().to_string());
+            } else {
+                parts.push(String::new());
+            }
+        } else {
+            parts.push(String::new());
+        }
+    }
+    JSValue::new_string(ctx.intern(&parts.join(&sep_str)))
+}
+
+fn typed_array_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj) as i64;
+    let relative_index = args.get(1).copied().unwrap_or(JSValue::new_int(0)).to_number() as i64;
+    let k = if relative_index >= 0 {
+        relative_index
+    } else {
+        len + relative_index
+    };
+    if k < 0 || k >= len {
+        return JSValue::undefined();
+    }
+    ta_get_element(ctx, obj, k as usize).unwrap_or(JSValue::undefined())
+}
+
+fn typed_array_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    JSValue::undefined()
+}
+
+fn typed_array_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    JSValue::undefined()
+}
+
+fn typed_array_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    JSValue::undefined()
+}
+
+fn typed_array_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    typed_array_join(ctx, &[
+        args[0],
+        JSValue::undefined(),
+    ])
+}
+
+fn typed_array_reverse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let obj = args[0].as_object_mut();
+    let len = ta_get_length(ctx, obj);
+    let mut values: Vec<JSValue> = Vec::with_capacity(len);
+    for i in 0..len {
+        values.push(ta_get_element(ctx, obj, i).unwrap_or(JSValue::undefined()));
+    }
+    values.reverse();
+    for i in 0..len {
+        ta_set_element(ctx, obj, i, values[i]);
+    }
+    args[0]
+}
+
+fn typed_array_slice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let obj = args[0].as_object();
+    let len = ta_get_length(ctx, obj) as i64;
+    let start = {
+        let v = args.get(1).copied().unwrap_or(JSValue::new_int(0)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let end = {
+        let v = args.get(2).copied().unwrap_or(JSValue::new_int(len)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let new_len = (end - start).max(0) as usize;
+    let kind = obj.get_typed_array_kind().unwrap_or(TypedArrayKind::Int32);
+    let result = typed_array_from_args(ctx, kind, &[
+        JSValue::new_int(new_len as i64),
+    ]);
+    match result {
+        Ok(r) => {
+            let result_obj = r.as_object_mut();
+            for i in 0..new_len {
+                if let Some(val) = ta_get_element(ctx, obj, (start as usize) + i) {
+                    ta_set_element(ctx, result_obj, i, val);
+                }
+            }
+            r
+        }
+        Err(_) => JSValue::undefined(),
+    }
+}
+
+fn typed_array_fill(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let value = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object_mut();
+    let len = ta_get_length(ctx, obj) as i64;
+    let start = {
+        let v = args.get(2).copied().unwrap_or(JSValue::new_int(0)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let end = {
+        let v = args.get(3).copied().unwrap_or(JSValue::new_int(len)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    for i in start..end {
+        ta_set_element(ctx, obj, i as usize, value);
+    }
+    args[0]
+}
+
+fn typed_array_copy_within(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let obj = args[0].as_object_mut();
+    let len = ta_get_length(ctx, obj) as i64;
+    let target = {
+        let v = args.get(1).copied().unwrap_or(JSValue::new_int(0)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let start = {
+        let v = args.get(2).copied().unwrap_or(JSValue::new_int(0)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let end = {
+        let v = args.get(3).copied().unwrap_or(JSValue::new_int(len)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let count = (end - start).min(len - target).max(0) as usize;
+    let mut values = Vec::with_capacity(count);
+    for i in 0..count {
+        values.push(ta_get_element(ctx, obj, (start as usize) + i).unwrap_or(JSValue::undefined()));
+    }
+    for (i, val) in values.into_iter().enumerate() {
+        ta_set_element(ctx, obj, (target as usize) + i, val);
+    }
+    args[0]
+}
+
+fn typed_array_sort(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if !ta_check_this(args, ctx) { return JSValue::undefined(); }
+    let compare_fn = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let obj = args[0].as_object_mut();
+    let len = ta_get_length(ctx, obj);
+    if len <= 1 {
+        return args[0];
+    }
+    let mut values: Vec<JSValue> = Vec::with_capacity(len);
+    for i in 0..len {
+        values.push(ta_get_element(ctx, obj, i).unwrap_or(JSValue::undefined()));
+    }
+    let compare_is_fn = compare_fn.is_function();
+    values.sort_by(|a, b| {
+        if compare_is_fn {
+            let cb_args = vec![*a, *b];
+            if let Some(ptr) = ctx.get_register_vm_ptr() {
+                let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+                if let Ok(result) = vm.call_function_with_this(ctx, compare_fn, JSValue::undefined(), &cb_args) {
+                    let n = result.to_number();
+                    if n < 0.0 { std::cmp::Ordering::Less }
+                    else if n > 0.0 { std::cmp::Ordering::Greater }
+                    else { std::cmp::Ordering::Equal }
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        } else {
+            let a_str = a.to_number();
+            let b_str = b.to_number();
+            a_str.partial_cmp(&b_str).unwrap_or(std::cmp::Ordering::Equal)
+        }
+    });
+    for (i, val) in values.into_iter().enumerate() {
+        ta_set_element(ctx, obj, i, val);
+    }
+    args[0]
+}
+
+fn typed_array_subarray(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() || !args[0].is_object() {
+        throw_type_error(ctx, "Method called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let obj = args[0].as_object();
+    if obj.obj_type() != ObjectType::TypedArray {
+        throw_type_error(ctx, "Method called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let len = ta_get_length(ctx, obj) as i64;
+    let buffer = obj.get(ctx.intern("buffer")).unwrap_or(JSValue::undefined());
+    let byte_offset = obj.get(ctx.intern("byteOffset"))
+        .map(|v| v.get_int())
+        .unwrap_or(0);
+    let element_size = obj.get_typed_array_kind()
+        .map(|k| k.bytes_per_element() as i64)
+        .unwrap_or(1);
+    let start = {
+        let v = args.get(1).copied().unwrap_or(JSValue::new_int(0)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let end = {
+        let v = args.get(2).copied().unwrap_or(JSValue::new_int(len)).to_number() as i64;
+        if v < 0 { (len + v).max(0) } else { v.min(len) }
+    };
+    let new_len = (end - start).max(0) as usize;
+    let new_byte_offset = byte_offset + start * element_size;
+    let kind = obj.get_typed_array_kind().unwrap_or(TypedArrayKind::Int32);
+    match create_typed_array(ctx, kind, buffer, new_byte_offset as usize, Some(new_len)) {
+        Ok(v) => v,
+        Err(_) => JSValue::undefined(),
+    }
+}
+
 pub fn init_typed_array(ctx: &mut JSContext) {
     let global = ctx.global();
     if !global.is_object() {
@@ -905,6 +1701,59 @@ pub fn init_typed_array(ctx: &mut JSContext) {
         ctx.intern("BigUint64Array"),
         create_builtin_function(ctx, "BigUint64Array"),
     );
+
+    let mut ta_proto = JSObject::new();
+    ta_proto.set(ctx.intern("forEach"), create_builtin_function(ctx, "ta_forEach"));
+    ta_proto.set(ctx.intern("every"), create_builtin_function(ctx, "ta_every"));
+    ta_proto.set(ctx.intern("some"), create_builtin_function(ctx, "ta_some"));
+    ta_proto.set(ctx.intern("find"), create_builtin_function(ctx, "ta_find"));
+    ta_proto.set(ctx.intern("findIndex"), create_builtin_function(ctx, "ta_findIndex"));
+    ta_proto.set(ctx.intern("findLast"), create_builtin_function(ctx, "ta_findLast"));
+    ta_proto.set(ctx.intern("findLastIndex"), create_builtin_function(ctx, "ta_findLastIndex"));
+    ta_proto.set(ctx.intern("reduce"), create_builtin_function(ctx, "ta_reduce"));
+    ta_proto.set(ctx.intern("reduceRight"), create_builtin_function(ctx, "ta_reduceRight"));
+    ta_proto.set(ctx.intern("map"), create_builtin_function(ctx, "ta_map"));
+    ta_proto.set(ctx.intern("filter"), create_builtin_function(ctx, "ta_filter"));
+    ta_proto.set(ctx.intern("indexOf"), create_builtin_function(ctx, "ta_indexOf"));
+    ta_proto.set(ctx.intern("lastIndexOf"), create_builtin_function(ctx, "ta_lastIndexOf"));
+    ta_proto.set(ctx.intern("includes"), create_builtin_function(ctx, "ta_includes"));
+    ta_proto.set(ctx.intern("join"), create_builtin_function(ctx, "ta_join"));
+    ta_proto.set(ctx.intern("at"), create_builtin_function(ctx, "ta_at"));
+    ta_proto.set(ctx.intern("values"), create_builtin_function(ctx, "ta_values"));
+    ta_proto.set(ctx.intern("keys"), create_builtin_function(ctx, "ta_keys"));
+    ta_proto.set(ctx.intern("entries"), create_builtin_function(ctx, "ta_entries"));
+    ta_proto.set(ctx.intern("toString"), create_builtin_function(ctx, "ta_toString"));
+    ta_proto.set(ctx.intern("reverse"), create_builtin_function(ctx, "ta_reverse"));
+    ta_proto.set(ctx.intern("slice"), create_builtin_function(ctx, "ta_slice"));
+    ta_proto.set(ctx.intern("fill"), create_builtin_function(ctx, "ta_fill"));
+    ta_proto.set(ctx.intern("copyWithin"), create_builtin_function(ctx, "ta_copyWithin"));
+    ta_proto.set(ctx.intern("sort"), create_builtin_function(ctx, "ta_sort"));
+    ta_proto.set(ctx.intern("subarray"), create_builtin_function(ctx, "ta_subarray"));
+
+    let to_string_tag_key = crate::builtins::symbol::get_symbol_to_string_tag_prop_key(ctx);
+    ta_proto.set(to_string_tag_key, JSValue::new_string(ctx.intern("TypedArray")));
+
+    if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
+        ta_proto.prototype = Some(obj_proto_ptr);
+    }
+    let ta_proto_ptr = Box::into_raw(Box::new(ta_proto)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ta_proto_ptr);
+    ctx.set_typed_array_prototype(ta_proto_ptr);
+
+    let ta_names = [
+        "Int8Array", "Uint8Array", "Uint8ClampedArray",
+        "Int16Array", "Uint16Array", "Int32Array", "Uint32Array",
+        "Float32Array", "Float64Array", "BigInt64Array", "BigUint64Array",
+    ];
+    for name in &ta_names {
+        let atom = ctx.intern(name);
+        if let Some(ctor_val) = global_obj.get(atom) {
+            if ctor_val.is_function() {
+                let ctor_obj = ctor_val.as_object_mut();
+                ctor_obj.set(ctx.intern("prototype"), JSValue::new_object(ta_proto_ptr));
+            }
+        }
+    }
 }
 
 pub fn register_builtins(ctx: &mut JSContext) {
@@ -1083,5 +1932,109 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "dataview_setBigUint64",
         HostFunction::method("setBigUint64", 3, data_view_set_biguint64),
+    );
+    ctx.register_builtin(
+        "ta_forEach",
+        HostFunction::method("forEach", 1, typed_array_for_each),
+    );
+    ctx.register_builtin(
+        "ta_every",
+        HostFunction::method("every", 1, typed_array_every),
+    );
+    ctx.register_builtin(
+        "ta_some",
+        HostFunction::method("some", 1, typed_array_some),
+    );
+    ctx.register_builtin(
+        "ta_find",
+        HostFunction::method("find", 1, typed_array_find),
+    );
+    ctx.register_builtin(
+        "ta_findIndex",
+        HostFunction::method("findIndex", 1, typed_array_find_index),
+    );
+    ctx.register_builtin(
+        "ta_findLast",
+        HostFunction::method("findLast", 1, typed_array_find_last),
+    );
+    ctx.register_builtin(
+        "ta_findLastIndex",
+        HostFunction::method("findLastIndex", 1, typed_array_find_last_index),
+    );
+    ctx.register_builtin(
+        "ta_reduce",
+        HostFunction::method("reduce", 1, typed_array_reduce),
+    );
+    ctx.register_builtin(
+        "ta_reduceRight",
+        HostFunction::method("reduceRight", 1, typed_array_reduce_right),
+    );
+    ctx.register_builtin(
+        "ta_map",
+        HostFunction::method("map", 1, typed_array_map),
+    );
+    ctx.register_builtin(
+        "ta_filter",
+        HostFunction::method("filter", 1, typed_array_filter),
+    );
+    ctx.register_builtin(
+        "ta_indexOf",
+        HostFunction::method("indexOf", 1, typed_array_index_of),
+    );
+    ctx.register_builtin(
+        "ta_lastIndexOf",
+        HostFunction::method("lastIndexOf", 1, typed_array_last_index_of),
+    );
+    ctx.register_builtin(
+        "ta_includes",
+        HostFunction::method("includes", 1, typed_array_includes),
+    );
+    ctx.register_builtin(
+        "ta_join",
+        HostFunction::method("join", 1, typed_array_join),
+    );
+    ctx.register_builtin(
+        "ta_at",
+        HostFunction::method("at", 1, typed_array_at),
+    );
+    ctx.register_builtin(
+        "ta_values",
+        HostFunction::method("values", 0, typed_array_values),
+    );
+    ctx.register_builtin(
+        "ta_keys",
+        HostFunction::method("keys", 0, typed_array_keys),
+    );
+    ctx.register_builtin(
+        "ta_entries",
+        HostFunction::method("entries", 0, typed_array_entries),
+    );
+    ctx.register_builtin(
+        "ta_toString",
+        HostFunction::method("toString", 0, typed_array_to_string),
+    );
+    ctx.register_builtin(
+        "ta_reverse",
+        HostFunction::method("reverse", 0, typed_array_reverse),
+    );
+    ctx.register_builtin(
+        "ta_slice",
+        HostFunction::method("slice", 2, typed_array_slice),
+    );
+    ctx.register_builtin(
+        "ta_fill",
+        HostFunction::method("fill", 1, typed_array_fill),
+    );
+    ctx.register_builtin(
+        "ta_copyWithin",
+        HostFunction::method("copyWithin", 2, typed_array_copy_within),
+    );
+    ctx.register_builtin(
+        "ta_sort",
+        HostFunction::method("sort", 1, typed_array_sort),
+    );
+    ctx.register_builtin(
+        "ta_subarray",
+        HostFunction::method("subarray", 2, typed_array_subarray),
     );
 }

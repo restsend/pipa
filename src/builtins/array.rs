@@ -115,6 +115,16 @@ pub fn init_array(ctx: &mut JSContext) {
     );
     set_ne(
         &mut array_func.base,
+        ctx.intern("from"),
+        create_builtin_function(ctx, "array_from"),
+    );
+    set_ne(
+        &mut array_func.base,
+        ctx.intern("of"),
+        create_builtin_function(ctx, "array_of"),
+    );
+    set_ne(
+        &mut array_func.base,
         ctx.intern("fromAsync"),
         create_builtin_function(ctx, "array_fromAsync"),
     );
@@ -341,6 +351,14 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "array_isArray",
         HostFunction::new("isArray", 1, array_is_array),
+    );
+    ctx.register_builtin(
+        "array_from",
+        HostFunction::new("from", 1, array_from),
+    );
+    ctx.register_builtin(
+        "array_of",
+        HostFunction::new("of", 0, array_of),
     );
     ctx.register_builtin(
         "array_fromAsync",
@@ -1015,6 +1033,137 @@ fn array_is_array(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         JSValue::bool(false)
     }
+}
+
+fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let source = args.get(0).copied().unwrap_or(JSValue::undefined());
+    let map_fn = args.get(1).copied().filter(|v| v.is_function());
+
+    if source.is_null_or_undefined() {
+        throw_type_error(ctx, "Array.from requires an array-like object or iterable");
+        return JSValue::undefined();
+    }
+
+    let mut items: Vec<JSValue> = Vec::new();
+
+    if source.is_string() {
+        let chars: Vec<char> = {
+            let s = ctx.get_atom_str(source.get_atom());
+            s.chars().collect()
+        };
+        for ch in chars {
+            items.push(JSValue::new_string(ctx.intern(&ch.to_string())));
+        }
+        return create_array_obj(ctx, &items);
+    }
+
+    if !source.is_object() {
+        return create_array_obj(ctx, &items);
+    }
+
+    let obj = source.as_object();
+
+    let sym_iter_atom = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
+    if let Some(iter_val) = obj.get(sym_iter_atom) {
+        if iter_val.is_function() {
+            match call_callback(ctx, iter_val, &[]) {
+                Ok(iterator) => {
+                    if iterator.is_object() {
+                        let iter_obj = iterator.as_object();
+                        let next_fn = iter_obj.get(ctx.intern("next"));
+                        if let Some(next_val) = next_fn {
+                            if next_val.is_function() {
+                                loop {
+                                    match call_callback(ctx, next_val, &[]) {
+                                        Ok(result) => {
+                                            if result.is_object() {
+                                                let robj = result.as_object();
+                                                let done = robj
+                                                    .get(ctx.intern("done"))
+                                                    .map(|v| v.is_truthy())
+                                                    .unwrap_or(false);
+                                                if done {
+                                                    break;
+                                                }
+                                                let value = robj
+                                                    .get(ctx.intern("value"))
+                                                    .unwrap_or(JSValue::undefined());
+                                                if let Some(mf) = map_fn {
+                                                    let mapped = call_callback(
+                                                        ctx,
+                                                        mf,
+                                                        &[
+                                                            value,
+                                                            JSValue::new_int(items.len() as i64),
+                                                            source,
+                                                        ],
+                                                    );
+                                                    match mapped {
+                                                        Ok(v) => items.push(v),
+                                                        Err(_) => return JSValue::undefined(),
+                                                    }
+                                                } else {
+                                                    items.push(value);
+                                                }
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                        Err(_) => return JSValue::undefined(),
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return create_array_obj(ctx, &items);
+                }
+                Err(_) => return JSValue::undefined(),
+            }
+        }
+    }
+
+    let len = obj
+        .get(ctx.common_atoms.length)
+        .map(|v| js_to_length(&v) as usize)
+        .unwrap_or(0);
+
+    for i in 0..len {
+        let val = array_get(obj, i, ctx).unwrap_or(JSValue::undefined());
+
+        if let Some(mf) = map_fn {
+            let mapped = call_callback(
+                ctx,
+                mf,
+                &[val, JSValue::new_int(i as i64), source],
+            );
+            match mapped {
+                Ok(v) => items.push(v),
+                Err(_) => return JSValue::undefined(),
+            }
+        } else {
+            items.push(val);
+        }
+    }
+
+    create_array_obj(ctx, &items)
+}
+
+fn array_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let items: Vec<JSValue> = args.to_vec();
+    create_array_obj(ctx, &items)
+}
+
+fn create_array_obj(ctx: &mut JSContext, items: &[JSValue]) -> JSValue {
+    let mut arr_obj = JSObject::new_array();
+    for (i, &val) in items.iter().enumerate() {
+        let key = ctx.int_atom_mut(i);
+        arr_obj.set(key, val);
+    }
+    let len_atom = ctx.common_atoms.length;
+    arr_obj.set(len_atom, JSValue::new_int(items.len() as i64));
+    let ptr = Box::into_raw(Box::new(arr_obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    JSValue::new_object(ptr)
 }
 
 fn call_callback(
