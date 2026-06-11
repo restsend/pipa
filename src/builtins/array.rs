@@ -479,6 +479,10 @@ fn array_push(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     if this.as_object().is_dense_array() {
         let arr = unsafe { &mut *(ptr as *mut JSArrayObject) };
+        if !arr.header.is_property_writable(length_atom) {
+            throw_type_error(ctx, "Cannot assign to read only property 'length' of object");
+            return JSValue::undefined();
+        }
         let current_len = arr.len() as u32;
         for arg in args.iter().skip(1) {
             arr.push(arg.clone());
@@ -493,6 +497,10 @@ fn array_push(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let obj = unsafe { &mut *(ptr as *mut JSObject) };
+    if !obj.is_property_writable(length_atom) {
+        throw_type_error(ctx, "Cannot assign to read only property 'length' of object");
+        return JSValue::undefined();
+    }
     let current_len = if let Some(l) = obj.get(length_atom) {
         if l.is_int() { l.get_int() as u32 } else { 0 }
     } else {

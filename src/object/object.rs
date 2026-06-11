@@ -842,6 +842,9 @@ impl JSObject {
     }
 
     pub fn is_property_writable(&self, prop: Atom) -> bool {
+        if self.frozen() {
+            return false;
+        }
         if let Some(offset) = self.find_offset(prop) {
             if offset < self.props.len() {
                 return self.props[offset].attrs & ATTR_WRITABLE != 0;
