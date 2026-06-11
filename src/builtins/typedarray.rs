@@ -222,6 +222,153 @@ fn data_view_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_object(ptr)
 }
 
+fn typedarray_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let source = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let map_fn = args.get(2).copied().filter(|v| v.is_function());
+
+    if source.is_null_or_undefined() {
+        throw_type_error(ctx, "TypedArray.from requires an array-like object or iterable");
+        return JSValue::undefined();
+    }
+
+    let mut items: Vec<JSValue> = Vec::new();
+
+    if source.is_string() {
+        let chars: Vec<char> = {
+            let s = ctx.get_atom_str(source.get_atom());
+            s.chars().collect()
+        };
+        for ch in chars {
+            items.push(JSValue::new_string(ctx.intern(&ch.to_string())));
+        }
+    } else if source.is_object() {
+        let obj = source.as_object();
+
+        let sym_iter_atom = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
+        if let Some(iter_val) = obj.get(sym_iter_atom) {
+            if iter_val.is_function() {
+                match crate::builtins::array::call_callback_with_this(ctx, iter_val, source, &[]) {
+                    Ok(iterator) => {
+                        if iterator.is_object() {
+                            let iter_obj = iterator.as_object();
+                            let next_fn = iter_obj.get(ctx.intern("next"));
+                            if let Some(next_val) = next_fn {
+                                if next_val.is_function() {
+                                    loop {
+                                        match crate::builtins::array::call_callback_with_this(ctx, next_val, iterator, &[]) {
+                                            Ok(result) => {
+                                                if result.is_object() {
+                                                    let robj = result.as_object();
+                                                    let done = robj
+                                                        .get(ctx.intern("done"))
+                                                        .map(|v| v.is_truthy())
+                                                        .unwrap_or(false);
+                                                    if done {
+                                                        break;
+                                                    }
+                                                    let value = robj
+                                                        .get(ctx.intern("value"))
+                                                        .unwrap_or(JSValue::undefined());
+                                                    if let Some(mf) = map_fn {
+                                                        match crate::builtins::array::call_callback(ctx, mf, &[value, JSValue::new_int(items.len() as i64), source]) {
+                                                            Ok(v) => items.push(v),
+                                                            Err(_) => return JSValue::undefined(),
+                                                        }
+                                                    } else {
+                                                        items.push(value);
+                                                    }
+                                                } else {
+                                                    break;
+                                                }
+                                            }
+                                            Err(_) => return JSValue::undefined(),
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => return JSValue::undefined(),
+                }
+            }
+        } else {
+            let len = obj.get(ctx.common_atoms.length)
+                .map(|v| {
+                    if v.is_string() {
+                        let s = ctx.get_atom_str(v.get_atom());
+                        let n: f64 = s.parse().unwrap_or(f64::NAN);
+                        if n.is_nan() || n <= 0.0 { 0usize }
+                        else if n.is_infinite() { usize::MAX }
+                        else { n as usize }
+                    } else {
+                        crate::builtins::string::js_to_length(&v) as usize
+                    }
+                })
+                .unwrap_or(0);
+
+            for i in 0..len {
+                let val = crate::builtins::array::array_get(obj, i, ctx)
+                    .unwrap_or(JSValue::undefined());
+                if let Some(mf) = map_fn {
+                    match crate::builtins::array::call_callback(ctx, mf, &[val, JSValue::new_int(i as i64), source]) {
+                        Ok(v) => items.push(v),
+                        Err(_) => return JSValue::undefined(),
+                    }
+                } else {
+                    items.push(val);
+                }
+            }
+        }
+    }
+
+    let len = items.len();
+    let buffer = create_array_buffer(ctx, len * 8);
+    match create_typed_array(ctx, TypedArrayKind::Float64, buffer, 0, Some(len)) {
+        Ok(result) => {
+            if result.is_object() {
+                let mut result_obj = result.as_object_mut();
+                for (i, &val) in items.iter().enumerate() {
+                    ta_set_element(ctx, &mut result_obj, i, val);
+                }
+            }
+            result
+        }
+        Err(e) => {
+            throw_type_error(ctx, &e);
+            JSValue::undefined()
+        }
+    }
+}
+
+fn typedarray_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let items: Vec<JSValue> = args[1..].to_vec();
+    let len = items.len();
+    let buffer = create_array_buffer(ctx, len * 8);
+    match create_typed_array(ctx, TypedArrayKind::Float64, buffer, 0, Some(len)) {
+        Ok(result) => {
+            if result.is_object() {
+                let mut result_obj = result.as_object_mut();
+                for (i, &val) in items.iter().enumerate() {
+                    ta_set_element(ctx, &mut result_obj, i, val);
+                }
+            }
+            result
+        }
+        Err(e) => {
+            throw_type_error(ctx, &e);
+            JSValue::undefined()
+        }
+    }
+}
+
+fn typedarray_species_get(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if let Some(this_val) = args.first() {
+        *this_val
+    } else {
+        JSValue::undefined()
+    }
+}
+
 fn int8_array_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     typed_array_from_args(ctx, TypedArrayKind::Int8, args).unwrap_or(JSValue::undefined())
 }
@@ -1751,6 +1898,24 @@ pub fn init_typed_array(ctx: &mut JSContext) {
             if ctor_val.is_function() {
                 let ctor_obj = ctor_val.as_object_mut();
                 ctor_obj.set(ctx.intern("prototype"), JSValue::new_object(ta_proto_ptr));
+                ctor_obj.set(ctx.intern("from"), create_builtin_function(ctx, "typedarray_from"));
+                ctor_obj.set(ctx.intern("of"), create_builtin_function(ctx, "typedarray_of"));
+                ctor_obj.set(ctx.intern("name"), JSValue::new_string(ctx.intern(name)));
+                ctor_obj.set(ctx.intern("length"), JSValue::new_int(1));
+                let species_fn = create_builtin_function(ctx, "typedarray_species_get");
+                let species_sym = crate::builtins::symbol::get_symbol_species(ctx);
+                if !species_sym.is_undefined() {
+                    ctor_obj.set(species_sym.get_atom(), species_fn);
+                }
+            }
+        }
+    }
+
+    let ta_sym_tag = crate::builtins::symbol::get_symbol_to_string_tag(ctx);
+    if !ta_sym_tag.is_undefined() {
+        if let Some(proto_obj) = ctx.get_typed_array_prototype() {
+            unsafe {
+                (*proto_obj).set(ta_sym_tag.get_atom(), JSValue::new_string(ctx.intern("TypedArray")));
             }
         }
     }
@@ -2036,5 +2201,17 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "ta_subarray",
         HostFunction::method("subarray", 2, typed_array_subarray),
+    );
+    ctx.register_builtin(
+        "typedarray_from",
+        HostFunction::method("from", 1, typedarray_from),
+    );
+    ctx.register_builtin(
+        "typedarray_of",
+        HostFunction::method("of", 0, typedarray_of),
+    );
+    ctx.register_builtin(
+        "typedarray_species_get",
+        HostFunction::new("get [Symbol.species]", 0, typedarray_species_get),
     );
 }

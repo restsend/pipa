@@ -798,6 +798,14 @@ pub fn get_symbol_to_string_tag_prop_key(ctx: &mut JSContext) -> Atom {
     crate::runtime::atom::Atom(0x40000000 | sym.get_symbol_id())
 }
 
+pub fn get_symbol_species(ctx: &mut JSContext) -> JSValue {
+    get_or_create_well_known_symbol(ctx, SYMBOL_SPECIES_DESC)
+}
+
+pub fn get_symbol_to_string_tag(ctx: &mut JSContext) -> JSValue {
+    get_or_create_well_known_symbol(ctx, SYMBOL_TO_STRING_TAG_DESC)
+}
+
 pub fn is_symbol(val: &JSValue) -> bool {
     val.is_symbol()
 }
