@@ -370,12 +370,21 @@ impl VM {
         frame.super_ctor = JSValue::undefined();
         frame.is_constructor = is_constructor;
         frame.is_async = is_async;
-        frame.var_name_map = function_ptr.map_or(std::ptr::null(), |fptr| {
+        if let Some(fptr) = function_ptr {
             let func = unsafe { &*(fptr as *const crate::object::function::JSFunction) };
-            func.bytecode.as_ref().map_or(std::ptr::null(), |bc| {
+            frame.is_strict_frame = func.is_strict();
+            frame.var_name_map = func.bytecode.as_ref().map_or(std::ptr::null(), |bc| {
                 std::rc::Rc::as_ptr(&bc.var_name_to_slot)
-            })
-        });
+            });
+            frame.has_upvalues = func
+                .upvalues
+                .as_ref()
+                .map_or(false, |uv| !uv.upvalue_slots.is_empty());
+        } else {
+            frame.is_strict_frame = false;
+            frame.var_name_map = std::ptr::null();
+            frame.has_upvalues = false;
+        }
         frame.cached_arguments = None;
         frame.uses_arguments = save_args;
         if save_args {
@@ -1838,8 +1847,7 @@ impl VM {
             let saved_frame_index = self.frame_index;
             let saved_pc = self.pc;
             let saved_r0 = self.get_reg(0);
-            let saved_handlers_len = self.exception_handlers.len();
-            self.exception_handlers.truncate(0);
+            let saved_handlers: Vec<_> = std::mem::take(&mut self.exception_handlers);
 
             let fn_this =
                 if !js_func.is_strict() && (this_value.is_undefined() || this_value.is_null()) {
@@ -1876,7 +1884,7 @@ impl VM {
                 self.pop_frame(JSValue::undefined());
             }
             self.pc = saved_pc;
-            self.exception_handlers.truncate(saved_handlers_len);
+            self.exception_handlers = saved_handlers;
             self.refresh_cache();
             self.set_reg(0, saved_r0);
 

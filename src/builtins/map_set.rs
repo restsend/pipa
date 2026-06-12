@@ -109,6 +109,37 @@ fn call_callback(
     }
 }
 
+fn call_callback_with_this(
+    ctx: &mut JSContext,
+    callback: JSValue,
+    this_value: JSValue,
+    args: &[JSValue],
+) -> Result<JSValue, String> {
+    if let Some(ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(ptr as *mut crate::runtime::vm::VM) };
+        vm.call_function_with_this(ctx, callback, this_value, args)
+    } else {
+        Err("call_callback: VM not available".to_string())
+    }
+}
+
+fn get_property_with_getter(
+    ctx: &mut JSContext,
+    obj_ptr: usize,
+    prop: crate::runtime::atom::Atom,
+) -> Result<JSValue, String> {
+    let obj = unsafe { &*(obj_ptr as *const JSObject) };
+    if let Some(entry) = obj.get_own_accessor_entry(prop) {
+        if let Some(getter) = entry.get {
+            if getter.is_function() {
+                let this = JSValue::new_object(obj_ptr);
+                return call_callback_with_this(ctx, getter, this, &[]);
+            }
+        }
+    }
+    Ok(obj.get(prop).unwrap_or(JSValue::undefined()))
+}
+
 fn make_array(ctx: &mut JSContext, items: Vec<JSValue>) -> JSValue {
     let mut arr = JSObject::new_array();
     if let Some(proto_ptr) = ctx.get_array_prototype() {
@@ -123,6 +154,302 @@ fn make_array(ctx: &mut JSContext, items: Vec<JSValue>) -> JSValue {
     JSValue::new_object(Box::into_raw(Box::new(arr)) as usize)
 }
 
+fn iterate_values(ctx: &mut JSContext, iterable: JSValue) -> Vec<JSValue> {
+    let mut values = Vec::new();
+
+    let sym_iter = crate::builtins::symbol::get_symbol_iterator(ctx);
+    if !sym_iter.is_symbol() {
+        return values;
+    }
+    let sym_atom = crate::runtime::atom::Atom(0x40000000 | sym_iter.get_symbol_id());
+
+    let iter_obj = if iterable.is_object() {
+        iterable.as_object()
+    } else {
+        return values;
+    };
+
+    let iter_fn = iter_obj.get(sym_atom).or_else(|| {
+        let mut current = iter_obj.prototype;
+        while let Some(p) = current {
+            let pobj = unsafe { &*p };
+            if let Some(v) = pobj.get(sym_atom) {
+                return Some(v);
+            }
+            current = pobj.prototype;
+        }
+        None
+    });
+
+    let fn_val = match iter_fn {
+        Some(f) if f.is_function() => f,
+        _ => return values,
+    };
+
+    let iterator = match call_callback_with_this(ctx, fn_val, iterable, &[]) {
+        Ok(v) => v,
+        Err(_) => return values,
+    };
+
+    if !iterator.is_object() {
+        return values;
+    }
+
+    let iter_obj = iterator.as_object();
+    let arr_atom = ctx.common_atoms.__iter_arr__;
+    let idx_atom = ctx.common_atoms.__iter_idx__;
+
+    if let Some(arr_val) = iter_obj.get(arr_atom) {
+        let mut idx = iter_obj.get(idx_atom).map(|v| v.get_int() as usize).unwrap_or(0);
+        if arr_val.is_string() {
+            let atom = arr_val.get_atom();
+            let s = ctx.atom_table().get(atom);
+            let chars: Vec<char> = s.chars().collect();
+            while idx < chars.len() {
+                let ch = chars[idx].to_string();
+                let ch_atom = ctx.atom_table_mut().intern(&ch);
+                values.push(JSValue::new_string(ch_atom));
+                idx += 1;
+            }
+        } else if arr_val.is_object() {
+            let arr_ptr = arr_val.get_ptr();
+            let is_jsarray = unsafe {
+                &*(arr_ptr as *const JSObject)
+            }.is_dense_array();
+            let length = if is_jsarray {
+                let arr = unsafe {
+                    &*(arr_ptr as *const crate::object::array_obj::JSArrayObject)
+                };
+                arr.len()
+            } else {
+                let obj = unsafe {
+                    &*(arr_ptr as *const JSObject)
+                };
+                let len_atom = ctx.common_atoms.length;
+                obj.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+            };
+            while idx < length {
+                let value = if is_jsarray {
+                    let arr = unsafe {
+                        &*(arr_ptr as *const crate::object::array_obj::JSArrayObject)
+                    };
+                    arr.get(idx).unwrap_or(JSValue::undefined())
+                } else {
+                    let obj = unsafe {
+                        &*(arr_ptr as *const JSObject)
+                    };
+                    let key = ctx.intern(&idx.to_string());
+                    obj.get(key).unwrap_or(JSValue::undefined())
+                };
+                values.push(value);
+                idx += 1;
+            }
+        }
+    } else {
+        let next_atom = ctx.intern("next");
+        let next_fn = iter_obj.get(next_atom).or_else(|| {
+            let mut proto = iter_obj.prototype;
+            while let Some(p) = proto {
+                let pobj = unsafe { &*p };
+                if let Some(v) = pobj.get(next_atom) {
+                    return Some(v);
+                }
+                proto = pobj.prototype;
+            }
+            None
+        });
+
+        let done_atom = ctx.intern("done");
+        let value_atom = ctx.intern("value");
+
+        loop {
+            let next_val = match &next_fn {
+                Some(f) => {
+                    match call_callback_with_this(ctx, *f, iterator, &[]) {
+                        Ok(v) => v,
+                        Err(_) => break,
+                    }
+                }
+                None => break,
+            };
+
+            let (done, value) = if next_val.is_object() {
+                let robj = next_val.as_object();
+                let done = robj.get(done_atom).map(|v| v.is_truthy()).unwrap_or(false);
+                let value = robj.get(value_atom).unwrap_or(JSValue::undefined());
+                (done, value)
+            } else {
+                (true, JSValue::undefined())
+            };
+
+            if done {
+                break;
+            }
+
+            values.push(value);
+        }
+    }
+
+    values
+}
+
+fn create_iterator_from_iterable(ctx: &mut JSContext, iterable: JSValue) -> Option<JSValue> {
+    let sym_iter = crate::builtins::symbol::get_symbol_iterator(ctx);
+    if !sym_iter.is_symbol() {
+        return None;
+    }
+    let sym_atom = crate::runtime::atom::Atom(0x40000000 | sym_iter.get_symbol_id());
+
+    let iter_obj = if iterable.is_object() {
+        iterable.as_object()
+    } else {
+        return None;
+    };
+
+    let iter_fn = iter_obj.get(sym_atom).or_else(|| {
+        let mut current = iter_obj.prototype;
+        while let Some(p) = current {
+            let pobj = unsafe { &*p };
+            if let Some(v) = pobj.get(sym_atom) {
+                return Some(v);
+            }
+            current = pobj.prototype;
+        }
+        None
+    });
+
+    let fn_val = match iter_fn {
+        Some(f) if f.is_function() => f,
+        _ => return None,
+    };
+
+    call_callback_with_this(ctx, fn_val, iterable, &[]).ok()
+}
+
+fn iterator_next(ctx: &mut JSContext, iterator: JSValue) -> Option<(JSValue, bool)> {
+    if !iterator.is_object() {
+        return None;
+    }
+    let iter_ptr = iterator.get_ptr();
+    let iter_obj = unsafe { &*(iter_ptr as *const JSObject) };
+    let iter_obj_mut = unsafe { &mut *(iter_ptr as *mut JSObject) };
+    let arr_atom = ctx.common_atoms.__iter_arr__;
+    let idx_atom = ctx.common_atoms.__iter_idx__;
+
+    if let Some(arr_val) = iter_obj.get(arr_atom) {
+        let idx = iter_obj.get(idx_atom).map(|v| v.get_int() as usize).unwrap_or(0);
+        if arr_val.is_string() {
+            let atom = arr_val.get_atom();
+            let s = ctx.atom_table().get(atom);
+            let chars: Vec<char> = s.chars().collect();
+            if idx < chars.len() {
+                let ch = chars[idx].to_string();
+                let ch_atom = ctx.atom_table_mut().intern(&ch);
+                iter_obj_mut.set(idx_atom, JSValue::new_int((idx + 1) as i64));
+                return Some((JSValue::new_string(ch_atom), false));
+            } else {
+                return Some((JSValue::undefined(), true));
+            }
+        } else if arr_val.is_object() {
+            let arr_ptr = arr_val.get_ptr();
+            let is_jsarray = unsafe {
+                &*(arr_ptr as *const JSObject)
+            }.is_dense_array();
+            let length = if is_jsarray {
+                let arr = unsafe {
+                    &*(arr_ptr as *const crate::object::array_obj::JSArrayObject)
+                };
+                arr.len()
+            } else {
+                let obj = unsafe {
+                    &*(arr_ptr as *const JSObject)
+                };
+                let len_atom = ctx.common_atoms.length;
+                obj.get(len_atom).map(|v| v.get_int() as usize).unwrap_or(0)
+            };
+            if idx < length {
+                let value = if is_jsarray {
+                    let arr = unsafe {
+                        &*(arr_ptr as *const crate::object::array_obj::JSArrayObject)
+                    };
+                    arr.get(idx).unwrap_or(JSValue::undefined())
+                } else {
+                    let obj = unsafe {
+                        &*(arr_ptr as *const JSObject)
+                    };
+                    let key = ctx.intern(&idx.to_string());
+                    obj.get(key).unwrap_or(JSValue::undefined())
+                };
+                iter_obj_mut.set(idx_atom, JSValue::new_int((idx + 1) as i64));
+                return Some((value, false));
+            } else {
+                return Some((JSValue::undefined(), true));
+            }
+        }
+        return Some((JSValue::undefined(), true));
+    }
+
+    let next_atom = ctx.intern("next");
+    let next_fn = iter_obj.get(next_atom).or_else(|| {
+        let mut proto = iter_obj.prototype;
+        while let Some(p) = proto {
+            let pobj = unsafe { &*p };
+            if let Some(v) = pobj.get(next_atom) {
+                return Some(v);
+            }
+            proto = pobj.prototype;
+        }
+        None
+    });
+
+    let f = match next_fn {
+        Some(f) if f.is_function() => f,
+        _ => return None,
+    };
+
+    let next_val = match call_callback_with_this(ctx, f, iterator, &[]) {
+        Ok(v) => v,
+        Err(_) => return None,
+    };
+
+    let done_atom = ctx.intern("done");
+    let value_atom = ctx.intern("value");
+
+    if next_val.is_object() {
+        let robj = next_val.as_object();
+        let done = robj.get(done_atom).map(|v| v.is_truthy()).unwrap_or(false);
+        let value = robj.get(value_atom).unwrap_or(JSValue::undefined());
+        Some((value, done))
+    } else {
+        Some((JSValue::undefined(), true))
+    }
+}
+
+fn iterator_return(ctx: &mut JSContext, iterator: JSValue) {
+    if !iterator.is_object() {
+        return;
+    }
+    let iter_obj = iterator.as_object();
+    let return_atom = ctx.intern("return");
+    let return_fn = iter_obj.get(return_atom).or_else(|| {
+        let mut proto = iter_obj.prototype;
+        while let Some(p) = proto {
+            let pobj = unsafe { &*p };
+            if let Some(v) = pobj.get(return_atom) {
+                return Some(v);
+            }
+            proto = pobj.prototype;
+        }
+        None
+    });
+
+    if let Some(f) = return_fn {
+        if f.is_function() {
+            let _ = call_callback_with_this(ctx, f, iterator, &[]);
+        }
+    }
+}
+
 pub fn map_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let mut obj = JSObject::new();
 
@@ -133,37 +460,127 @@ pub fn map_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let size_atom = ctx.intern("__map_size__");
     obj.set(size_atom, JSValue::new_int(0));
 
+    let this_val = JSValue::new_object(Box::into_raw(Box::new(obj)) as usize);
+    let obj_ptr = this_val.get_ptr();
+    let obj_ref = unsafe { &mut *(obj_ptr as *mut JSObject) };
+
     if let Some(iterable) = args.first() {
-        if iterable.is_object() {
-            let iter_obj = iterable.as_object();
-            let len_atom = ctx.common_atoms.length;
-            let len = iter_obj
-                .get(len_atom)
-                .map(|v| if v.is_int() { v.get_int() as usize } else { 0 })
-                .unwrap_or(0);
+        if iterable.is_object() || iterable.is_string() {
+            if let Some(iterator) = create_iterator_from_iterable(ctx, *iterable) {
+                let set_atom = ctx.intern("set");
+                let adder = this_val.as_object().get(set_atom).or_else(|| {
+                    let mut proto = this_val.as_object().prototype;
+                    while let Some(p) = proto {
+                        let pobj = unsafe { &*p };
+                        if let Some(v) = pobj.get(set_atom) {
+                            return Some(v);
+                        }
+                        proto = pobj.prototype;
+                    }
+                    None
+                });
 
-            for i in 0..len {
-                let idx_atom = ctx.intern(&i.to_string());
-                if let Some(pair) = iter_obj.get(idx_atom) {
-                    if pair.is_object() {
-                        let pair_obj = pair.as_object();
+                if let Some(adder_fn) = adder {
+                    let k_atom_0 = ctx.intern("0");
+                    let k_atom_1 = ctx.intern("1");
+                    loop {
+                        match iterator_next(ctx, iterator) {
+                            Some((_value, true)) => {
+                                break;
+                            },
+                            Some((value, false)) => {
+                                if !value.is_object() {
+                                    throw_type_error(ctx, "Iterator value is not an object");
+                                    let saved_exc = ctx.pending_exception.take();
+                                    iterator_return(ctx, iterator);
+                                    ctx.pending_exception = saved_exc;
+                                    return JSValue::undefined();
+                                }
+                                if value.is_object() {
+                                    let pair_obj = value.as_object();
+                                    let pair_ptr = pair_obj as *const JSObject as usize;
+                                    let k = match get_property_with_getter(ctx, pair_ptr, k_atom_0) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            let saved_exc = ctx.pending_exception.take();
+                                            iterator_return(ctx, iterator);
+                                            ctx.pending_exception = saved_exc;
+                                            return JSValue::undefined();
+                                        }
+                                    };
+                                    let v = match get_property_with_getter(ctx, pair_ptr, k_atom_1) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            let saved_exc = ctx.pending_exception.take();
+                                            iterator_return(ctx, iterator);
+                                            ctx.pending_exception = saved_exc;
+                                            return JSValue::undefined();
+                                        }
+                                    };
 
-                        let k_atom = ctx.intern("0");
-                        let v_atom = ctx.intern("1");
-                        let k = pair_obj.get(k_atom).unwrap_or_else(JSValue::undefined);
-                        let v = pair_obj.get(v_atom).unwrap_or_else(JSValue::undefined);
+                                    if call_callback_with_this(ctx, adder_fn, this_val, &[k, v]).is_err() {
+                                        let saved_exc = ctx.pending_exception.take();
+                                        iterator_return(ctx, iterator);
+                                        ctx.pending_exception = saved_exc;
+                                        return JSValue::undefined();
+                                    }
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                } else {
+                    let k_atom_0 = ctx.intern("0");
+                    let k_atom_1 = ctx.intern("1");
+                    loop {
+                        match iterator_next(ctx, iterator) {
+                            Some((_value, true)) => {
+                                break;
+                            },
+                            Some((value, false)) => {
+                                if !value.is_object() {
+                                    throw_type_error(ctx, "Iterator value is not an object");
+                                    let saved_exc = ctx.pending_exception.take();
+                                    iterator_return(ctx, iterator);
+                                    ctx.pending_exception = saved_exc;
+                                    return JSValue::undefined();
+                                }
+                                if value.is_object() {
+                                    let pair_obj = value.as_object();
+                                    let pair_ptr = pair_obj as *const JSObject as usize;
+                                    let k = match get_property_with_getter(ctx, pair_ptr, k_atom_0) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            let saved_exc = ctx.pending_exception.take();
+                                            iterator_return(ctx, iterator);
+                                            ctx.pending_exception = saved_exc;
+                                            return JSValue::undefined();
+                                        }
+                                    };
+                                    let v = match get_property_with_getter(ctx, pair_ptr, k_atom_1) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            let saved_exc = ctx.pending_exception.take();
+                                            iterator_return(ctx, iterator);
+                                            ctx.pending_exception = saved_exc;
+                                            return JSValue::undefined();
+                                        }
+                                    };
 
-                        let cur_size = map_size(ctx, &obj);
-
-                        if let Some(idx) = map_find(ctx, &obj, &k) {
-                            let mv_atom = map_val_atom(ctx, idx);
-                            obj.set(mv_atom, v);
-                        } else {
-                            let mk_atom = map_key_atom(ctx, cur_size);
-                            let mv_atom = map_val_atom(ctx, cur_size);
-                            obj.set(mk_atom, k);
-                            obj.set(mv_atom, v);
-                            obj.set(size_atom, JSValue::new_int((cur_size + 1) as i64));
+                                    let cur_size = map_size(ctx, obj_ref);
+                                    if let Some(idx) = map_find(ctx, obj_ref, &k) {
+                                        let mv_atom = map_val_atom(ctx, idx);
+                                        obj_ref.set(mv_atom, v);
+                                    } else {
+                                        let mk_atom = map_key_atom(ctx, cur_size);
+                                        let mv_atom = map_val_atom(ctx, cur_size);
+                                        obj_ref.set(mk_atom, k);
+                                        obj_ref.set(mv_atom, v);
+                                        obj_ref.set(size_atom, JSValue::new_int((cur_size + 1) as i64));
+                                    }
+                                }
+                            }
+                            None => break,
                         }
                     }
                 }
@@ -171,11 +588,11 @@ pub fn map_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     }
 
-    let size_val = obj.get(size_atom).unwrap_or(JSValue::new_int(0));
+    let size_val = obj_ref.get(size_atom).unwrap_or(JSValue::new_int(0));
     let size_prop_atom = ctx.intern("size");
-    obj.set(size_prop_atom, size_val);
+    obj_ref.set(size_prop_atom, size_val);
 
-    JSValue::new_object(Box::into_raw(Box::new(obj)) as usize)
+    this_val
 }
 
 fn sync_map_size(ctx: &mut JSContext, obj: &mut JSObject) {
@@ -451,11 +868,66 @@ fn map_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn map_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    map_entries(ctx, args)
+    if args.is_empty() {
+        return create_map_iter(ctx, vec![]);
+    }
+    let this = args[0];
+    if !this.is_object() {
+        throw_type_error(ctx, "Method Map.prototype[Symbol.iterator] called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let obj = this.as_object();
+    if !has_mapdata_slot(ctx, obj) {
+        throw_type_error(ctx, "Method Map.prototype[Symbol.iterator] called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let size = map_size(ctx, obj);
+    let mut entries = Vec::with_capacity(size);
+    for i in 0..size {
+        let mk_atom = map_key_atom(ctx, i);
+        let mv_atom = map_val_atom(ctx, i);
+        let k = obj.get(mk_atom).unwrap_or_else(JSValue::undefined);
+        let v = obj.get(mv_atom).unwrap_or_else(JSValue::undefined);
+        let pair = make_array(ctx, vec![k, v]);
+        entries.push(pair);
+    }
+    create_map_iter(ctx, entries)
+}
+
+fn create_map_iter(ctx: &mut JSContext, entries: Vec<JSValue>) -> JSValue {
+    let mut iter_obj = JSObject::new();
+    let arr_atom = ctx.common_atoms.__iter_arr__;
+    let idx_atom = ctx.common_atoms.__iter_idx__;
+    let entries_arr = make_array(ctx, entries);
+    iter_obj.set(arr_atom, entries_arr);
+    iter_obj.set(idx_atom, JSValue::new_int(0));
+    let ptr = Box::into_raw(Box::new(iter_obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    JSValue::new_object(ptr)
 }
 
 fn set_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    set_values(ctx, args)
+    if args.is_empty() {
+        return create_map_iter(ctx, vec![]);
+    }
+    let this = args[0];
+    if !this.is_object() {
+        throw_type_error(ctx, "Method Set.prototype[Symbol.iterator] called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let obj = this.as_object();
+    if !has_setdata_slot(ctx, obj) {
+        throw_type_error(ctx, "Method Set.prototype[Symbol.iterator] called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let size = set_size(ctx, obj);
+    let mut values = Vec::with_capacity(size);
+    for i in 0..size {
+        let sv_atom = set_val_atom(ctx, i);
+        let v = obj.get(sv_atom).unwrap_or_else(JSValue::undefined);
+        values.push(v);
+    }
+    create_map_iter(ctx, values)
 }
 
 fn weakmap_constructor(ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
@@ -735,34 +1207,66 @@ pub fn set_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let size_atom = ctx.intern("__set_size__");
     obj.set(size_atom, JSValue::new_int(0));
 
-    if let Some(iterable) = args.first() {
-        if iterable.is_object() {
-            let iter_obj = iterable.as_object();
-            let len_atom = ctx.common_atoms.length;
-            let len = iter_obj
-                .get(len_atom)
-                .map(|v| if v.is_int() { v.get_int() as usize } else { 0 })
-                .unwrap_or(0);
+    let this_val = JSValue::new_object(Box::into_raw(Box::new(obj)) as usize);
+    let obj_ptr = this_val.get_ptr();
+    let obj_ref = unsafe { &mut *(obj_ptr as *mut JSObject) };
 
-            for i in 0..len {
-                let idx_atom = ctx.intern(&i.to_string());
-                if let Some(val) = iter_obj.get(idx_atom) {
-                    let cur_size = set_size(ctx, &obj);
-                    if set_find(ctx, &obj, &val).is_none() {
-                        let sv_atom = set_val_atom(ctx, cur_size);
-                        obj.set(sv_atom, val);
-                        obj.set(size_atom, JSValue::new_int((cur_size + 1) as i64));
+    if let Some(iterable) = args.first() {
+        if iterable.is_object() || iterable.is_string() {
+            if let Some(iterator) = create_iterator_from_iterable(ctx, *iterable) {
+                let add_atom = ctx.intern("add");
+                let adder = this_val.as_object().get(add_atom).or_else(|| {
+                    let mut proto = this_val.as_object().prototype;
+                    while let Some(p) = proto {
+                        let pobj = unsafe { &*p };
+                        if let Some(v) = pobj.get(add_atom) {
+                            return Some(v);
+                        }
+                        proto = pobj.prototype;
+                    }
+                    None
+                });
+
+                if let Some(adder_fn) = adder {
+                    loop {
+                        match iterator_next(ctx, iterator) {
+                            Some((_value, true)) => break,
+                            Some((value, false)) => {
+                                if call_callback_with_this(ctx, adder_fn, this_val, &[value]).is_err() {
+                                    let saved_exc = ctx.pending_exception.take();
+                                    iterator_return(ctx, iterator);
+                                    ctx.pending_exception = saved_exc;
+                                    return JSValue::undefined();
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                } else {
+                    loop {
+                        match iterator_next(ctx, iterator) {
+                            Some((_value, true)) => break,
+                            Some((value, false)) => {
+                                let cur_size = set_size(ctx, obj_ref);
+                                if set_find(ctx, obj_ref, &value).is_none() {
+                                    let sv_atom = set_val_atom(ctx, cur_size);
+                                    obj_ref.set(sv_atom, value);
+                                    obj_ref.set(size_atom, JSValue::new_int((cur_size + 1) as i64));
+                                }
+                            }
+                            None => break,
+                        }
                     }
                 }
             }
         }
     }
 
-    let size_val = obj.get(size_atom).unwrap_or(JSValue::new_int(0));
+    let size_val = obj_ref.get(size_atom).unwrap_or(JSValue::new_int(0));
     let size_prop_atom = ctx.intern("size");
-    obj.set(size_prop_atom, size_val);
+    obj_ref.set(size_prop_atom, size_val);
 
-    JSValue::new_object(Box::into_raw(Box::new(obj)) as usize)
+    this_val
 }
 
 fn sync_set_size(ctx: &mut JSContext, obj: &mut JSObject) {

@@ -474,7 +474,7 @@ fn main() {
             println!(">>> {}", test_path);
         }
 
-        let Some((meta, code)) = parse_frontmatter(&content) else {
+        let Some((meta, code_ref)) = parse_frontmatter(&content) else {
             failed += 1;
             println!("  ✗ {} - failed to parse frontmatter", test_path);
             continue;
@@ -503,7 +503,7 @@ fn main() {
             }
         }
 
-        match run_test(&mut ctx, code, &meta, &harness_code) {
+        match run_test(&mut ctx, code_ref, &meta, &harness_code) {
             TestOutcome::Passed => {
                 passed += 1;
                 if passed <= 50 || passed % 500 == 0 {

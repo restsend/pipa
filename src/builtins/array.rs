@@ -356,6 +356,13 @@ pub fn init_array(ctx: &mut JSContext) {
 
     set_ne(&mut proto_obj, ctx.common_atoms.constructor, array_value);
 
+    let sym_iter_atom = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
+    set_ne(
+        &mut proto_obj,
+        sym_iter_atom,
+        create_builtin_function(ctx, "array_symbol_iterator"),
+    );
+
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto_obj.prototype = Some(obj_proto_ptr);
     }
@@ -375,6 +382,22 @@ pub fn init_array(ctx: &mut JSContext) {
         let global_obj = global.as_object_mut();
         global_obj.set(proto_atom, proto_value);
     }
+}
+
+fn array_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = args.first().copied().unwrap_or(JSValue::undefined());
+    if !this.is_object() {
+        throw_type_error(ctx, "Method Array.prototype[Symbol.iterator] called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let arr_atom = ctx.common_atoms.__iter_arr__;
+    let idx_atom = ctx.common_atoms.__iter_idx__;
+    let mut iter_obj = JSObject::new();
+    iter_obj.set(arr_atom, this);
+    iter_obj.set(idx_atom, JSValue::new_int(0));
+    let ptr = Box::into_raw(Box::new(iter_obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    JSValue::new_object(ptr)
 }
 
 pub fn register_builtins(ctx: &mut JSContext) {
@@ -480,6 +503,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "array_toSpliced",
         HostFunction::method("toSpliced", 3, array_to_spliced),
+    );
+    ctx.register_builtin(
+        "array_symbol_iterator",
+        HostFunction::method("[Symbol.iterator]", 0, array_symbol_iterator),
     );
     ctx.register_builtin(
         "array_constructor",

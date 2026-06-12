@@ -6796,14 +6796,43 @@ impl CodeGenerator {
                 }
                 Some(ArrayElement::Spread(expr)) => {
                     let src = self.gen_expression(expr, ctx)?;
-                    self.emit(Opcode::ArrayExtend);
-                    self.emit_u16(dst);
+
+                    let iter_reg = self.alloc_register();
+                    self.emit(Opcode::GetIterator);
+                    self.emit_u16(iter_reg);
                     self.emit_u16(src);
                     self.free_register(src);
 
-                    let len_key = self.alloc_register();
+                    let loop_start = self.code.len();
+
+                    let val_reg = self.alloc_register();
+                    let done_reg = self.alloc_register();
+                    self.emit(Opcode::IteratorNext);
+                    self.emit_u16(val_reg);
+                    self.emit_u16(done_reg);
+                    self.emit_u16(iter_reg);
+
+                    self.emit(Opcode::JumpIf);
+                    self.emit_u16(done_reg);
+                    let exit_patch = self.code.len();
+                    self.emit_i32(0);
+                    self.free_register(done_reg);
+
+                    self.emit(Opcode::ArrayPush);
+                    self.emit_u16(dst);
+                    self.emit_u16(val_reg);
+                    self.free_register(val_reg);
+
+                    self.emit_backward_jump(loop_start);
+
+                    let end_pos = self.code.len();
+                    self.patch_jump(exit_patch, end_pos);
+
+                    self.free_register(iter_reg);
+
                     let len_atom = ctx.common_atoms.length;
                     let len_const = self.add_constant(JSValue::new_string(len_atom));
+                    let len_key = self.alloc_register();
                     self.emit(Opcode::LoadConst);
                     self.emit_u16(len_key);
                     self.emit_u32(len_const);
