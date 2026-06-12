@@ -44,6 +44,29 @@ pub fn array_get(obj: &JSObject, index: usize, ctx: &mut JSContext) -> Option<cr
     let key = ctx.int_atom_mut(index);
     obj.get(key)
 }
+
+pub fn array_set(obj: &mut JSObject, index: usize, value: crate::value::JSValue) {
+    if obj.is_array() {
+        let ptr = obj as *mut JSObject as *mut JSArrayObject;
+        if obj.is_dense_array() {
+            unsafe { (*ptr).set(index, value) };
+            return;
+        }
+    }
+    obj.set_indexed(index, value);
+}
+
+pub fn array_delete(obj: &mut JSObject, index: usize) {
+    if obj.is_array() && obj.is_dense_array() {
+        let ptr = obj as *mut JSObject as *mut JSArrayObject;
+        let elems = unsafe { &mut (*ptr).elements };
+        if index < elems.len() {
+            elems[index] = crate::value::JSValue::undefined();
+        }
+        return;
+    }
+    obj.set_indexed(index, crate::value::JSValue::undefined());
+}
 use crate::value::JSValue;
 
 fn safe_array_len_with_ctx(obj: &JSObject, len_atom: crate::runtime::atom::Atom, ctx: &mut JSContext) -> u64 {
@@ -1803,11 +1826,11 @@ fn array_splice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 array_get(arr, src_idx, ctx).unwrap_or(JSValue::undefined())
             };
             let arr = this.as_object_mut();
-            arr.set(ctx.int_atom_mut(dst_idx), val);
+            array_set(arr, dst_idx, val);
         }
         for i in new_len..len {
             let arr = this.as_object_mut();
-            arr.delete(ctx.int_atom_mut(i as usize));
+            array_delete(arr, i as usize);
         }
     } else if shift > 0 {
         for i in (start..(len - delete_count)).rev() {
@@ -1818,13 +1841,13 @@ fn array_splice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 array_get(arr, src_idx, ctx).unwrap_or(JSValue::undefined())
             };
             let arr = this.as_object_mut();
-            arr.set(ctx.int_atom_mut(dst_idx), val);
+            array_set(arr, dst_idx, val);
         }
     }
 
     for (i, item) in insert_items.iter().enumerate() {
         let arr = this.as_object_mut();
-        arr.set(ctx.int_atom_mut((start + i as u64) as usize), *item);
+        array_set(arr, (start + i as u64) as usize, *item);
     }
 
     let arr = this.as_object_mut();
