@@ -2601,6 +2601,7 @@ fn init_boolean(ctx: &mut JSContext) {
     }
     let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
+    ctx.set_bool_prototype(proto_ptr);
 
     let bool_func_ptr = bool_ptr as *mut crate::object::function::JSFunction;
     unsafe {

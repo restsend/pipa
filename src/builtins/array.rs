@@ -1432,37 +1432,6 @@ fn array_every(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::bool(true)
 }
 
-    let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
-    if !callback.is_function() {
-        throw_type_error(ctx, "Callback is not a function");
-        return JSValue::undefined();
-    }
-
-    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
-
-    if !this.is_object() {
-        return JSValue::bool(true);
-    }
-
-    let obj = this.as_object();
-
-    let length_atom = ctx.common_atoms.length;
-    let len = safe_array_len_with_ctx(obj, length_atom, ctx) as usize;
-
-    for i in 0..len {
-        if let Some(value) = array_get(obj, i as usize, ctx) {
-            let callback_args = vec![value, JSValue::new_int(i as i64), this];
-            if let Ok(result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
-                if !result.is_truthy() {
-                    return JSValue::bool(false);
-                }
-            }
-        }
-    }
-
-    JSValue::bool(true)
-}
-
 fn array_some(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = if args.is_empty() { JSValue::undefined() } else { args[0] };
 
