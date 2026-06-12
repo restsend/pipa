@@ -1017,7 +1017,18 @@ pub fn init_map_set(ctx: &mut JSContext) {
     ctx.runtime_mut().gc_heap_mut().track(map_proto_ptr);
     ctx.set_map_prototype(map_proto_ptr);
 
+    let map_proto_value = JSValue::new_object(map_proto_ptr);
+
     let map_ctor = create_builtin_function(ctx, "map_constructor");
+    if map_ctor.is_function() {
+        let map_func_ref = map_ctor.as_function_mut();
+        map_func_ref.base.set(ctx.common_atoms.prototype, map_proto_value);
+    }
+    unsafe {
+        let proto_ref = &mut *(map_proto_ptr as *mut crate::object::object::JSObject);
+        proto_ref.set(ctx.common_atoms.constructor, map_ctor);
+    }
+
     let map_atom = ctx.intern("Map");
     let global = ctx.global();
     if global.is_object() {
@@ -1064,7 +1075,18 @@ pub fn init_map_set(ctx: &mut JSContext) {
     ctx.runtime_mut().gc_heap_mut().track(set_proto_ptr);
     ctx.set_set_prototype(set_proto_ptr);
 
+    let set_proto_value = JSValue::new_object(set_proto_ptr);
+
     let set_ctor = create_builtin_function(ctx, "set_constructor");
+    if set_ctor.is_function() {
+        let set_func_ref = set_ctor.as_function_mut();
+        set_func_ref.base.set(ctx.common_atoms.prototype, set_proto_value);
+    }
+    unsafe {
+        let proto_ref = &mut *(set_proto_ptr as *mut crate::object::object::JSObject);
+        proto_ref.set(ctx.common_atoms.constructor, set_ctor);
+    }
+
     let set_atom = ctx.intern("Set");
     let global = ctx.global();
     if global.is_object() {
@@ -1098,7 +1120,18 @@ pub fn init_map_set(ctx: &mut JSContext) {
     ctx.runtime_mut().gc_heap_mut().track(weakmap_proto_ptr);
     ctx.set_weakmap_prototype(weakmap_proto_ptr);
 
+    let weakmap_proto_value = JSValue::new_object(weakmap_proto_ptr);
+
     let weakmap_ctor = create_builtin_function(ctx, "weakmap_constructor");
+    if weakmap_ctor.is_function() {
+        let wm_func_ref = weakmap_ctor.as_function_mut();
+        wm_func_ref.base.set(ctx.common_atoms.prototype, weakmap_proto_value);
+    }
+    unsafe {
+        let proto_ref = &mut *(weakmap_proto_ptr as *mut crate::object::object::JSObject);
+        proto_ref.set(ctx.common_atoms.constructor, weakmap_ctor);
+    }
+
     let weakmap_atom = ctx.intern("WeakMap");
     if global.is_object() {
         let global_obj = global.as_object_mut();
@@ -1127,7 +1160,18 @@ pub fn init_map_set(ctx: &mut JSContext) {
     ctx.runtime_mut().gc_heap_mut().track(weakset_proto_ptr);
     ctx.set_weakset_prototype(weakset_proto_ptr);
 
+    let weakset_proto_value = JSValue::new_object(weakset_proto_ptr);
+
     let weakset_ctor = create_builtin_function(ctx, "weakset_constructor");
+    if weakset_ctor.is_function() {
+        let ws_func_ref = weakset_ctor.as_function_mut();
+        ws_func_ref.base.set(ctx.common_atoms.prototype, weakset_proto_value);
+    }
+    unsafe {
+        let proto_ref = &mut *(weakset_proto_ptr as *mut crate::object::object::JSObject);
+        proto_ref.set(ctx.common_atoms.constructor, weakset_ctor);
+    }
+
     let weakset_atom = ctx.intern("WeakSet");
     if global.is_object() {
         let global_obj = global.as_object_mut();

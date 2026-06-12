@@ -758,7 +758,8 @@ pub fn get_symbol_iterator(ctx: &mut JSContext) -> JSValue {
 }
 
 pub fn get_symbol_iterator_atom(ctx: &mut JSContext) -> Atom {
-    ctx.intern("Symbol.iterator")
+    let sym = get_or_create_well_known_symbol(ctx, SYMBOL_ITERATOR_DESC);
+    crate::runtime::atom::Atom(0x40000000 | sym.get_symbol_id())
 }
 
 pub fn get_symbol_split(ctx: &mut JSContext) -> JSValue {
@@ -766,7 +767,8 @@ pub fn get_symbol_split(ctx: &mut JSContext) -> JSValue {
 }
 
 pub fn get_symbol_split_atom(ctx: &mut JSContext) -> Atom {
-    ctx.intern("Symbol.split")
+    let sym = get_or_create_well_known_symbol(ctx, SYMBOL_SPLIT_DESC);
+    crate::runtime::atom::Atom(0x40000000 | sym.get_symbol_id())
 }
 
 pub fn get_symbol_unscopables(ctx: &mut JSContext) -> JSValue {
@@ -774,7 +776,8 @@ pub fn get_symbol_unscopables(ctx: &mut JSContext) -> JSValue {
 }
 
 pub fn get_symbol_unscopables_atom(ctx: &mut JSContext) -> Atom {
-    ctx.intern("Symbol.unscopables")
+    let sym = get_or_create_well_known_symbol(ctx, SYMBOL_UNSCOPABLES_DESC);
+    crate::runtime::atom::Atom(0x40000000 | sym.get_symbol_id())
 }
 
 pub fn get_symbol_has_instance(ctx: &mut JSContext) -> JSValue {
@@ -782,7 +785,8 @@ pub fn get_symbol_has_instance(ctx: &mut JSContext) -> JSValue {
 }
 
 pub fn get_symbol_has_instance_atom(ctx: &mut JSContext) -> Atom {
-    ctx.intern("Symbol.hasInstance")
+    let sym = get_or_create_well_known_symbol(ctx, SYMBOL_HAS_INSTANCE_DESC);
+    crate::runtime::atom::Atom(0x40000000 | sym.get_symbol_id())
 }
 
 pub fn get_symbol_async_iterator(ctx: &mut JSContext) -> JSValue {
@@ -790,7 +794,8 @@ pub fn get_symbol_async_iterator(ctx: &mut JSContext) -> JSValue {
 }
 
 pub fn get_symbol_async_iterator_atom(ctx: &mut JSContext) -> Atom {
-    ctx.intern("Symbol.asyncIterator")
+    let sym = get_or_create_well_known_symbol(ctx, SYMBOL_ASYNC_ITERATOR_DESC);
+    crate::runtime::atom::Atom(0x40000000 | sym.get_symbol_id())
 }
 
 pub fn get_symbol_to_string_tag_prop_key(ctx: &mut JSContext) -> Atom {
