@@ -30,8 +30,16 @@ pub fn object_to_object(ctx: &mut JSContext, value: &JSValue) -> JSValue {
             obj.prototype = Some(proto_ptr);
         }
         obj.set(ctx.common_atoms.__value__, *value);
-        let s = ctx.get_atom_str(value.get_atom());
-        obj.set(ctx.common_atoms.length, JSValue::new_int(s.len() as i64));
+        let s = ctx.get_atom_str(value.get_atom()).to_string();
+        let len = s.len();
+        obj.set(ctx.common_atoms.length, JSValue::new_int(len as i64));
+        if len > 0 {
+            let elements = obj.ensure_elements();
+            for c in s.chars() {
+                let atom = ctx.intern(&c.to_string());
+                elements.push(JSValue::new_string(atom));
+            }
+        }
         let ptr = Box::into_raw(Box::new(obj)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         return JSValue::new_object(ptr);
@@ -929,13 +937,12 @@ fn object_to_string(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 }
             }
         }
-        if let Some(sym_tag_atom) = get_symbol_to_string_tag_atom(_ctx) {
-            if let Some(v) = obj.get(sym_tag_atom) {
-                if v.is_string() {
-                    let s = _ctx.get_atom_str(v.get_atom());
-                    if !s.is_empty() {
-                        return JSValue::new_string(_ctx.intern(&format!("[object {}]", s)));
-                    }
+        let sym_tag_atom = crate::builtins::symbol::get_symbol_to_string_tag_prop_key(_ctx);
+        if let Some(v) = obj.get(sym_tag_atom) {
+            if v.is_string() {
+                let s = _ctx.get_atom_str(v.get_atom());
+                if !s.is_empty() {
+                    return JSValue::new_string(_ctx.intern(&format!("[object {}]", s)));
                 }
             }
         }

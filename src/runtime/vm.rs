@@ -1089,11 +1089,12 @@ impl VM {
                             .as_object_mut()
                             .set(ctx.common_atoms.__value__, result);
                         if result.is_string() {
-                            let s = ctx.get_atom_str(result.get_atom());
+                            let s = ctx.get_atom_str(result.get_atom()).to_string();
+                            let char_count = s.chars().count();
                             this_val.as_object_mut().define_property(
                                 ctx.common_atoms.length,
                                 crate::object::object::PropertyDescriptor {
-                                    value: Some(JSValue::new_int(s.chars().count() as i64)),
+                                    value: Some(JSValue::new_int(char_count as i64)),
                                     writable: false,
                                     enumerable: false,
                                     configurable: false,
@@ -1101,6 +1102,13 @@ impl VM {
                                     set: None,
                                 },
                             );
+                            if char_count > 0 {
+                                let elements = this_val.as_object_mut().ensure_elements();
+                                for c in s.chars() {
+                                    let atom = ctx.intern(&c.to_string());
+                                    elements.push(JSValue::new_string(atom));
+                                }
+                            }
                         }
                     }
                     self.set_reg(dst, this_val);
@@ -7181,13 +7189,12 @@ impl VM {
                                 extra.mapped_args_frame_index = fi;
                                 extra.mapped_args_param_count = declared_param_count;
                             }
-                            let start = declared_param_count as usize;
-                            if start < arg_count {
+                            if arg_count > 0 {
                                 args_obj
                                     .ensure_elements()
                                     .resize(arg_count, JSValue::undefined());
-                                for i in start..arg_count {
-                                    args_obj.set_indexed(i, saved_args[i]);
+                                for (i, val) in saved_args.iter().enumerate() {
+                                    args_obj.set_indexed(i, *val);
                                 }
                             }
                         } else {
