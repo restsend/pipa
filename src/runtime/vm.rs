@@ -149,7 +149,10 @@ pub struct VM {
 
 impl VM {
     fn builtin_needs_callee(name: &str) -> bool {
-        matches!(name, "intl_collator_compare_call")
+        matches!(
+            name,
+            "intl_collator_compare_call" | "promise_internal_resolve" | "promise_internal_reject"
+        )
     }
 
     pub fn new() -> Self {
@@ -1736,9 +1739,15 @@ impl VM {
                 .map(|ba| ctx.get_atom_str(ba).to_string())
                 .unwrap_or_default();
             let needs_this = ctx.builtin_needs_this(&builtin_name);
+            let needs_callee = Self::builtin_needs_callee(&builtin_name);
 
             let mut call_args_vec: Vec<JSValue> = Vec::new();
-            let call_args: &[JSValue] = if needs_this {
+            let call_args: &[JSValue] = if needs_callee {
+                call_args_vec.reserve(args.len() + 1);
+                call_args_vec.push(func);
+                call_args_vec.extend_from_slice(args);
+                &call_args_vec
+            } else if needs_this {
                 call_args_vec.reserve(args.len() + 1);
                 call_args_vec.push(this_value);
                 call_args_vec.extend_from_slice(args);

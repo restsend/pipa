@@ -842,13 +842,13 @@ fn resolve_value_as_promise(ctx: &mut JSContext, value: JSValue) -> JSValue {
 }
 
 fn promise_internal_resolve(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let this_val = args.get(0).copied().unwrap_or(JSValue::undefined());
+    let callee_fn = args.get(0).copied().unwrap_or(JSValue::undefined());
     let value = args.get(1).copied().unwrap_or(JSValue::undefined());
-    if !this_val.is_function() {
+    if !callee_fn.is_function() {
         return JSValue::undefined();
     }
     let target_atom = ctx.intern("__target_promise__");
-    let func_obj = this_val.as_function();
+    let func_obj = callee_fn.as_function();
     let promise_val = func_obj.base.get(target_atom).unwrap_or(JSValue::undefined());
     if !promise_val.is_object() {
         return JSValue::undefined();
@@ -897,13 +897,13 @@ fn promise_internal_resolve(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn promise_internal_reject(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let this_val = args.get(0).copied().unwrap_or(JSValue::undefined());
+    let callee_fn = args.get(0).copied().unwrap_or(JSValue::undefined());
     let reason = args.get(1).copied().unwrap_or(JSValue::undefined());
-    if !this_val.is_function() {
+    if !callee_fn.is_function() {
         return JSValue::undefined();
     }
     let target_atom = ctx.intern("__target_promise__");
-    let func_obj = this_val.as_function();
+    let func_obj = callee_fn.as_function();
     let promise_val = func_obj.base.get(target_atom).unwrap_or(JSValue::undefined());
     if !promise_val.is_object() {
         return JSValue::undefined();
@@ -1247,11 +1247,11 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "promise_internal_resolve",
-        HostFunction::method("resolve", 1, promise_internal_resolve),
+        HostFunction::new("resolve", 1, promise_internal_resolve),
     );
     ctx.register_builtin(
         "promise_internal_reject",
-        HostFunction::method("reject", 1, promise_internal_reject),
+        HostFunction::new("reject", 1, promise_internal_reject),
     );
     ctx.register_builtin(
         "promise_resolve",
