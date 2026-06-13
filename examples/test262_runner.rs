@@ -7,9 +7,12 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct TestMeta {
     flags: Vec<String>,
     has_negative: bool,
+    negative_type: Option<String>,
+    negative_phase: Option<String>,
     includes: Vec<String>,
     features: Vec<String>,
     es5id: bool,
@@ -18,7 +21,6 @@ struct TestMeta {
 enum TestOutcome {
     Passed,
     Failed(String),
-    Skipped(()),
 }
 
 fn find_frontmatter_start(content: &str) -> Option<usize> {
@@ -68,6 +70,14 @@ fn parse_frontmatter(content: &str) -> Option<(TestMeta, &str)> {
 
     let has_negative = yaml.get("negative").and_then(|v| v.as_mapping()).is_some();
 
+    let (negative_type, negative_phase) = if let Some(neg) = yaml.get("negative").and_then(|v| v.as_mapping()) {
+        let ntype = neg.get("type").and_then(|v| v.as_str()).map(|s| s.to_string());
+        let nphase = neg.get("phase").and_then(|v| v.as_str()).map(|s| s.to_string());
+        (ntype, nphase)
+    } else {
+        (None, None)
+    };
+
     let includes: Vec<String> = yaml
         .get("includes")
         .and_then(|v| v.as_sequence())
@@ -92,6 +102,8 @@ fn parse_frontmatter(content: &str) -> Option<(TestMeta, &str)> {
         TestMeta {
             flags,
             has_negative,
+            negative_type,
+            negative_phase,
             includes,
             features,
             es5id: yaml.get("es5id").is_some(),
@@ -223,19 +235,11 @@ fn load_harness_file(harness_dir: &Path, filename: &str) -> Option<String> {
     }
 }
 
-fn run_test(
-    ctx: &mut pipa::JSContext,
-    code: &str,
-    meta: &TestMeta,
-    harness_code: &str,
-) -> TestOutcome {
-    if meta.es5id {
-        return TestOutcome::Passed;
-    }
+fn should_skip(meta: &TestMeta) -> bool {
     let unsupported_flags = ["module", "raw", "async"];
     for flag in &unsupported_flags {
         if meta.flags.contains(&flag.to_string()) {
-            return TestOutcome::Skipped(());
+            return true;
         }
     }
 
@@ -284,12 +288,15 @@ fn run_test(
     for feature in &unsupported_features {
         for f in &meta.features {
             if f.contains(feature) {
-                return TestOutcome::Skipped(());
+                return true;
             }
         }
     }
+    false
+}
 
-    let strict_prefix = if meta.flags.contains(&"onlyStrict".to_string()) {
+fn build_code(code: &str, harness_code: &str, force_strict: bool) -> String {
+    let strict_prefix = if force_strict {
         if !code.trim_start().starts_with("\"use strict\"")
             && !code.trim_start().starts_with("'use strict'")
         {
@@ -301,15 +308,56 @@ fn run_test(
         ""
     };
 
-    let full_code = if harness_code.is_empty() {
+    if harness_code.is_empty() {
         format!("{}{}", strict_prefix, code)
     } else {
         format!("{}{}\n{}", strict_prefix, harness_code, code)
+    }
+}
+
+fn error_matches_type(err: &str, expected_type: &Option<String>) -> bool {
+    let Some(etype) = expected_type else {
+        return true;
     };
+    let etype_lower = etype.to_lowercase();
+    let err_lower = err.to_lowercase();
+    err_lower.contains(&format!("{}:", etype_lower))
+        || err_lower.contains(&format!("{} ", etype_lower))
+        || err_lower.contains(&format!("uncaught {}", etype_lower))
+}
+
+fn run_test_mode(
+    ctx: &mut pipa::JSContext,
+    code: &str,
+    meta: &TestMeta,
+    harness_code: &str,
+    force_strict: bool,
+) -> TestOutcome {
+    let full_code = build_code(code, harness_code, force_strict);
 
     match eval(ctx, &full_code) {
-        Ok(_) => TestOutcome::Passed,
-        Err(e) => TestOutcome::Failed(e),
+        Ok(_) => {
+            if meta.has_negative {
+                TestOutcome::Failed("Expected error but test passed".to_string())
+            } else {
+                TestOutcome::Passed
+            }
+        }
+        Err(e) => {
+            if meta.has_negative {
+                if error_matches_type(&e, &meta.negative_type) {
+                    TestOutcome::Passed
+                } else {
+                    TestOutcome::Failed(format!(
+                        "Expected {} but got: {}",
+                        meta.negative_type.as_deref().unwrap_or("error"),
+                        e.lines().next().unwrap_or("unknown")
+                    ))
+                }
+            } else {
+                TestOutcome::Failed(e)
+            }
+        }
     }
 }
 
@@ -480,10 +528,6 @@ fn main() {
             continue;
         };
 
-        let mut rt = JSRuntime::new();
-        let mut ctx = rt.new_context();
-        inject_test262_globals(&mut ctx);
-
         let mut harness_code = String::new();
         if let Some(ref sta) = sta_js {
             harness_code.push_str(sta);
@@ -503,35 +547,61 @@ fn main() {
             }
         }
 
-        match run_test(&mut ctx, code_ref, &meta, &harness_code) {
-            TestOutcome::Passed => {
-                passed += 1;
-                if passed <= 50 || passed % 500 == 0 {
-                    println!("  ✓ {}", test_path);
+        if should_skip(&meta) {
+            skipped += 1;
+            continue;
+        }
+
+        let modes: Vec<bool> = if meta.flags.contains(&"onlyStrict".to_string()) {
+            vec![true]
+        } else if meta.flags.contains(&"noStrict".to_string()) {
+            vec![false]
+        } else {
+            vec![false, true]
+        };
+
+        let mut test_passed = true;
+        let mut test_error = String::new();
+        let mut mode_labels = Vec::new();
+
+        for &force_strict in modes.iter() {
+            let mut rt = JSRuntime::new();
+            let mut ctx = rt.new_context();
+            inject_test262_globals(&mut ctx);
+
+            let label = if modes.len() > 1 {
+                if force_strict { " (strict)" } else { " (non-strict)" }
+            } else {
+                ""
+            };
+            mode_labels.push(label);
+
+            match run_test_mode(&mut ctx, code_ref, &meta, &harness_code, force_strict) {
+                TestOutcome::Passed => {}
+                TestOutcome::Failed(e) => {
+                    test_passed = false;
+                    test_error = e;
                 }
             }
-            TestOutcome::Failed(e) => {
-                if meta.has_negative {
-                    passed += 1;
-                    if passed <= 50 {
-                        println!("  ✓ {} (expected error)", test_path);
-                    }
-                } else {
-                    failed += 1;
-                    println!(
-                        "  ✗ {} - {}",
-                        test_path,
-                        e.lines().next().unwrap_or("unknown error")
-                    );
-                    if failed <= 5 {
-                        for line in e.lines().skip(1) {
-                            println!("    | {}", line);
-                        }
-                    }
-                }
+        }
+
+        if test_passed {
+            passed += 1;
+            if passed <= 50 || passed % 500 == 0 {
+                println!("  ✓ {}", test_path);
             }
-            TestOutcome::Skipped(_) => {
-                skipped += 1;
+        } else {
+            failed += 1;
+            println!(
+                "  ✗ {}{} - {}",
+                test_path,
+                mode_labels.first().unwrap_or(&""),
+                test_error.lines().next().unwrap_or("unknown error")
+            );
+            if failed <= 5 {
+                for line in test_error.lines().skip(1) {
+                    println!("    | {}", line);
+                }
             }
         }
     }
