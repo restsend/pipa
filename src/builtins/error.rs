@@ -656,9 +656,13 @@ fn build_error(
         }
     }
     if args.len() > 1 && args[1].is_object() {
-        let opts = args[1].as_object();
-        if let Some(cause) = opts.get(ctx.intern("cause")) {
-            set_own_ne(&mut err, ctx.intern("cause"), cause);
+        let cause_atom = ctx.intern("cause");
+        let opts_this = args[1];
+        let opts = opts_this.as_object();
+        let cause = get_property(ctx, opts, cause_atom, &opts_this);
+        let _ = opts;
+        if let Some(cause) = cause {
+            set_own_ne(&mut err, cause_atom, cause);
         }
     }
     if let Some(p) = proto {
@@ -796,7 +800,9 @@ fn error_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     match (name, message) {
         (Ok(n), Ok(m)) => {
-            if m.is_empty() {
+            if n.is_empty() {
+                JSValue::new_string(ctx.intern(&m))
+            } else if m.is_empty() {
                 JSValue::new_string(ctx.intern(&n))
             } else {
                 JSValue::new_string(ctx.intern(&format!("{}: {}", n, m)))
