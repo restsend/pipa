@@ -1694,29 +1694,7 @@ pub fn js_to_number_value(ctx: &mut JSContext, v: &JSValue) -> Result<f64, ()> {
     }
     if v.is_string() {
         let s = ctx.get_atom_str(v.get_atom());
-        let s = s.trim();
-        if s.starts_with("0b") || s.starts_with("0B") {
-            return Ok(u64::from_str_radix(&s[2..], 2)
-                .map(|n| n as f64)
-                .unwrap_or(f64::NAN));
-        }
-        if s.starts_with("0o") || s.starts_with("0O") {
-            return Ok(u64::from_str_radix(&s[2..], 8)
-                .map(|n| n as f64)
-                .unwrap_or(f64::NAN));
-        }
-        if s.starts_with("0x") || s.starts_with("0X") {
-            return Ok(u64::from_str_radix(&s[2..], 16)
-                .map(|n| n as f64)
-                .unwrap_or(f64::NAN));
-        }
-        if let Ok(n) = s.parse::<i64>() {
-            return Ok(n as f64);
-        }
-        if let Ok(f) = s.parse::<f64>() {
-            return Ok(f);
-        }
-        return Ok(f64::NAN);
+        return Ok(crate::runtime::vm::VM::string_to_number(s));
     }
     if v.is_object() {
         let obj = v.as_object();
@@ -1773,6 +1751,9 @@ fn number_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Ok(f) => {
             if f.is_nan() {
                 return JSValue::new_float(f64::NAN);
+            }
+            if f == 0.0 && f.is_sign_negative() {
+                return JSValue::new_float(-0.0);
             }
             if f == f.floor() && f.is_finite() && f.abs() < 140737488355328.0 {
                 return JSValue::new_int(f as i64);
@@ -1976,7 +1957,7 @@ fn init_number(ctx: &mut JSContext) {
     }
 }
 
-fn number_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn number_value_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::undefined();
     }
@@ -1986,7 +1967,7 @@ fn number_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     if this.is_object() {
         let obj = this.as_object();
-        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+        if let Some(v) = obj.get(_ctx.common_atoms.__value__) {
             return v;
         }
     }
@@ -2477,7 +2458,24 @@ fn boolean_constructor(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn boolean_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return JSValue::new_string(ctx.intern("false"));
+        let mut err = JSObject::new();
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(
+                ctx.intern("Boolean.prototype.toString requires 'this' to be a Boolean"),
+            ),
+        );
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
     }
     let this = &args[0];
     if this.is_bool() {
@@ -2495,7 +2493,24 @@ fn boolean_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
         }
     }
-    JSValue::new_string(ctx.intern("false"))
+    let mut err = JSObject::new();
+    err.set(
+        ctx.common_atoms.name,
+        JSValue::new_string(ctx.intern("TypeError")),
+    );
+    err.set(
+        ctx.common_atoms.message,
+        JSValue::new_string(
+            ctx.intern("Boolean.prototype.toString requires 'this' to be a Boolean"),
+        ),
+    );
+    if let Some(proto) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto);
+    }
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+    JSValue::undefined()
 }
 
 fn boolean_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -2829,8 +2844,8 @@ fn init_regexp(ctx: &mut JSContext) {
 }
 
 fn init_promise(ctx: &mut JSContext) {
-    promise::init_promise(ctx);
     promise::register_builtins(ctx);
+    promise::init_promise(ctx);
 }
 
 fn init_global_funcs(ctx: &mut JSContext) {

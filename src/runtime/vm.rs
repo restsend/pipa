@@ -1039,7 +1039,7 @@ impl VM {
                     return Ok(false);
                 }
                 let needs_callee = Self::builtin_needs_callee(&builtin_name);
-                let pass_this = is_call_method && !needs_callee;
+                let pass_this = is_call_method && !needs_callee && js_func.builtin_needs_this();
                 let builtin_arg_count = argc as usize
                     + if pass_this { 1 } else { 0 }
                     + if needs_callee { 1 } else { 0 };
@@ -3136,7 +3136,8 @@ impl VM {
                     if val.is_int() || val.is_float() {
                         self.set_reg(dst, val);
                     } else {
-                        self.set_reg(dst, JSValue::new_float(val.get_float()));
+                        let n = Self::js_to_number(&val, ctx);
+                        self.set_reg(dst, JSValue::new_float(n));
                     }
                 }
 
@@ -8763,7 +8764,7 @@ impl VM {
             return f64::NAN;
         } else if v.is_string() {
             let s = ctx.get_atom_str(v.get_atom());
-            return s.trim().parse::<f64>().unwrap_or(f64::NAN);
+            return Self::string_to_number(s);
         } else if v.is_bigint() {
             let val = VM::get_bigint_int(v).unwrap_or(0);
             return val as f64;
@@ -8775,6 +8776,55 @@ impl VM {
             }
         }
         f64::NAN
+    }
+
+    pub fn string_to_number(s: &str) -> f64 {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return 0.0;
+        }
+        if trimmed == "Infinity" || trimmed == "+Infinity" {
+            return f64::INFINITY;
+        }
+        if trimmed == "-Infinity" {
+            return f64::NEG_INFINITY;
+        }
+        if (trimmed.starts_with("0x") || trimmed.starts_with("0X"))
+            && trimmed.len() > 2
+        {
+            let hex_part = &trimmed[2..];
+            if let Ok(n) = u64::from_str_radix(hex_part, 16) {
+                return n as f64;
+            }
+            return f64::NAN;
+        }
+        if (trimmed.starts_with("0o") || trimmed.starts_with("0O"))
+            && trimmed.len() > 2
+        {
+            let oct_part = &trimmed[2..];
+            if let Ok(n) = u64::from_str_radix(oct_part, 8) {
+                return n as f64;
+            }
+            return f64::NAN;
+        }
+        if (trimmed.starts_with("0b") || trimmed.starts_with("0B"))
+            && trimmed.len() > 2
+        {
+            let bin_part = &trimmed[2..];
+            if let Ok(n) = u64::from_str_radix(bin_part, 2) {
+                return n as f64;
+            }
+            return f64::NAN;
+        }
+        let result = trimmed.parse::<f64>().unwrap_or(f64::NAN);
+        if result.is_infinite()
+            && trimmed != "Infinity"
+            && trimmed != "+Infinity"
+            && trimmed != "-Infinity"
+        {
+            return f64::NAN;
+        }
+        result
     }
 
     fn to_int32(na: f64) -> i32 {

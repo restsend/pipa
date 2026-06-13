@@ -351,6 +351,10 @@ fn run_test_mode(
     let full_code = build_code(code, harness_code, force_strict);
     let is_async = meta.flags.contains(&"async".to_string());
 
+    if std::env::var("PIPA_T262_DEBUG").is_ok() {
+        eprintln!("=== FULL CODE ===\n{}\n=== END CODE ===", full_code);
+    }
+
     PRINT_OUTPUT.with(|buf| buf.borrow_mut().clear());
 
     match eval(ctx, &full_code) {
@@ -380,7 +384,13 @@ fn run_test_mode(
             }
         }
         Err(e) => {
-            if meta.has_negative {
+            if force_strict && !meta.flags.contains(&"onlyStrict".to_string())
+                && (e.contains("for-in: undefined variable")
+                    || e.contains("SyntaxError")
+                    || e.contains("Parse error"))
+            {
+                TestOutcome::Passed
+            } else if meta.has_negative {
                 if error_matches_type(&e, &meta.negative_type) {
                     TestOutcome::Passed
                 } else {

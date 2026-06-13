@@ -6528,10 +6528,7 @@ impl CodeGenerator {
                 };
                 let is_ns = matches!(&*member.object, Expression::Identifier(ident)
                 if matches!(ident.name.as_str(),
-                    "Math" | "Object" | "JSON" | "Number" | "String"
-                    | "Array" | "RegExp" | "Error" | "Function" | "Promise" | "Symbol"
-                    | "Map" | "Set" | "WeakMap" | "WeakSet" | "BigInt"
-                    | "Reflect" | "Proxy" | "console"
+                    "Math" | "JSON" | "Reflect" | "console"
                 ));
                 if is_ns {
                     (func_reg, None, Some(obj_reg))

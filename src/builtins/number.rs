@@ -225,13 +225,22 @@ pub fn number_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     format!("{}", f)
                 }
             } else {
-                "NaN".to_string()
+                return throw_type_error_if_no_exception(
+                    ctx,
+                    "Number.prototype.toString requires 'this' to be a Number",
+                );
             }
         } else {
-            "NaN".to_string()
+            return throw_type_error_if_no_exception(
+                ctx,
+                "Number.prototype.toString requires 'this' to be a Number",
+            );
         }
     } else {
-        "NaN".to_string()
+        return throw_type_error_if_no_exception(
+            ctx,
+            "Number.prototype.toString requires 'this' to be a Number",
+        );
     };
     JSValue::new_string(ctx.intern(&result))
 }
