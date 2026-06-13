@@ -16,6 +16,7 @@ const FLAG_USES_ARGUMENTS: u8 = 1 << 4;
 const FLAG_IS_STRICT: u8 = 1 << 5;
 
 const FLAG_HAS_SYMBOL_ON_BASE: u8 = 1 << 6;
+const FLAG_BUILTIN_NEEDS_THIS: u8 = 1 << 7;
 
 #[derive(Debug, Clone, Default)]
 pub struct UpvalueData {
@@ -154,6 +155,18 @@ impl JSFunction {
         self.flags & FLAG_USES_ARGUMENTS != 0
     }
     #[inline(always)]
+    pub fn builtin_needs_this(&self) -> bool {
+        self.flags & FLAG_BUILTIN_NEEDS_THIS != 0
+    }
+    #[inline(always)]
+    pub fn set_builtin_needs_this(&mut self, val: bool) {
+        if val {
+            self.flags |= FLAG_BUILTIN_NEEDS_THIS;
+        } else {
+            self.flags &= !FLAG_BUILTIN_NEEDS_THIS;
+        }
+    }
+    #[inline(always)]
     pub fn set_uses_arguments(&mut self, val: bool) {
         if val {
             self.flags |= FLAG_USES_ARGUMENTS;
@@ -206,6 +219,9 @@ impl JSFunction {
         self.builtin_atom = Some(atom);
 
         self.builtin_func = ctx.get_builtin_func(builtin_name);
+        if ctx.builtin_needs_this(builtin_name) {
+            self.set_builtin_needs_this(true);
+        }
         if let Some(display_name) = ctx.get_builtin_name(builtin_name) {
             self.name = ctx.intern(display_name);
         }

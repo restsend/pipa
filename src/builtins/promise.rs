@@ -16,6 +16,12 @@ pub enum PromiseState {
     Rejected,
 }
 
+impl PromiseState {
+    pub fn is_pending(&self) -> bool {
+        matches!(self, PromiseState::Pending)
+    }
+}
+
 #[derive(Clone)]
 pub struct Reaction {
     pub handler: JSValue,
@@ -801,6 +807,26 @@ fn promise_any(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     result_promise_val
 }
 
+fn promise_with_resolvers(ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
+    let mut promise = create_promise(ctx);
+    let ptr = Box::into_raw(Box::new(promise)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    let promise_val = JSValue::new_object(ptr);
+
+    let (resolve_val, reject_val) = create_resolve_reject_fns(ctx, promise_val);
+
+    let mut result = JSObject::new();
+    let promise_atom = ctx.intern("promise");
+    let resolve_atom = ctx.intern("resolve");
+    let reject_atom = ctx.intern("reject");
+    result.set(promise_atom, promise_val);
+    result.set(resolve_atom, resolve_val);
+    result.set(reject_atom, reject_val);
+    let result_ptr = Box::into_raw(Box::new(result)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(result_ptr);
+    JSValue::new_object(result_ptr)
+}
+
 fn resolve_value_as_promise(ctx: &mut JSContext, value: JSValue) -> JSValue {
     if value.is_object() {
         let obj = value.as_object();
@@ -815,48 +841,148 @@ fn resolve_value_as_promise(ctx: &mut JSContext, value: JSValue) -> JSValue {
     JSValue::new_object(ptr)
 }
 
-fn promise_executor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 3 {
+fn promise_internal_resolve(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this_val = args.get(0).copied().unwrap_or(JSValue::undefined());
+    let value = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !this_val.is_function() {
         return JSValue::undefined();
     }
-    let promise_val = args[0];
-    let resolve_fn = args[1];
-    let reject_fn = args[2];
-    if !promise_val.is_object() || !resolve_fn.is_function() || !reject_fn.is_function() {
+    let target_atom = ctx.intern("__target_promise__");
+    let func_obj = this_val.as_function();
+    let promise_val = func_obj.base.get(target_atom).unwrap_or(JSValue::undefined());
+    if !promise_val.is_object() {
         return JSValue::undefined();
     }
-    let promise_obj = promise_val.as_object_mut();
-    let result = get_promise_result(ctx, promise_obj);
-    if let Ok(result) = call_callback(ctx, resolve_fn, &[result]) {
-        if result.is_object() {
-            let result_obj = result.as_object_mut();
-            if result_obj.is_promise() {
-                let state = get_promise_state(ctx, result_obj);
-                let result_val = get_promise_result(ctx, result_obj);
-                let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
-                match state {
-                    PromiseState::Fulfilled => fulfill_promise(ctx, promise_obj, result_val),
-                    PromiseState::Rejected => reject_promise(ctx, promise_obj, result_val),
-                    PromiseState::Pending => {
-                        let mut reactions = get_promise_reactions(ctx, result_obj);
-                        reactions.push(Reaction {
-                            handler: promise_val,
-                            is_reject: false,
-                            is_all_settled: false,
-                            target_promise: JSValue::undefined(),
-                        });
-                        let reactions_arr = create_reaction_array(ctx, reactions);
-                        result_obj.set(reactions_atom, reactions_arr);
-                    }
+    let promise = promise_val.as_object_mut();
+    if !promise.is_promise() || !get_promise_state(ctx, promise).is_pending() {
+        return JSValue::undefined();
+    }
+    if value.is_object() {
+        let val_obj = value.as_object();
+        if val_obj.is_promise() {
+            let state = get_promise_state(ctx, val_obj);
+            let result_val = get_promise_result(ctx, val_obj);
+            match state {
+                PromiseState::Fulfilled => fulfill_promise(ctx, promise, result_val),
+                PromiseState::Rejected => reject_promise(ctx, promise, result_val),
+                PromiseState::Pending => {
+                    let already_atom = ctx.intern("__already_resolved__");
+                    promise.set(already_atom, JSValue::bool(true));
+                    let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
+                    let mut reactions = get_promise_reactions(ctx, val_obj);
+                    let target = promise_val;
+                    reactions.push(Reaction {
+                        handler: JSValue::undefined(),
+                        is_reject: false,
+                        is_all_settled: false,
+                        target_promise: target,
+                    });
+                    reactions.push(Reaction {
+                        handler: JSValue::undefined(),
+                        is_reject: true,
+                        is_all_settled: false,
+                        target_promise: target,
+                    });
+                    let reactions_arr = create_reaction_array(ctx, reactions);
+                    let val_mut = value.as_object_mut();
+                    val_mut.set(reactions_atom, reactions_arr);
+                    return JSValue::undefined();
                 }
-            } else {
-                fulfill_promise(ctx, promise_obj, result);
             }
-        } else {
-            fulfill_promise(ctx, promise_obj, result);
+            return JSValue::undefined();
         }
     }
+    fulfill_promise(ctx, promise, value);
     JSValue::undefined()
+}
+
+fn promise_internal_reject(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this_val = args.get(0).copied().unwrap_or(JSValue::undefined());
+    let reason = args.get(1).copied().unwrap_or(JSValue::undefined());
+    if !this_val.is_function() {
+        return JSValue::undefined();
+    }
+    let target_atom = ctx.intern("__target_promise__");
+    let func_obj = this_val.as_function();
+    let promise_val = func_obj.base.get(target_atom).unwrap_or(JSValue::undefined());
+    if !promise_val.is_object() {
+        return JSValue::undefined();
+    }
+    let promise = promise_val.as_object_mut();
+    if promise.is_promise() && get_promise_state(ctx, promise).is_pending() {
+        reject_promise(ctx, promise, reason);
+    }
+    JSValue::undefined()
+}
+
+fn create_resolve_reject_fns(ctx: &mut JSContext, promise_val: JSValue) -> (JSValue, JSValue) {
+    let empty_name = ctx.intern("");
+    let mut resolve_fn = crate::object::function::JSFunction::new_builtin(empty_name, 1);
+    resolve_fn.set_builtin_marker(ctx, "promise_internal_resolve");
+    resolve_fn.name = empty_name;
+    let name_desc = crate::object::object::PropertyDescriptor {
+        value: Some(JSValue::new_string(empty_name)),
+        writable: false,
+        enumerable: false,
+        configurable: true,
+        get: None,
+        set: None,
+    };
+    resolve_fn.base.define_property(ctx.common_atoms.name, name_desc);
+    let resolve_target_atom = ctx.intern("__target_promise__");
+    resolve_fn.base.set(resolve_target_atom, promise_val);
+    let resolve_ptr = Box::into_raw(Box::new(resolve_fn)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track_function(resolve_ptr);
+    let resolve_val = JSValue::new_function(resolve_ptr);
+
+    let mut reject_fn = crate::object::function::JSFunction::new_builtin(empty_name, 1);
+    reject_fn.set_builtin_marker(ctx, "promise_internal_reject");
+    reject_fn.name = empty_name;
+    let name_desc = crate::object::object::PropertyDescriptor {
+        value: Some(JSValue::new_string(empty_name)),
+        writable: false,
+        enumerable: false,
+        configurable: true,
+        get: None,
+        set: None,
+    };
+    reject_fn.base.define_property(ctx.common_atoms.name, name_desc);
+    let reject_target_atom = ctx.intern("__target_promise__");
+    reject_fn.base.set(reject_target_atom, promise_val);
+    let reject_ptr = Box::into_raw(Box::new(reject_fn)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track_function(reject_ptr);
+    let reject_val = JSValue::new_function(reject_ptr);
+
+    (resolve_val, reject_val)
+}
+
+fn promise_executor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let executor_fn = args.get(0).copied().unwrap_or(JSValue::undefined());
+    if !executor_fn.is_function() {
+        let mut promise = create_promise(ctx);
+        let ptr = Box::into_raw(Box::new(promise)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        let promise_val = JSValue::new_object(ptr);
+        let rp = promise_val.as_object_mut();
+        let msg = JSValue::new_string(ctx.intern("TypeError: Promise resolver undefined is not a function"));
+        reject_promise(ctx, rp, msg);
+        return promise_val;
+    }
+
+    let mut promise = create_promise(ctx);
+    let ptr = Box::into_raw(Box::new(promise)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    let promise_val = JSValue::new_object(ptr);
+
+    let (resolve_val, reject_val) = create_resolve_reject_fns(ctx, promise_val);
+
+    if let Err(e) = call_callback(ctx, executor_fn, &[resolve_val, reject_val]) {
+        let rp = promise_val.as_object_mut();
+        let msg = JSValue::new_string(ctx.intern(&e));
+        reject_promise(ctx, rp, msg);
+    }
+
+    promise_val
 }
 
 fn call_callback(
@@ -896,38 +1022,48 @@ fn create_promise_prototype(ctx: &mut JSContext) -> JSValue {
 
 pub fn init_promise(ctx: &mut JSContext) {
     let promise_atom = ctx.intern("Promise");
-    let mut promise_obj = JSObject::new_function();
+    let mut promise_func = crate::object::function::JSFunction::new_builtin(promise_atom, 1);
+    promise_func.set_builtin_marker(ctx, "promise_executor");
     let proto_value = create_promise_prototype(ctx);
 
     let proto_ptr = proto_value.get_ptr();
     ctx.set_promise_prototype(proto_ptr);
-    promise_obj.set(ctx.intern("prototype"), proto_value);
-    promise_obj.set(
+    promise_func.base.set(ctx.intern("prototype"), proto_value);
+    promise_func.base.set(
         ctx.intern("resolve"),
         create_builtin_function(ctx, "promise_resolve"),
     );
-    promise_obj.set(
+    promise_func.base.set(
         ctx.intern("reject"),
         create_builtin_function(ctx, "promise_reject"),
     );
-    promise_obj.set(
+    promise_func.base.set(
         ctx.intern("all"),
         create_builtin_function(ctx, "promise_all"),
     );
-    promise_obj.set(
+    promise_func.base.set(
         ctx.intern("race"),
         create_builtin_function(ctx, "promise_race"),
     );
-    promise_obj.set(
+    promise_func.base.set(
         ctx.intern("allSettled"),
         create_builtin_function(ctx, "promise_allSettled"),
     );
-    promise_obj.set(
+    promise_func.base.set(
         ctx.intern("any"),
         create_builtin_function(ctx, "promise_any"),
     );
-    let promise_ptr = Box::into_raw(Box::new(promise_obj)) as usize;
-    let promise_value = JSValue::new_object(promise_ptr);
+    promise_func.base.set(
+        ctx.intern("withResolvers"),
+        create_builtin_function(ctx, "promise_with_resolvers"),
+    );
+    let promise_ptr = Box::into_raw(Box::new(promise_func)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track_function(promise_ptr);
+    let promise_value = JSValue::new_function(promise_ptr);
+
+    let proto_mut = unsafe { &mut *(proto_ptr as *mut JSObject) };
+    proto_mut.set(ctx.intern("constructor"), promise_value);
+
     let global = ctx.global();
     if global.is_object() {
         let global_obj = global.as_object_mut();
@@ -1107,7 +1243,15 @@ fn handle_all_settled_reaction(ctx: &mut JSContext, vm: &mut crate::runtime::vm:
 pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "promise_executor",
-        HostFunction::ctor("executor", 3, promise_executor),
+        HostFunction::ctor("executor", 1, promise_executor),
+    );
+    ctx.register_builtin(
+        "promise_internal_resolve",
+        HostFunction::method("resolve", 1, promise_internal_resolve),
+    );
+    ctx.register_builtin(
+        "promise_internal_reject",
+        HostFunction::method("reject", 1, promise_internal_reject),
     );
     ctx.register_builtin(
         "promise_resolve",
@@ -1136,4 +1280,8 @@ pub fn register_builtins(ctx: &mut JSContext) {
         HostFunction::new("allSettled", 1, promise_all_settled),
     );
     ctx.register_builtin("promise_any", HostFunction::new("any", 1, promise_any));
+    ctx.register_builtin(
+        "promise_with_resolvers",
+        HostFunction::new("withResolvers", 0, promise_with_resolvers),
+    );
 }
