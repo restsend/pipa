@@ -17,6 +17,20 @@ fn throw_type_error(ctx: &mut JSContext, msg: &str) {
     ctx.pending_exception = Some(JSValue::new_object(ptr));
 }
 
+fn throw_range_error(ctx: &mut JSContext, msg: &str) {
+    let mut err = JSObject::new();
+    if let Some(proto_ptr) = ctx.get_range_error_prototype() {
+        err.prototype = Some(proto_ptr);
+    }
+    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("RangeError")));
+    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(msg)));
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
+}
+
+const ARRAY_LENGTH_LIMIT: u64 = 4294967295;
+
 #[inline(always)]
 fn require_object_coercible(ctx: &mut JSContext, val: &JSValue) -> bool {
     if val.is_undefined() || val.is_null() {
@@ -1969,8 +1983,13 @@ fn array_to_spliced(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        safe_array_len_with_ctx(&arr, len_atom, ctx) as usize
+        safe_array_len_with_ctx(&arr, len_atom, ctx)
     };
+    if len > ARRAY_LENGTH_LIMIT {
+        throw_range_error(ctx, "Invalid array length");
+        return JSValue::undefined();
+    }
+    let len = len as usize;
     let start = args
         .get(1)
         .map(|v| {
@@ -1986,6 +2005,12 @@ fn array_to_spliced(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         .get(2)
         .map(|v| (v.get_int() as usize).min(len - start))
         .unwrap_or(len - start);
+    let insert_count = args.len().saturating_sub(3);
+    let new_len = (len + insert_count).saturating_sub(delete_count);
+    if new_len as u64 > ARRAY_LENGTH_LIMIT {
+        throw_range_error(ctx, "Invalid array length");
+        return JSValue::undefined();
+    }
     let insert_items: Vec<JSValue> = args.iter().skip(3).copied().collect();
 
     let mut elements: Vec<JSValue> = (0..len)
@@ -2225,8 +2250,13 @@ fn array_to_sorted(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        safe_array_len_with_ctx(&arr, len_atom, ctx) as usize
+        safe_array_len_with_ctx(&arr, len_atom, ctx)
     };
+    if len > ARRAY_LENGTH_LIMIT {
+        throw_range_error(ctx, "Invalid array length");
+        return JSValue::undefined();
+    }
+    let len = len as usize;
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
             let arr = this.as_object();
@@ -2279,8 +2309,13 @@ fn array_to_reversed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        safe_array_len_with_ctx(&arr, len_atom, ctx) as usize
+        safe_array_len_with_ctx(&arr, len_atom, ctx)
     };
+    if len > ARRAY_LENGTH_LIMIT {
+        throw_range_error(ctx, "Invalid array length");
+        return JSValue::undefined();
+    }
+    let len = len as usize;
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
             let arr = this.as_object();
@@ -2311,8 +2346,13 @@ fn array_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
-        safe_array_len_with_ctx(&arr, len_atom, ctx) as usize
+        safe_array_len_with_ctx(&arr, len_atom, ctx)
     };
+    if len > ARRAY_LENGTH_LIMIT {
+        throw_range_error(ctx, "Invalid array length");
+        return JSValue::undefined();
+    }
+    let len = len as usize;
     let mut elements: Vec<JSValue> = (0..len)
         .map(|i| {
             let arr = this.as_object();

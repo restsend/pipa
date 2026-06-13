@@ -245,10 +245,6 @@ fn should_skip(meta: &TestMeta) -> bool {
 
     let unsupported_features = [
         "hashbang",
-        "Array.prototype.toSorted",
-        "Array.prototype.toReversed",
-        "Array.prototype.toSpliced",
-        "Array.prototype.with",
         "String.prototype.isWellFormed",
         "String.prototype.toWellFormed",
         "Promise.allSettled",
