@@ -279,7 +279,6 @@ fn should_skip(meta: &TestMeta) -> bool {
         "Intl.Collator",
         "Intl.Locale",
         "resizable-arraybuffer",
-        "error-cause",
         "Error.isError",
         "error-stack-accessor",
         "Proxy",
