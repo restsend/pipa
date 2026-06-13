@@ -254,7 +254,6 @@ fn should_skip(meta: &TestMeta) -> bool {
         "ExportDefault",
         "ExportAllFrom",
         "ImportAssertions",
-        "Math.sumPrecise",
         "class-fields-private",
         "RegExp Unicode Sets",
         " Symbols",
