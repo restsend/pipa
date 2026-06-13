@@ -244,8 +244,6 @@ fn should_skip(meta: &TestMeta) -> bool {
     }
 
     let unsupported_features = [
-        "Promise.allSettled",
-        "Promise.any",
         "FinalizationRegistry",
         "WeakRef",
         "Top-level-await",

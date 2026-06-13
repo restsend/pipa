@@ -73,6 +73,37 @@ fn intern_str(ctx: &mut JSContext, s: &str) -> crate::runtime::atom::Atom {
     ctx.intern(s)
 }
 
+fn get_array_element(obj: &JSObject, index: usize, ctx: &mut JSContext) -> JSValue {
+    if obj.is_dense_array() {
+        let ptr = obj as *const JSObject as *const crate::object::array_obj::JSArrayObject;
+        let arr = unsafe { &*ptr };
+        if index < arr.elements.len() {
+            return arr.elements[index];
+        }
+        return JSValue::undefined();
+    }
+    if let Some(val) = obj.get_indexed(index) {
+        return val;
+    }
+    let idx_atom = ctx.intern(&index.to_string());
+    obj.get(idx_atom).unwrap_or(JSValue::undefined())
+}
+
+fn get_array_length(obj: &JSObject, ctx: &mut JSContext) -> usize {
+    if obj.is_dense_array() {
+        let ptr = obj as *const JSObject as *const crate::object::array_obj::JSArrayObject;
+        let arr = unsafe { &*ptr };
+        return arr.elements.len();
+    }
+    let length_atom = intern_str(ctx, "length");
+    let len_val = obj.get(length_atom).unwrap_or(JSValue::new_int(0));
+    if len_val.is_int() {
+        len_val.get_int().max(0) as usize
+    } else {
+        0
+    }
+}
+
 fn get_promise_state(ctx: &mut JSContext, obj: &JSObject) -> PromiseState {
     let state_atom = intern_str(ctx, PROMISE_STATE_SLOT);
     if let Some(state_val) = obj.get(state_atom) {
@@ -127,16 +158,25 @@ fn get_promise_reactions(ctx: &mut JSContext, obj: &JSObject) -> Vec<Reaction> {
                         let r_obj = r_val.as_object();
                         let handler_atom = intern_str(ctx, "handler");
                         let is_reject_atom = intern_str(ctx, "isReject");
+                        let all_settled_atom = intern_str(ctx, "allSettled");
+                        let target_atom = intern_str(ctx, "target");
                         if let Some(handler) = r_obj.get(handler_atom) {
                             let is_reject = r_obj
                                 .get(is_reject_atom)
                                 .map(|v| v.get_bool())
                                 .unwrap_or(false);
+                            let is_all_settled = r_obj
+                                .get(all_settled_atom)
+                                .map(|v| v.get_bool())
+                                .unwrap_or(false);
+                            let target_promise = r_obj
+                                .get(target_atom)
+                                .unwrap_or(JSValue::undefined());
                             reactions.push(Reaction {
                                 handler,
                                 is_reject,
-                                is_all_settled: false,
-                                target_promise: JSValue::undefined(),
+                                is_all_settled,
+                                target_promise,
                             });
                         }
                     }
@@ -156,13 +196,19 @@ fn create_reaction_array(ctx: &mut JSContext, reactions: Vec<Reaction>) -> JSVal
         let mut r_obj = JSObject::new();
         let handler_atom = intern_str(ctx, "handler");
         let is_reject_atom = intern_str(ctx, "isReject");
+        let all_settled_atom = intern_str(ctx, "allSettled");
+        let target_atom = intern_str(ctx, "target");
         r_obj.set(handler_atom, reaction.handler);
         r_obj.set(is_reject_atom, JSValue::bool(reaction.is_reject));
+        r_obj.set(all_settled_atom, JSValue::bool(reaction.is_all_settled));
+        r_obj.set(target_atom, reaction.target_promise);
         let r_ptr = Box::into_raw(Box::new(r_obj)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(r_ptr);
         let idx_atom = intern_str(ctx, &i.to_string());
         arr.set(idx_atom, JSValue::new_object(r_ptr));
     }
     let ptr = Box::into_raw(Box::new(arr)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
     JSValue::new_object(ptr)
 }
 
@@ -431,46 +477,85 @@ fn promise_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let result_promise = create_promise(ctx);
     let result_promise_ptr = Box::into_raw(Box::new(result_promise)) as usize;
     let result_promise_val = JSValue::new_object(result_promise_ptr);
+    ctx.runtime_mut().gc_heap_mut().track(result_promise_ptr);
 
     if !iterable.is_object() {
         let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.all requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
+        let msg = JSValue::new_string(ctx.intern("TypeError: object is not iterable (cannot read property Symbol.iterator)"));
+        reject_promise(ctx, rp, msg);
         return result_promise_val;
     }
 
     let obj = iterable.as_object();
 
-    let length_atom = intern_str(ctx, "length");
-    let len_val = obj.get(length_atom).unwrap_or(JSValue::undefined());
-    if !len_val.is_int() {
+    let len = get_array_length(&obj, ctx);
+
+    if len == 0 {
+        let mut empty_arr = JSObject::new_array();
+        let length_atom = intern_str(ctx, "length");
+        empty_arr.set(length_atom, JSValue::new_int(0));
+        let arr_ptr = Box::into_raw(Box::new(empty_arr)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(arr_ptr);
         let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.all requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
+        fulfill_promise(ctx, rp, JSValue::new_object(arr_ptr));
         return result_promise_val;
     }
 
-    let len = len_val.get_int() as usize;
+    let mut results_arr = JSObject::new_array();
+    let length_atom = intern_str(ctx, "length");
+    results_arr.set(length_atom, JSValue::new_int(len as i64));
+    let results_ptr = Box::into_raw(Box::new(results_arr)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(results_ptr);
+    let results_val = JSValue::new_object(results_ptr);
 
-    let pending_atom = ctx.intern("__promise_all_pending__");
-    let result_promise_mut = result_promise_val.as_object_mut();
-    result_promise_mut.set(pending_atom, JSValue::new_int(len as i64));
+    let remaining_atom = ctx.intern("__all_remaining__");
+    let results_slot_atom = ctx.intern("__all_results__");
+    let rp = result_promise_val.as_object_mut();
+    rp.set(remaining_atom, JSValue::new_int(len as i64));
+    rp.set(results_slot_atom, results_val);
 
     for i in 0..len {
-        let idx_atom = ctx.intern(&i.to_string());
-        let item = obj.get(idx_atom).unwrap_or(JSValue::undefined());
+        let item = get_array_element(&obj, i, ctx);
 
-        let reaction = Reaction {
-            handler: JSValue::new_int(i as i64),
-            is_reject: false,
-            is_all_settled: false,
-            target_promise: JSValue::undefined(),
-        };
-        ctx.microtask_enqueue(Microtask::Reaction(reaction, item));
+        let resolved = resolve_value_as_promise(ctx, item);
+        let promise = resolved.as_object_mut();
+        let state = get_promise_state(ctx, promise);
+        match state {
+            PromiseState::Fulfilled => {
+                let value = get_promise_result(ctx, promise);
+                let reaction = Reaction {
+                    handler: JSValue::new_int(i as i64),
+                    is_reject: false,
+                    is_all_settled: false,
+                    target_promise: result_promise_val,
+                };
+                ctx.microtask_enqueue(Microtask::Reaction(reaction, value));
+            }
+            PromiseState::Rejected => {
+                let reason = get_promise_result(ctx, promise);
+                let rp = result_promise_val.as_object_mut();
+                reject_promise(ctx, rp, reason);
+                return result_promise_val;
+            }
+            PromiseState::Pending => {
+                let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
+                let mut reactions = get_promise_reactions(ctx, promise);
+                reactions.push(Reaction {
+                    handler: JSValue::new_int(i as i64),
+                    is_reject: false,
+                    is_all_settled: false,
+                    target_promise: result_promise_val,
+                });
+                reactions.push(Reaction {
+                    handler: JSValue::new_int(i as i64),
+                    is_reject: true,
+                    is_all_settled: false,
+                    target_promise: result_promise_val,
+                });
+                let reactions_arr = create_reaction_array(ctx, reactions);
+                promise.set(reactions_atom, reactions_arr);
+            }
+        }
     }
 
     result_promise_val
@@ -482,46 +567,56 @@ fn promise_race(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let result_promise = create_promise(ctx);
     let result_promise_ptr = Box::into_raw(Box::new(result_promise)) as usize;
     let result_promise_val = JSValue::new_object(result_promise_ptr);
+    ctx.runtime_mut().gc_heap_mut().track(result_promise_ptr);
 
     if !iterable.is_object() {
         let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.race requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
+        let msg = JSValue::new_string(ctx.intern("TypeError: object is not iterable (cannot read property Symbol.iterator)"));
+        reject_promise(ctx, rp, msg);
         return result_promise_val;
     }
 
     let obj = iterable.as_object();
-
-    let length_atom = intern_str(ctx, "length");
-    let len_val = obj.get(length_atom).unwrap_or(JSValue::undefined());
-    if !len_val.is_int() {
-        let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.race requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
-        return result_promise_val;
-    }
-
-    let len = len_val.get_int() as usize;
-
-    if len == 0 {
-        return result_promise_val;
-    }
+    let len = get_array_length(&obj, ctx);
 
     for i in 0..len {
-        let idx_atom = ctx.intern(&i.to_string());
-        let item = obj.get(idx_atom).unwrap_or(JSValue::undefined());
+        let item = get_array_element(&obj, i, ctx);
+        let resolved = resolve_value_as_promise(ctx, item);
+        let promise = resolved.as_object_mut();
+        let state = get_promise_state(ctx, promise);
 
-        let reaction = Reaction {
-            handler: JSValue::new_int(i as i64),
-            is_reject: false,
-            is_all_settled: false,
-            target_promise: JSValue::undefined(),
-        };
-        ctx.microtask_enqueue(Microtask::Reaction(reaction, item));
+        match state {
+            PromiseState::Fulfilled => {
+                let value = get_promise_result(ctx, promise);
+                let rp = result_promise_val.as_object_mut();
+                fulfill_promise(ctx, rp, value);
+                return result_promise_val;
+            }
+            PromiseState::Rejected => {
+                let reason = get_promise_result(ctx, promise);
+                let rp = result_promise_val.as_object_mut();
+                reject_promise(ctx, rp, reason);
+                return result_promise_val;
+            }
+            PromiseState::Pending => {
+                let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
+                let mut reactions = get_promise_reactions(ctx, promise);
+                reactions.push(Reaction {
+                    handler: JSValue::new_int(-1),
+                    is_reject: false,
+                    is_all_settled: false,
+                    target_promise: result_promise_val,
+                });
+                reactions.push(Reaction {
+                    handler: JSValue::new_int(-1),
+                    is_reject: true,
+                    is_all_settled: false,
+                    target_promise: result_promise_val,
+                });
+                let reactions_arr = create_reaction_array(ctx, reactions);
+                promise.set(reactions_atom, reactions_arr);
+            }
+        }
     }
 
     result_promise_val
@@ -536,43 +631,86 @@ fn promise_all_settled(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     if !iterable.is_object() {
         let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.allSettled requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
+        let msg = JSValue::new_string(ctx.intern("TypeError: object is not iterable (cannot read property Symbol.iterator)"));
+        reject_promise(ctx, rp, msg);
         return result_promise_val;
     }
 
     let obj = iterable.as_object();
 
-    let length_atom = intern_str(ctx, "length");
-    let len_val = obj.get(length_atom).unwrap_or(JSValue::undefined());
-    if !len_val.is_int() {
+    let len = get_array_length(&obj, ctx);
+
+    if len == 0 {
+        let mut empty_arr = JSObject::new_array();
+        let length_atom = intern_str(ctx, "length");
+        empty_arr.set(length_atom, JSValue::new_int(0));
+        let arr_ptr = Box::into_raw(Box::new(empty_arr)) as usize;
         let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.allSettled requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
+        fulfill_promise(ctx, rp, JSValue::new_object(arr_ptr));
+        ctx.runtime_mut().gc_heap_mut().track(arr_ptr);
         return result_promise_val;
     }
 
-    let len = len_val.get_int() as usize;
+    let mut results_arr = JSObject::new_array();
+    let length_atom = intern_str(ctx, "length");
+    results_arr.set(length_atom, JSValue::new_int(len as i64));
+    let results_ptr = Box::into_raw(Box::new(results_arr)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(results_ptr);
+    let results_val = JSValue::new_object(results_ptr);
 
-    let pending_atom = intern_str(ctx, "__promise_all_pending__");
-    let result_promise_mut = result_promise_val.as_object_mut();
-    result_promise_mut.set(pending_atom, JSValue::new_int(len as i64));
+    let remaining_atom = ctx.intern("__allSettled_remaining__");
+    let results_slot_atom = ctx.intern("__allSettled_results__");
+    let rp = result_promise_val.as_object_mut();
+    rp.set(remaining_atom, JSValue::new_int(len as i64));
+    rp.set(results_slot_atom, results_val);
 
     for i in 0..len {
-        let idx_atom = ctx.intern(&i.to_string());
-        let item = obj.get(idx_atom).unwrap_or(JSValue::undefined());
+        let item = get_array_element(&obj, i, ctx);
 
-        let reaction = Reaction {
-            handler: JSValue::new_int(i as i64),
-            is_reject: false,
-            is_all_settled: true,
-            target_promise: JSValue::undefined(),
-        };
-        ctx.microtask_enqueue(Microtask::Reaction(reaction, item));
+        let resolved = resolve_value_as_promise(ctx, item);
+
+        let promise = resolved.as_object_mut();
+        let state = get_promise_state(ctx, promise);
+        match state {
+            PromiseState::Fulfilled => {
+                let value = get_promise_result(ctx, promise);
+                let reaction = Reaction {
+                    handler: JSValue::new_int(i as i64),
+                    is_reject: false,
+                    is_all_settled: true,
+                    target_promise: result_promise_val,
+                };
+                ctx.microtask_enqueue(Microtask::Reaction(reaction, value));
+            }
+            PromiseState::Rejected => {
+                let reason = get_promise_result(ctx, promise);
+                let reaction = Reaction {
+                    handler: JSValue::new_int(i as i64),
+                    is_reject: true,
+                    is_all_settled: true,
+                    target_promise: result_promise_val,
+                };
+                ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
+            }
+            PromiseState::Pending => {
+                let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
+                let mut reactions = get_promise_reactions(ctx, promise);
+                reactions.push(Reaction {
+                    handler: JSValue::new_int(i as i64),
+                    is_reject: false,
+                    is_all_settled: true,
+                    target_promise: result_promise_val,
+                });
+                reactions.push(Reaction {
+                    handler: JSValue::new_int(i as i64),
+                    is_reject: true,
+                    is_all_settled: true,
+                    target_promise: result_promise_val,
+                });
+                let reactions_arr = create_reaction_array(ctx, reactions);
+                promise.set(reactions_atom, reactions_arr);
+            }
+        }
     }
 
     result_promise_val
@@ -586,47 +724,95 @@ fn promise_any(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let result_promise_val = JSValue::new_object(result_promise_ptr);
 
     if !iterable.is_object() {
+        let msg = JSValue::new_string(ctx.intern("TypeError: object is not iterable (cannot read property Symbol.iterator)"));
         let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.any requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
+        reject_promise(ctx, rp, msg);
         return result_promise_val;
     }
 
     let obj = iterable.as_object();
 
-    let length_atom = intern_str(ctx, "length");
-    let len_val = obj.get(length_atom).unwrap_or(JSValue::undefined());
-    if !len_val.is_int() {
+    let len = get_array_length(&obj, ctx);
+
+    if len == 0 {
         let rp = result_promise_val.as_object_mut();
-        let err_val =
-            JSValue::new_string(ctx.intern("TypeError: Promise.any requires an iterable"));
-        set_promise_result(ctx, rp, err_val);
-        set_promise_state(ctx, rp, PromiseState::Rejected);
+        let mut err = JSObject::new();
+        err.set(intern_str(ctx, "name"), JSValue::new_string(ctx.intern("AggregateError")));
+        err.set(intern_str(ctx, "message"), JSValue::new_string(ctx.intern("All promises were rejected")));
+        if let Some(proto) = ctx.get_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let err_ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(err_ptr);
+        reject_promise(ctx, rp, JSValue::new_object(err_ptr));
         return result_promise_val;
     }
 
-    let len = len_val.get_int() as usize;
-
-    let pending_atom = intern_str(ctx, "__promise_any_pending__");
-    let result_promise_mut = result_promise_val.as_object_mut();
-    result_promise_mut.set(pending_atom, JSValue::new_int(len as i64));
+    let remaining_atom = ctx.intern("__any_remaining__");
+    let rp = result_promise_val.as_object_mut();
+    rp.set(remaining_atom, JSValue::new_int(len as i64));
 
     for i in 0..len {
-        let idx_atom = ctx.intern(&i.to_string());
-        let item = obj.get(idx_atom).unwrap_or(JSValue::undefined());
+        let item = get_array_element(&obj, i, ctx);
 
-        let reaction = Reaction {
-            handler: JSValue::new_int(i as i64),
-            is_reject: false,
-            is_all_settled: false,
-            target_promise: JSValue::undefined(),
-        };
-        ctx.microtask_enqueue(Microtask::Reaction(reaction, item));
+        let resolved = resolve_value_as_promise(ctx, item);
+        let promise = resolved.as_object_mut();
+        let state = get_promise_state(ctx, promise);
+
+        match state {
+            PromiseState::Fulfilled => {
+                let value = get_promise_result(ctx, promise);
+                let rp = result_promise_val.as_object_mut();
+                fulfill_promise(ctx, rp, value);
+                return result_promise_val;
+            }
+            PromiseState::Rejected | PromiseState::Pending => {
+                if state == PromiseState::Pending {
+                    let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
+                    let mut reactions = get_promise_reactions(ctx, promise);
+                    reactions.push(Reaction {
+                        handler: JSValue::new_int(i as i64),
+                        is_reject: false,
+                        is_all_settled: false,
+                        target_promise: result_promise_val,
+                    });
+                    reactions.push(Reaction {
+                        handler: JSValue::new_int(i as i64),
+                        is_reject: true,
+                        is_all_settled: false,
+                        target_promise: result_promise_val,
+                    });
+                    let reactions_arr = create_reaction_array(ctx, reactions);
+                    promise.set(reactions_atom, reactions_arr);
+                } else {
+                    let reason = get_promise_result(ctx, promise);
+                    let reaction = Reaction {
+                        handler: JSValue::new_int(i as i64),
+                        is_reject: true,
+                        is_all_settled: false,
+                        target_promise: result_promise_val,
+                    };
+                    ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
+                }
+            }
+        }
     }
 
     result_promise_val
+}
+
+fn resolve_value_as_promise(ctx: &mut JSContext, value: JSValue) -> JSValue {
+    if value.is_object() {
+        let obj = value.as_object();
+        if obj.is_promise() {
+            return value;
+        }
+    }
+    let mut promise = create_promise(ctx);
+    fulfill_promise(ctx, &mut promise, value);
+    let ptr = Box::into_raw(Box::new(promise)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    JSValue::new_object(ptr)
 }
 
 fn promise_executor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -795,7 +981,64 @@ pub fn run_microtasks_with_vm(ctx: &mut JSContext, vm: &mut crate::runtime::vm::
     while let Some(task) = ctx.microtask_dequeue() {
         match task {
             Microtask::Reaction(reaction, argument) => {
+                if reaction.is_all_settled {
+                    handle_all_settled_reaction(ctx, vm, &reaction, argument);
+                    continue;
+                }
                 let handler = reaction.handler;
+                if handler.is_int() && reaction.target_promise.is_object() {
+                    let target = reaction.target_promise.as_object_mut();
+                    if target.is_promise() && get_promise_state(ctx, target) == PromiseState::Pending {
+                        let all_remaining_atom = ctx.intern("__all_remaining__");
+                        let any_remaining_atom = ctx.intern("__any_remaining__");
+                        if target.get(all_remaining_atom).is_some() {
+                            if reaction.is_reject {
+                                reject_promise(ctx, target, argument);
+                            } else {
+                                let idx = handler.get_int() as usize;
+                                let results_slot = ctx.intern("__all_results__");
+                                if let Some(results_val) = target.get(results_slot) {
+                                    if results_val.is_object() {
+                                        let results_arr = results_val.as_object_mut();
+                                        let idx_atom = ctx.intern(&idx.to_string());
+                                        results_arr.set(idx_atom, argument);
+                                    }
+                                }
+                                let remaining = target.get(all_remaining_atom).unwrap().get_int() - 1;
+                                target.set(all_remaining_atom, JSValue::new_int(remaining));
+                                if remaining <= 0 {
+                                    let results = target.get(results_slot).unwrap_or(JSValue::undefined());
+                                    fulfill_promise(ctx, target, results);
+                                }
+                            }
+                        } else if target.get(any_remaining_atom).is_some() {
+                            if reaction.is_reject {
+                                let remaining = target.get(any_remaining_atom).unwrap().get_int() - 1;
+                                target.set(any_remaining_atom, JSValue::new_int(remaining));
+                                if remaining <= 0 {
+                                    let mut err = JSObject::new();
+                                    err.set(intern_str(ctx, "name"), JSValue::new_string(ctx.intern("AggregateError")));
+                                    err.set(intern_str(ctx, "message"), JSValue::new_string(ctx.intern("All promises were rejected")));
+                                    if let Some(proto) = ctx.get_error_prototype() {
+                                        err.prototype = Some(proto);
+                                    }
+                                    let err_ptr = Box::into_raw(Box::new(err)) as usize;
+                                    ctx.runtime_mut().gc_heap_mut().track(err_ptr);
+                                    reject_promise(ctx, target, JSValue::new_object(err_ptr));
+                                }
+                            } else {
+                                fulfill_promise(ctx, target, argument);
+                            }
+                        } else {
+                            if reaction.is_reject {
+                                reject_promise(ctx, target, argument);
+                            } else {
+                                fulfill_promise(ctx, target, argument);
+                            }
+                        }
+                    }
+                    continue;
+                }
                 if handler.is_function() {
                     let result = vm.call_function(ctx, handler, &[argument]);
                     if reaction.target_promise.is_object() {
@@ -816,6 +1059,47 @@ pub fn run_microtasks_with_vm(ctx: &mut JSContext, vm: &mut crate::runtime::vm::
                     let _result = vm.call_function(ctx, callback, &args);
                 }
             }
+        }
+    }
+}
+
+fn handle_all_settled_reaction(ctx: &mut JSContext, vm: &mut crate::runtime::vm::VM, reaction: &Reaction, argument: JSValue) {
+    let idx = reaction.handler.get_int() as usize;
+    let target = reaction.target_promise;
+    if !target.is_object() {
+        return;
+    }
+
+    let mut result_obj = JSObject::new();
+    let status_atom = ctx.intern("status");
+    if reaction.is_reject {
+        result_obj.set(status_atom, JSValue::new_string(ctx.intern("rejected")));
+        result_obj.set(ctx.intern("reason"), argument);
+    } else {
+        result_obj.set(status_atom, JSValue::new_string(ctx.intern("fulfilled")));
+        result_obj.set(ctx.intern("value"), argument);
+    }
+    let r_ptr = Box::into_raw(Box::new(result_obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(r_ptr);
+    let result_val = JSValue::new_object(r_ptr);
+
+    let target_obj = target.as_object_mut();
+    let results_slot = ctx.intern("__allSettled_results__");
+    if let Some(results_val) = target_obj.get(results_slot) {
+        if results_val.is_object() {
+            let results_arr = results_val.as_object_mut();
+            let idx_atom = ctx.intern(&idx.to_string());
+            results_arr.set(idx_atom, result_val);
+        }
+    }
+
+    let remaining_atom = ctx.intern("__allSettled_remaining__");
+    if let Some(rem_val) = target_obj.get(remaining_atom) {
+        let remaining = rem_val.get_int() - 1;
+        target_obj.set(remaining_atom, JSValue::new_int(remaining));
+        if remaining <= 0 {
+            let results = target_obj.get(results_slot).unwrap_or(JSValue::undefined());
+            fulfill_promise(ctx, target_obj, results);
         }
     }
 }
