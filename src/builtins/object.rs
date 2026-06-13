@@ -808,7 +808,7 @@ fn object_set_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let obj = args[0].as_object_mut();
-    if args[1].is_object() {
+    if args[1].is_object_like() {
         let new_proto = args[1].get_ptr() as *mut JSObject;
         // Object.prototype is immutable
         if let Some(proto_ptr) = ctx.get_object_prototype() {

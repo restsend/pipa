@@ -1158,7 +1158,7 @@ impl VM {
                     let target_func = bound_fn.as_function();
                     let proto_atom = ctx.common_atoms.prototype;
                     if let Some(proto_val) = target_func.base.get(proto_atom) {
-                        if proto_val.is_object() {
+                        if proto_val.is_object_like() {
                             let proto_ptr = proto_val.get_ptr();
                             new_obj.prototype = Some(proto_ptr as *mut crate::object::object::JSObject);
                         }
@@ -6139,7 +6139,7 @@ impl VM {
                             } else {
                                 let proto_key = ctx.common_atoms.prototype;
                                 if let Some(proto_val) = js_func.base.get(proto_key) {
-                                    if proto_val.is_object() {
+                                    if proto_val.is_object_like() {
                                         let cptr = proto_val.get_ptr()
                                             as *mut crate::object::object::JSObject;
                                         func_val.as_function_mut().cached_prototype_ptr = cptr;
@@ -6332,7 +6332,7 @@ impl VM {
                             } else {
                                 let proto_key = ctx.common_atoms.prototype;
                                 if let Some(proto_val) = js_func.base.get(proto_key) {
-                                    if proto_val.is_object() {
+                                    if proto_val.is_object_like() {
                                         let cptr = proto_val.get_ptr()
                                             as *mut crate::object::object::JSObject;
                                         func_val.as_function_mut().cached_prototype_ptr = cptr;

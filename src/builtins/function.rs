@@ -637,7 +637,7 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let mut call_args_vec = Vec::new();
     let call_args: &[JSValue];
 
-    if args.len() > 2 && args[2].is_object() {
+    if args.len() > 2 && args[2].is_object_like() {
         let arr_obj = args[2].as_object();
         let length_atom = ctx.common_atoms.length;
 
@@ -770,7 +770,7 @@ fn function_apply(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else if args.len() > 2
         && !args[2].is_null()
         && !args[2].is_undefined()
-        && !args[2].is_object()
+        && !args[2].is_object_like()
     {
         throw_type_error(ctx, "CreateListFromArrayLike called on non-object");
         return JSValue::undefined();

@@ -890,7 +890,7 @@ fn reflect_set_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         obj_mut.set_prototype_raw(std::ptr::null_mut());
         return JSValue::bool(true);
     }
-    if proto_val.is_object() {
+    if proto_val.is_object_like() {
         // Object.prototype is immutable
         if let Some(proto_ptr) = ctx.get_object_prototype() {
             if obj as *const JSObject as *mut JSObject == proto_ptr {
