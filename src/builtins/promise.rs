@@ -494,14 +494,39 @@ fn promise_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let result_promise_val = JSValue::new_object(result_promise_ptr);
     ctx.runtime_mut().gc_heap_mut().track(result_promise_ptr);
 
+    let rp = result_promise_val.as_object_mut();
+
     if !iterable.is_object() {
-        let rp = result_promise_val.as_object_mut();
         let msg = JSValue::new_string(ctx.intern("TypeError: object is not iterable (cannot read property Symbol.iterator)"));
         reject_promise(ctx, rp, msg);
         return result_promise_val;
     }
 
     let obj = iterable.as_object();
+
+    let sym_iter = crate::builtins::symbol::get_symbol_iterator(ctx);
+    if sym_iter.is_symbol() {
+        let sym_atom = crate::runtime::atom::Atom(0x40000000 | sym_iter.get_symbol_id());
+        let iter_fn = obj.get(sym_atom).or_else(|| {
+            let mut current = obj.prototype;
+            while let Some(p) = current {
+                let pobj = unsafe { &*p };
+                if let Some(v) = pobj.get(sym_atom) {
+                    return Some(v);
+                }
+                current = pobj.prototype;
+            }
+            None
+        });
+        match iter_fn {
+            Some(f) if f.is_function() => {}
+            _ => {
+                let msg = JSValue::new_string(ctx.intern("TypeError: object is not iterable (cannot read property Symbol.iterator)"));
+                reject_promise(ctx, rp, msg);
+                return result_promise_val;
+            }
+        }
+    }
 
     let len = get_array_length(&obj, ctx);
 

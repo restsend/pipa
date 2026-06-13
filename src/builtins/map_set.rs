@@ -169,7 +169,7 @@ fn make_array(ctx: &mut JSContext, items: Vec<JSValue>) -> JSValue {
     JSValue::new_object(Box::into_raw(Box::new(arr)) as usize)
 }
 
-fn iterate_values(ctx: &mut JSContext, iterable: JSValue) -> Vec<JSValue> {
+pub fn iterate_values(ctx: &mut JSContext, iterable: JSValue) -> Vec<JSValue> {
     let mut values = Vec::new();
 
     let sym_iter = crate::builtins::symbol::get_symbol_iterator(ctx);
@@ -308,7 +308,7 @@ fn iterate_values(ctx: &mut JSContext, iterable: JSValue) -> Vec<JSValue> {
     values
 }
 
-fn create_iterator_from_iterable(ctx: &mut JSContext, iterable: JSValue) -> Option<JSValue> {
+pub fn create_iterator_from_iterable(ctx: &mut JSContext, iterable: JSValue) -> Option<JSValue> {
     let sym_iter = crate::builtins::symbol::get_symbol_iterator(ctx);
     if !sym_iter.is_symbol() {
         return None;
@@ -341,7 +341,7 @@ fn create_iterator_from_iterable(ctx: &mut JSContext, iterable: JSValue) -> Opti
     call_callback_with_this(ctx, fn_val, iterable, &[]).ok()
 }
 
-fn iterator_next(ctx: &mut JSContext, iterator: JSValue) -> Option<(JSValue, bool)> {
+pub fn iterator_next(ctx: &mut JSContext, iterator: JSValue) -> Option<(JSValue, bool)> {
     if !iterator.is_object() {
         return None;
     }
@@ -440,7 +440,7 @@ fn iterator_next(ctx: &mut JSContext, iterator: JSValue) -> Option<(JSValue, boo
     }
 }
 
-fn iterator_return(ctx: &mut JSContext, iterator: JSValue) {
+pub fn iterator_return(ctx: &mut JSContext, iterator: JSValue) {
     if !iterator.is_object() {
         return;
     }
