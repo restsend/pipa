@@ -249,8 +249,6 @@ fn should_skip(meta: &TestMeta) -> bool {
         "Array.prototype.toReversed",
         "Array.prototype.toSpliced",
         "Array.prototype.with",
-        "Array.prototype.findLast",
-        "Array.prototype.findLastIndex",
         "String.prototype.isWellFormed",
         "String.prototype.toWellFormed",
         "Promise.allSettled",

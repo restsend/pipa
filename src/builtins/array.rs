@@ -2121,27 +2121,34 @@ fn array_find_last(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
-
-    if !this.is_object_like() {
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
         return JSValue::undefined();
     }
-    let len_atom = ctx.common_atoms.length;
-    let len = {
-        let arr = this.as_object();
-        safe_array_len_with_ctx(&arr, len_atom, ctx) as usize
-    };
+
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
+
+    let length_atom = ctx.common_atoms.length;
+    let len = safe_array_len_with_ctx(obj, length_atom, ctx).min(9007199254740991) as usize;
+
     for i in (0..len).rev() {
-        let el = {
-            let arr = this.as_object();
-            array_get(arr, i, ctx).unwrap_or(JSValue::undefined())
+        let value = array_get(obj, i, ctx).unwrap_or(JSValue::undefined());
+        let idx_val = if i >= (1usize << 47) {
+            JSValue::new_float(i as f64)
+        } else {
+            JSValue::new_int(i as i64)
         };
-        let idx_val = JSValue::new_int(i as i64);
-        if let Ok(result) = call_callback(ctx, callback, &[el, idx_val, this]) {
+        let callback_args = vec![value, idx_val, this_obj];
+        if let Ok(result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
             if result.is_truthy() {
-                return el;
+                return value;
             }
         }
     }
+
     JSValue::undefined()
 }
 fn array_find_last_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -2152,27 +2159,34 @@ fn array_find_last_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
-
-    if !this.is_object_like() {
-        return JSValue::new_int(-1);
+    if !callback.is_function() {
+        throw_type_error(ctx, "Callback is not a function");
+        return JSValue::undefined();
     }
-    let len_atom = ctx.common_atoms.length;
-    let len = {
-        let arr = this.as_object();
-        safe_array_len_with_ctx(&arr, len_atom, ctx) as usize
-    };
+
+    let this_arg = args.get(2).copied().unwrap_or(JSValue::undefined());
+
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
+
+    let length_atom = ctx.common_atoms.length;
+    let len = safe_array_len_with_ctx(obj, length_atom, ctx).min(9007199254740991) as usize;
+
     for i in (0..len).rev() {
-        let el = {
-            let arr = this.as_object();
-            array_get(arr, i, ctx).unwrap_or(JSValue::undefined())
+        let value = array_get(obj, i, ctx).unwrap_or(JSValue::undefined());
+        let idx_val = if i >= (1usize << 47) {
+            JSValue::new_float(i as f64)
+        } else {
+            JSValue::new_int(i as i64)
         };
-        let idx_val = JSValue::new_int(i as i64);
-        if let Ok(result) = call_callback(ctx, callback, &[el, idx_val, this]) {
+        let callback_args = vec![value, idx_val, this_obj];
+        if let Ok(result) = call_callback_with_this(ctx, callback, this_arg, &callback_args) {
             if result.is_truthy() {
-                return JSValue::new_int(i as i64);
+                return idx_val;
             }
         }
     }
+
     JSValue::new_int(-1)
 }
 
