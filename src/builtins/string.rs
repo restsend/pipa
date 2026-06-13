@@ -1661,10 +1661,26 @@ fn string_is_well_formed(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::bool(false);
     }
-    let _s = match require_string_coercible(_ctx, &args[0]) {
+    let s = match require_string_coercible(_ctx, &args[0]) {
         Some(s) => s,
         None => return JSValue::undefined(),
     };
+    let units: Vec<u16> = s.encode_utf16().collect();
+    let mut i = 0;
+    while i < units.len() {
+        let unit = units[i];
+        if (0xD800..=0xDBFF).contains(&unit) {
+            if i + 1 < units.len() && (0xDC00..=0xDFFF).contains(&units[i + 1]) {
+                i += 2;
+                continue;
+            }
+            return JSValue::bool(false);
+        }
+        if (0xDC00..=0xDFFF).contains(&unit) {
+            return JSValue::bool(false);
+        }
+        i += 1;
+    }
     JSValue::bool(true)
 }
 
@@ -1676,7 +1692,32 @@ fn string_to_well_formed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Some(s) => s,
         None => return JSValue::undefined(),
     };
-    JSValue::new_string(ctx.intern(&s))
+    let units: Vec<u16> = s.encode_utf16().collect();
+    let mut result: Vec<u16> = Vec::with_capacity(units.len());
+    let mut i = 0;
+    while i < units.len() {
+        let unit = units[i];
+        if (0xD800..=0xDBFF).contains(&unit) {
+            if i + 1 < units.len() && (0xDC00..=0xDFFF).contains(&units[i + 1]) {
+                result.push(unit);
+                result.push(units[i + 1]);
+                i += 2;
+                continue;
+            }
+            result.push(0xFFFD);
+            i += 1;
+            continue;
+        }
+        if (0xDC00..=0xDFFF).contains(&unit) {
+            result.push(0xFFFD);
+            i += 1;
+            continue;
+        }
+        result.push(unit);
+        i += 1;
+    }
+    let formatted: String = String::from_utf16_lossy(&result);
+    JSValue::new_string(ctx.intern(&formatted))
 }
 
 fn string_code_point_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {

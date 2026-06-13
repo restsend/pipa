@@ -245,8 +245,6 @@ fn should_skip(meta: &TestMeta) -> bool {
 
     let unsupported_features = [
         "hashbang",
-        "String.prototype.isWellFormed",
-        "String.prototype.toWellFormed",
         "Promise.allSettled",
         "Promise.any",
         "FinalizationRegistry",
