@@ -97,7 +97,7 @@ fn safe_array_len_with_ctx(obj: &JSObject, len_atom: crate::runtime::atom::Atom,
 }
 
 fn to_object_or_return_undefined(val: JSValue, ctx: &mut JSContext) -> JSValue {
-    if val.is_object() {
+    if val.is_object_like() {
         val
     } else {
         crate::builtins::object::object_to_object(ctx, &val)
@@ -396,7 +396,7 @@ pub fn init_array(ctx: &mut JSContext) {
 
 fn array_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = args.first().copied().unwrap_or(JSValue::undefined());
-    if !this.is_object() {
+    if !this.is_object_like() {
         throw_type_error(ctx, "Method Array.prototype[Symbol.iterator] called on incompatible receiver");
         return JSValue::undefined();
     }
@@ -415,7 +415,7 @@ fn array_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn array_iterator_next(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = args.first().copied().unwrap_or(JSValue::undefined());
-    if !this.is_object() {
+    if !this.is_object_like() {
         throw_type_error(ctx, "Method ArrayIterator.prototype.next called on incompatible receiver");
         return JSValue::undefined();
     }
@@ -432,7 +432,7 @@ fn array_iterator_next(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             return JSValue::undefined();
         }
     };
-    if !arr_val.is_object() {
+    if !arr_val.is_object_like() {
         throw_type_error(ctx, "Iterator [[IteratedObject]] is not an object");
         return JSValue::undefined();
     }
@@ -631,7 +631,7 @@ fn array_push(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_int(0);
     }
     let this = &args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::new_int(0);
     }
 
@@ -684,7 +684,7 @@ fn array_pop(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = &args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
 
@@ -732,7 +732,7 @@ fn array_shift(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = &args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let length_atom = ctx.common_atoms.length;
@@ -785,7 +785,7 @@ fn array_unshift(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_int(0);
     }
     let this = &args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::new_int(0);
     }
 
@@ -846,7 +846,7 @@ fn array_concat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let length_atom = ctx.common_atoms.length;
 
-    if this.is_object() {
+    if this.is_object_like() {
         let obj = this.as_object();
         let this_len = if let Some(l) = obj.get(length_atom) {
             if l.is_int() { l.get_int() as u32 } else { 0 }
@@ -897,7 +897,7 @@ fn array_slice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let this = &args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         result.header.set_length(length_atom, JSValue::new_int(0));
         return alloc_jsarray(result, ctx);
     }
@@ -944,7 +944,7 @@ fn array_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = &args[0];
     let search = &args[1];
 
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::new_int(-1);
     }
 
@@ -1018,7 +1018,7 @@ fn array_includes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = &args[0];
     let search = &args[1];
 
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::bool(false);
     }
 
@@ -1103,7 +1103,7 @@ fn array_join(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 
     let this = &args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::new_string(ctx.intern(""));
     }
 
@@ -1212,7 +1212,7 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         if iter_val.is_function() {
             match call_callback_with_this(ctx, iter_val, source, &[]) {
                 Ok(iterator) => {
-                    if iterator.is_object() {
+                    if iterator.is_object_like() {
                         let iter_obj = iterator.as_object();
                         let next_fn = iter_obj.get(ctx.intern("next"));
                         if let Some(next_val) = next_fn {
@@ -1220,7 +1220,7 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                                 loop {
                                     match call_callback_with_this(ctx, next_val, iterator, &[]) {
                                         Ok(result) => {
-                                            if result.is_object() {
+                                            if result.is_object_like() {
                                                 let robj = result.as_object();
                                                 let done = robj
                                                     .get(ctx.intern("done"))
@@ -1354,7 +1354,7 @@ fn array_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         crate::builtins::object::object_to_object(ctx, &this)
     };
 
-    let obj = if this_obj.is_object() {
+    let obj = if this_obj.is_object_like() {
         this_obj.as_object()
     } else {
         return JSValue::undefined();
@@ -1394,7 +1394,7 @@ fn array_map(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         crate::builtins::object::object_to_object(ctx, &this)
     };
 
-    let obj = if this_obj.is_object() {
+    let obj = if this_obj.is_object_like() {
         this_obj.as_object()
     } else {
         let mut result = new_jsarray_with_proto(ctx);
@@ -1725,7 +1725,7 @@ fn array_sort(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return this;
     }
     let len_atom = ctx.common_atoms.length;
@@ -1786,7 +1786,7 @@ fn array_reverse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return this;
     }
     let len_atom = ctx.common_atoms.length;
@@ -1828,7 +1828,7 @@ fn array_fill(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return this;
     }
     let value = args.get(1).copied().unwrap_or(JSValue::undefined());
@@ -1872,7 +1872,7 @@ fn array_splice(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let len_atom = ctx.common_atoms.length;
@@ -1963,7 +1963,7 @@ fn array_to_spliced(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let len_atom = ctx.common_atoms.length;
@@ -2012,13 +2012,13 @@ fn array_flat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let depth = args.get(1).map(|v| v.get_int() as usize).unwrap_or(1);
 
     fn flatten(ctx: &mut JSContext, arr_val: JSValue, depth: usize, result: &mut Vec<JSValue>) {
-        if !arr_val.is_object() {
+        if !arr_val.is_object_like() {
             result.push(arr_val);
             return;
         }
@@ -2122,7 +2122,7 @@ fn array_find_last(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let len_atom = ctx.common_atoms.length;
@@ -2153,7 +2153,7 @@ fn array_find_last_index(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     let callback = args.get(1).copied().unwrap_or(JSValue::undefined());
 
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::new_int(-1);
     }
     let len_atom = ctx.common_atoms.length;
@@ -2181,7 +2181,7 @@ fn array_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let len_atom = ctx.common_atoms.length;
@@ -2200,7 +2200,7 @@ fn array_to_sorted(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let comparefn = args.get(1).copied().unwrap_or(JSValue::undefined());
@@ -2259,7 +2259,7 @@ fn array_to_reversed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let len_atom = ctx.common_atoms.length;
@@ -2291,7 +2291,7 @@ fn array_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = args[0];
     let idx = args[1].get_int();
     let value = args[2];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::undefined();
     }
     let len_atom = ctx.common_atoms.length;
@@ -2329,7 +2329,7 @@ fn array_last_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let this = args[0];
     let search = args[1];
-    if !this.is_object() {
+    if !this.is_object_like() {
         return JSValue::new_int(-1);
     }
     let len_atom = ctx.common_atoms.length;
