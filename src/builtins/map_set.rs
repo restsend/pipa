@@ -5,7 +5,11 @@ use crate::runtime::context::JSContext;
 use crate::value::JSValue;
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
+    create_builtin_fn(ctx, name, 1)
+}
+
+fn create_builtin_fn(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
+    let mut func = JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
@@ -676,6 +680,152 @@ fn map_get(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     } else {
         JSValue::undefined()
     }
+}
+
+fn map_get_or_insert(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.len() < 3 {
+        return JSValue::undefined();
+    }
+    let this = args[0];
+    if !this.is_object() {
+        throw_type_error(ctx, "Method Map.prototype.getOrInsert called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let obj = this.as_object();
+    if !has_mapdata_slot(ctx, obj) {
+        throw_type_error(ctx, "Method Map.prototype.getOrInsert called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let key = normalize_key(&args[1]);
+    let value = args[2];
+
+    if let Some(idx) = map_find(ctx, obj, &key) {
+        let mv_atom = map_val_atom(ctx, idx);
+        return obj.get(mv_atom).unwrap_or_else(JSValue::undefined);
+    }
+    let obj_mut = this.as_object_mut();
+    let cur_size = map_size(ctx, obj_mut);
+    let mk_atom = map_key_atom(ctx, cur_size);
+    let mv_atom = map_val_atom(ctx, cur_size);
+    obj_mut.set(mk_atom, key);
+    obj_mut.set(mv_atom, value);
+    let size_atom = ctx.intern("__map_size__");
+    obj_mut.set(size_atom, JSValue::new_int((cur_size + 1) as i64));
+    sync_map_size(ctx, obj_mut);
+    value
+}
+
+fn map_get_or_insert_computed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.len() < 3 {
+        return JSValue::undefined();
+    }
+    let this = args[0];
+    if !this.is_object() {
+        throw_type_error(ctx, "Method Map.prototype.getOrInsertComputed called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let obj = this.as_object();
+    if !has_mapdata_slot(ctx, obj) {
+        throw_type_error(ctx, "Method Map.prototype.getOrInsertComputed called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let key = normalize_key(&args[1]);
+    let callback = args[2];
+    if !callback.is_function() {
+        throw_type_error(ctx, "callback is not a function");
+        return JSValue::undefined();
+    }
+
+    if let Some(idx) = map_find(ctx, obj, &key) {
+        let mv_atom = map_val_atom(ctx, idx);
+        return obj.get(mv_atom).unwrap_or_else(JSValue::undefined);
+    }
+    let value = match call_callback(ctx, callback, &[key]) {
+        Ok(v) => v,
+        Err(e) => {
+            let mut err = JSObject::new();
+            err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern(&e)));
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+    };
+    let obj_mut = this.as_object_mut();
+    let cur_size = map_size(ctx, obj_mut);
+    let mk_atom = map_key_atom(ctx, cur_size);
+    let mv_atom = map_val_atom(ctx, cur_size);
+    obj_mut.set(mk_atom, key);
+    obj_mut.set(mv_atom, value);
+    let size_atom = ctx.intern("__map_size__");
+    obj_mut.set(size_atom, JSValue::new_int((cur_size + 1) as i64));
+    sync_map_size(ctx, obj_mut);
+    value
+}
+
+fn normalize_key(v: &JSValue) -> JSValue {
+    if v.is_float() && v.get_float() == 0.0 {
+        return JSValue::new_int(0);
+    }
+    v.clone()
+}
+
+fn map_group_by(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.len() < 2 {
+        return JSValue::undefined();
+    }
+    let items = args[0];
+    let callback = args[1];
+    if !callback.is_function() {
+        throw_type_error(ctx, "callback is not a function");
+        return JSValue::undefined();
+    }
+
+    let mut result_map = JSObject::new();
+    if let Some(proto_ptr) = ctx.get_map_prototype() {
+        result_map.prototype = Some(proto_ptr);
+    }
+    let size_atom = ctx.intern("__map_size__");
+    result_map.set(size_atom, JSValue::new_int(0));
+    let result_ptr = Box::into_raw(Box::new(result_map)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(result_ptr);
+    let result_val = JSValue::new_object(result_ptr);
+
+    let iter_values = iterate_values(ctx, items);
+    for (i, item) in iter_values.into_iter().enumerate() {
+        let key_val = match call_callback(ctx, callback, &[item, JSValue::new_int(i as i64)]) {
+            Ok(v) => v,
+            Err(_) => return JSValue::undefined(),
+        };
+        let key = normalize_key(&key_val);
+
+        let result_obj = unsafe { &mut *(result_ptr as *mut JSObject) };
+        if let Some(idx) = map_find(ctx, result_obj, &key) {
+            let mv_atom = map_val_atom(ctx, idx);
+            let group_arr_val = result_obj.get(mv_atom).unwrap_or_else(JSValue::undefined);
+            if group_arr_val.is_object() {
+                let group_ptr = group_arr_val.get_ptr();
+                let group_obj = unsafe { &*(group_ptr as *const JSObject) };
+                let len = group_obj.get(ctx.common_atoms.length).map(|v| v.get_int() as usize).unwrap_or(0);
+                let group_obj_mut = unsafe { &mut *(group_ptr as *mut JSObject) };
+                let key_atom = ctx.intern(&len.to_string());
+                group_obj_mut.set(key_atom, item);
+                group_obj_mut.set(ctx.common_atoms.length, JSValue::new_int((len + 1) as i64));
+            }
+        } else {
+            let cur_size = map_size(ctx, result_obj);
+            let mk_atom = map_key_atom(ctx, cur_size);
+            let mv_atom = map_val_atom(ctx, cur_size);
+            result_obj.set(mk_atom, key);
+            let group_arr = make_array(ctx, vec![item]);
+            result_obj.set(mv_atom, group_arr);
+            result_obj.set(size_atom, JSValue::new_int((cur_size + 1) as i64));
+        }
+    }
+
+    let result_obj = unsafe { &mut *(result_ptr as *mut JSObject) };
+    sync_map_size(ctx, result_obj);
+    result_val
 }
 
 fn map_has(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1554,35 +1704,37 @@ fn set_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 pub fn init_map_set(ctx: &mut JSContext) {
     let mut map_proto = JSObject::new();
-    map_proto.set(ctx.intern("set"), create_builtin_function(ctx, "map_set"));
-    map_proto.set(ctx.intern("get"), create_builtin_function(ctx, "map_get"));
-    map_proto.set(ctx.intern("has"), create_builtin_function(ctx, "map_has"));
+    map_proto.set(ctx.intern("set"), create_builtin_fn(ctx, "map_set", 2));
+    map_proto.set(ctx.intern("get"), create_builtin_fn(ctx, "map_get", 1));
+    map_proto.set(ctx.intern("getOrInsert"), create_builtin_fn(ctx, "map_get_or_insert", 2));
+    map_proto.set(ctx.intern("getOrInsertComputed"), create_builtin_fn(ctx, "map_get_or_insert_computed", 2));
+    map_proto.set(ctx.intern("has"), create_builtin_fn(ctx, "map_has", 1));
     map_proto.set(
         ctx.intern("delete"),
-        create_builtin_function(ctx, "map_delete"),
+        create_builtin_fn(ctx, "map_delete", 1),
     );
     map_proto.set(
         ctx.intern("clear"),
-        create_builtin_function(ctx, "map_clear"),
+        create_builtin_fn(ctx, "map_clear", 0),
     );
     map_proto.set(
         ctx.intern("forEach"),
-        create_builtin_function(ctx, "map_forEach"),
+        create_builtin_fn(ctx, "map_forEach", 1),
     );
-    map_proto.set(ctx.intern("keys"), create_builtin_function(ctx, "map_keys"));
+    map_proto.set(ctx.intern("keys"), create_builtin_fn(ctx, "map_keys", 0));
     map_proto.set(
         ctx.intern("values"),
-        create_builtin_function(ctx, "map_values"),
+        create_builtin_fn(ctx, "map_values", 0),
     );
     map_proto.set(
         ctx.intern("entries"),
-        create_builtin_function(ctx, "map_entries"),
+        create_builtin_fn(ctx, "map_entries", 0),
     );
 
     let sym_iter_atom = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
     map_proto.set(
         sym_iter_atom,
-        create_builtin_function(ctx, "map_symbol_iterator"),
+        create_builtin_fn(ctx, "map_symbol_iterator", 0),
     );
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
@@ -1595,10 +1747,12 @@ pub fn init_map_set(ctx: &mut JSContext) {
 
     let map_proto_value = JSValue::new_object(map_proto_ptr);
 
-    let map_ctor = create_builtin_function(ctx, "map_constructor");
+    let map_ctor = create_builtin_fn(ctx, "map_constructor", 0);
     if map_ctor.is_function() {
         let map_func_ref = map_ctor.as_function_mut();
         map_func_ref.base.set(ctx.common_atoms.prototype, map_proto_value);
+        let group_by_fn = create_builtin_fn(ctx, "map_group_by", 2);
+        map_func_ref.base.set(ctx.intern("groupBy"), group_by_fn);
     }
     unsafe {
         let proto_ref = &mut *(map_proto_ptr as *mut crate::object::object::JSObject);
@@ -1613,9 +1767,9 @@ pub fn init_map_set(ctx: &mut JSContext) {
     }
 
     let mut map_iter_proto = JSObject::new();
-    map_iter_proto.set(ctx.intern("next"), create_builtin_function(ctx, "map_set_iterator_next"));
+    map_iter_proto.set(ctx.intern("next"), create_builtin_fn(ctx, "map_set_iterator_next", 0));
     let map_sym_iter = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
-    map_iter_proto.set(map_sym_iter, create_builtin_function(ctx, "iterator_symbol_iterator"));
+    map_iter_proto.set(map_sym_iter, create_builtin_fn(ctx, "iterator_symbol_iterator", 0));
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         map_iter_proto.prototype = Some(obj_proto_ptr);
     }
@@ -1624,34 +1778,34 @@ pub fn init_map_set(ctx: &mut JSContext) {
     ctx.set_map_iterator_prototype(map_iter_proto_ptr);
 
     let mut set_proto = JSObject::new();
-    set_proto.set(ctx.intern("add"), create_builtin_function(ctx, "set_add"));
-    set_proto.set(ctx.intern("has"), create_builtin_function(ctx, "set_has"));
+    set_proto.set(ctx.intern("add"), create_builtin_fn(ctx, "set_add", 1));
+    set_proto.set(ctx.intern("has"), create_builtin_fn(ctx, "set_has", 1));
     set_proto.set(
         ctx.intern("delete"),
-        create_builtin_function(ctx, "set_delete"),
+        create_builtin_fn(ctx, "set_delete", 1),
     );
     set_proto.set(
         ctx.intern("clear"),
-        create_builtin_function(ctx, "set_clear"),
+        create_builtin_fn(ctx, "set_clear", 0),
     );
     set_proto.set(
         ctx.intern("forEach"),
-        create_builtin_function(ctx, "set_forEach"),
+        create_builtin_fn(ctx, "set_forEach", 1),
     );
     set_proto.set(
         ctx.intern("values"),
-        create_builtin_function(ctx, "set_values"),
+        create_builtin_fn(ctx, "set_values", 0),
     );
-    set_proto.set(ctx.intern("keys"), create_builtin_function(ctx, "set_keys"));
+    set_proto.set(ctx.intern("keys"), create_builtin_fn(ctx, "set_keys", 0));
     set_proto.set(
         ctx.intern("entries"),
-        create_builtin_function(ctx, "set_entries"),
+        create_builtin_fn(ctx, "set_entries", 0),
     );
 
     let sym_iter_atom = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
     set_proto.set(
         sym_iter_atom,
-        create_builtin_function(ctx, "set_symbol_iterator"),
+        create_builtin_fn(ctx, "set_symbol_iterator", 0),
     );
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
@@ -1664,7 +1818,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
 
     let set_proto_value = JSValue::new_object(set_proto_ptr);
 
-    let set_ctor = create_builtin_function(ctx, "set_constructor");
+    let set_ctor = create_builtin_fn(ctx, "set_constructor", 0);
     if set_ctor.is_function() {
         let set_func_ref = set_ctor.as_function_mut();
         set_func_ref.base.set(ctx.common_atoms.prototype, set_proto_value);
@@ -1682,9 +1836,9 @@ pub fn init_map_set(ctx: &mut JSContext) {
     }
 
     let mut set_iter_proto = JSObject::new();
-    set_iter_proto.set(ctx.intern("next"), create_builtin_function(ctx, "map_set_iterator_next"));
+    set_iter_proto.set(ctx.intern("next"), create_builtin_fn(ctx, "map_set_iterator_next", 0));
     let set_sym_iter = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
-    set_iter_proto.set(set_sym_iter, create_builtin_function(ctx, "iterator_symbol_iterator"));
+    set_iter_proto.set(set_sym_iter, create_builtin_fn(ctx, "iterator_symbol_iterator", 0));
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         set_iter_proto.prototype = Some(obj_proto_ptr);
     }
@@ -1695,19 +1849,19 @@ pub fn init_map_set(ctx: &mut JSContext) {
     let mut weakmap_proto = JSObject::new();
     weakmap_proto.set(
         ctx.intern("set"),
-        create_builtin_function(ctx, "weakmap_set"),
+        create_builtin_fn(ctx, "weakmap_set", 2),
     );
     weakmap_proto.set(
         ctx.intern("get"),
-        create_builtin_function(ctx, "weakmap_get"),
+        create_builtin_fn(ctx, "weakmap_get", 1),
     );
     weakmap_proto.set(
         ctx.intern("has"),
-        create_builtin_function(ctx, "weakmap_has"),
+        create_builtin_fn(ctx, "weakmap_has", 1),
     );
     weakmap_proto.set(
         ctx.intern("delete"),
-        create_builtin_function(ctx, "weakmap_delete"),
+        create_builtin_fn(ctx, "weakmap_delete", 1),
     );
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
@@ -1720,7 +1874,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
 
     let weakmap_proto_value = JSValue::new_object(weakmap_proto_ptr);
 
-    let weakmap_ctor = create_builtin_function(ctx, "weakmap_constructor");
+    let weakmap_ctor = create_builtin_fn(ctx, "weakmap_constructor", 0);
     if weakmap_ctor.is_function() {
         let wm_func_ref = weakmap_ctor.as_function_mut();
         wm_func_ref.base.set(ctx.common_atoms.prototype, weakmap_proto_value);
@@ -1739,15 +1893,15 @@ pub fn init_map_set(ctx: &mut JSContext) {
     let mut weakset_proto = JSObject::new();
     weakset_proto.set(
         ctx.intern("add"),
-        create_builtin_function(ctx, "weakset_add"),
+        create_builtin_fn(ctx, "weakset_add", 1),
     );
     weakset_proto.set(
         ctx.intern("has"),
-        create_builtin_function(ctx, "weakset_has"),
+        create_builtin_fn(ctx, "weakset_has", 1),
     );
     weakset_proto.set(
         ctx.intern("delete"),
-        create_builtin_function(ctx, "weakset_delete"),
+        create_builtin_fn(ctx, "weakset_delete", 1),
     );
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
@@ -1760,7 +1914,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
 
     let weakset_proto_value = JSValue::new_object(weakset_proto_ptr);
 
-    let weakset_ctor = create_builtin_function(ctx, "weakset_constructor");
+    let weakset_ctor = create_builtin_fn(ctx, "weakset_constructor", 0);
     if weakset_ctor.is_function() {
         let ws_func_ref = weakset_ctor.as_function_mut();
         ws_func_ref.base.set(ctx.common_atoms.prototype, weakset_proto_value);
@@ -1784,6 +1938,9 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
     ctx.register_builtin("map_set", HostFunction::method("set", 2, map_set));
     ctx.register_builtin("map_get", HostFunction::method("get", 1, map_get));
+    ctx.register_builtin("map_get_or_insert", HostFunction::method("getOrInsert", 2, map_get_or_insert));
+    ctx.register_builtin("map_get_or_insert_computed", HostFunction::method("getOrInsertComputed", 2, map_get_or_insert_computed));
+    ctx.register_builtin("map_group_by", HostFunction::new("groupBy", 2, map_group_by));
     ctx.register_builtin("map_has", HostFunction::method("has", 1, map_has));
     ctx.register_builtin("map_delete", HostFunction::method("delete", 1, map_delete));
     ctx.register_builtin("map_clear", HostFunction::method("clear", 0, map_clear));
