@@ -1957,8 +1957,17 @@ fn init_number(ctx: &mut JSContext) {
     }
 }
 
-fn number_value_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn number_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Number.prototype.valueOf requires 'this' to be a Number")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
     let this = &args[0];
@@ -1967,10 +1976,21 @@ fn number_value_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     if this.is_object() {
         let obj = this.as_object();
-        if let Some(v) = obj.get(_ctx.common_atoms.__value__) {
-            return v;
+        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+            if v.is_int() || v.is_float() {
+                return v;
+            }
         }
     }
+    let mut err = JSObject::new();
+    err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+    err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Number.prototype.valueOf requires 'this' to be a Number")));
+    if let Some(proto) = ctx.get_type_error_prototype() {
+        err.prototype = Some(proto);
+    }
+    let ptr = Box::into_raw(Box::new(err)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    ctx.pending_exception = Some(JSValue::new_object(ptr));
     JSValue::undefined()
 }
 

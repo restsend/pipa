@@ -8816,15 +8816,11 @@ impl VM {
             }
             return f64::NAN;
         }
-        let result = trimmed.parse::<f64>().unwrap_or(f64::NAN);
-        if result.is_infinite()
-            && trimmed != "Infinity"
-            && trimmed != "+Infinity"
-            && trimmed != "-Infinity"
-        {
+        let lower = trimmed.to_lowercase();
+        if lower.contains("inf") || lower.contains("nan") {
             return f64::NAN;
         }
-        result
+        trimmed.parse::<f64>().unwrap_or(f64::NAN)
     }
 
     fn to_int32(na: f64) -> i32 {
