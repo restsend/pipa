@@ -137,7 +137,18 @@ fn get_property_with_getter(
             }
         }
     }
-    Ok(obj.get(prop).unwrap_or(JSValue::undefined()))
+    if let Some(v) = obj.get(prop) {
+        return Ok(v);
+    }
+    if obj.is_dense_array() {
+        if let Some(idx) = ctx.atom_table().get_array_index(prop) {
+            let arr = unsafe { &*(obj_ptr as *const crate::object::array_obj::JSArrayObject) };
+            if let Some(v) = arr.get(idx) {
+                return Ok(v);
+            }
+        }
+    }
+    Ok(JSValue::undefined())
 }
 
 fn make_array(ctx: &mut JSContext, items: Vec<JSValue>) -> JSValue {
@@ -793,7 +804,7 @@ fn map_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn map_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return make_array(ctx, vec![]);
+        return create_map_iter(ctx, vec![]);
     }
     let this = args[0];
     if !this.is_object() {
@@ -812,12 +823,12 @@ fn map_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let mk_atom = map_key_atom(ctx, i);
         keys.push(obj.get(mk_atom).unwrap_or_else(JSValue::undefined));
     }
-    make_array(ctx, keys)
+    create_map_iter(ctx, keys)
 }
 
 fn map_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return make_array(ctx, vec![]);
+        return create_map_iter(ctx, vec![]);
     }
     let this = args[0];
     if !this.is_object() {
@@ -836,12 +847,12 @@ fn map_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let mv_atom = map_val_atom(ctx, i);
         vals.push(obj.get(mv_atom).unwrap_or_else(JSValue::undefined));
     }
-    make_array(ctx, vals)
+    create_map_iter(ctx, vals)
 }
 
 fn map_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return make_array(ctx, vec![]);
+        return create_map_iter(ctx, vec![]);
     }
     let this = args[0];
     if !this.is_object() {
@@ -864,7 +875,7 @@ fn map_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let pair = make_array(ctx, vec![k, v]);
         entries.push(pair);
     }
-    make_array(ctx, entries)
+    create_map_iter(ctx, entries)
 }
 
 fn map_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -895,20 +906,81 @@ fn map_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn create_map_iter(ctx: &mut JSContext, entries: Vec<JSValue>) -> JSValue {
+    create_iter_with_proto(ctx, entries, ctx.get_map_iterator_prototype())
+}
+
+fn create_set_iter(ctx: &mut JSContext, entries: Vec<JSValue>) -> JSValue {
+    create_iter_with_proto(ctx, entries, ctx.get_set_iterator_prototype())
+}
+
+fn create_iter_with_proto(ctx: &mut JSContext, entries: Vec<JSValue>, proto: Option<usize>) -> JSValue {
     let mut iter_obj = JSObject::new();
     let arr_atom = ctx.common_atoms.__iter_arr__;
     let idx_atom = ctx.common_atoms.__iter_idx__;
     let entries_arr = make_array(ctx, entries);
     iter_obj.set(arr_atom, entries_arr);
     iter_obj.set(idx_atom, JSValue::new_int(0));
+    if let Some(proto_ptr) = proto {
+        iter_obj.prototype = Some(proto_ptr as *mut JSObject);
+    }
     let ptr = Box::into_raw(Box::new(iter_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(ptr);
     JSValue::new_object(ptr)
 }
 
+fn map_set_iterator_next(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = args.first().copied().unwrap_or(JSValue::undefined());
+    if !this.is_object_like() {
+        throw_type_error(ctx, "Iterator.prototype.next called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let obj_ptr = this.get_ptr();
+    let obj = unsafe { &*(obj_ptr as *const JSObject) };
+    let obj_mut = unsafe { &mut *(obj_ptr as *mut JSObject) };
+    let arr_atom = ctx.common_atoms.__iter_arr__;
+    let idx_atom = ctx.common_atoms.__iter_idx__;
+    let iter_idx = obj.get(idx_atom).map(|v| if v.is_int() { v.get_int() as usize } else { 0 }).unwrap_or(0);
+    let arr_val = match obj.get(arr_atom) {
+        Some(v) => v,
+        None => {
+            throw_type_error(ctx, "Iterator has no [[IteratedObject]] slot");
+            return JSValue::undefined();
+        }
+    };
+    if !arr_val.is_object_like() {
+        throw_type_error(ctx, "Iterator [[IteratedObject]] is not an object");
+        return JSValue::undefined();
+    }
+    let arr_obj = arr_val.as_object();
+    let len = arr_obj.get(ctx.common_atoms.length).map(|v| super::string::js_to_length(&v) as usize).unwrap_or(0);
+    let done_atom = ctx.intern("done");
+    let value_atom = ctx.intern("value");
+    if iter_idx < len {
+        let value = super::array::array_get(arr_obj, iter_idx, ctx).unwrap_or_else(JSValue::undefined);
+        obj_mut.set(idx_atom, JSValue::new_int((iter_idx + 1) as i64));
+        let mut result = JSObject::new();
+        result.set(value_atom, value);
+        result.set(done_atom, JSValue::bool(false));
+        let ptr = Box::into_raw(Box::new(result)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        JSValue::new_object(ptr)
+    } else {
+        let mut result = JSObject::new();
+        result.set(value_atom, JSValue::undefined());
+        result.set(done_atom, JSValue::bool(true));
+        let ptr = Box::into_raw(Box::new(result)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        JSValue::new_object(ptr)
+    }
+}
+
+fn iterator_symbol_iterator(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    args.first().copied().unwrap_or_else(JSValue::undefined)
+}
+
 fn set_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return create_map_iter(ctx, vec![]);
+        return create_set_iter(ctx, vec![]);
     }
     let this = args[0];
     if !this.is_object() {
@@ -927,7 +999,7 @@ fn set_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let v = obj.get(sv_atom).unwrap_or_else(JSValue::undefined);
         values.push(v);
     }
-    create_map_iter(ctx, values)
+    create_set_iter(ctx, values)
 }
 
 fn weakmap_constructor(ctx: &mut JSContext, _args: &[JSValue]) -> JSValue {
@@ -1396,7 +1468,7 @@ fn set_clear(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn set_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return make_array(ctx, vec![]);
+        return create_set_iter(ctx, vec![]);
     }
     let this = args[0];
     if !this.is_object() {
@@ -1415,7 +1487,7 @@ fn set_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let sv_atom = set_val_atom(ctx, i);
         vals.push(obj.get(sv_atom).unwrap_or_else(JSValue::undefined));
     }
-    make_array(ctx, vals)
+    create_set_iter(ctx, vals)
 }
 
 fn set_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1424,7 +1496,7 @@ fn set_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
 fn set_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
-        return make_array(ctx, vec![]);
+        return create_set_iter(ctx, vec![]);
     }
     let this = args[0];
     if !this.is_object() {
@@ -1445,7 +1517,7 @@ fn set_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let pair = make_array(ctx, vec![v, v]);
         entries.push(pair);
     }
-    make_array(ctx, entries)
+    create_set_iter(ctx, entries)
 }
 
 fn set_for_each(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1540,6 +1612,17 @@ pub fn init_map_set(ctx: &mut JSContext) {
         crate::builtins::global::set_non_enumerable(global_obj, map_atom, map_ctor);
     }
 
+    let mut map_iter_proto = JSObject::new();
+    map_iter_proto.set(ctx.intern("next"), create_builtin_function(ctx, "map_set_iterator_next"));
+    let map_sym_iter = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
+    map_iter_proto.set(map_sym_iter, create_builtin_function(ctx, "iterator_symbol_iterator"));
+    if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
+        map_iter_proto.prototype = Some(obj_proto_ptr);
+    }
+    let map_iter_proto_ptr = Box::into_raw(Box::new(map_iter_proto)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(map_iter_proto_ptr);
+    ctx.set_map_iterator_prototype(map_iter_proto_ptr);
+
     let mut set_proto = JSObject::new();
     set_proto.set(ctx.intern("add"), create_builtin_function(ctx, "set_add"));
     set_proto.set(ctx.intern("has"), create_builtin_function(ctx, "set_has"));
@@ -1597,6 +1680,17 @@ pub fn init_map_set(ctx: &mut JSContext) {
         let global_obj = global.as_object_mut();
         crate::builtins::global::set_non_enumerable(global_obj, set_atom, set_ctor);
     }
+
+    let mut set_iter_proto = JSObject::new();
+    set_iter_proto.set(ctx.intern("next"), create_builtin_function(ctx, "map_set_iterator_next"));
+    let set_sym_iter = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
+    set_iter_proto.set(set_sym_iter, create_builtin_function(ctx, "iterator_symbol_iterator"));
+    if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
+        set_iter_proto.prototype = Some(obj_proto_ptr);
+    }
+    let set_iter_proto_ptr = Box::into_raw(Box::new(set_iter_proto)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(set_iter_proto_ptr);
+    ctx.set_set_iterator_prototype(set_iter_proto_ptr);
 
     let mut weakmap_proto = JSObject::new();
     weakmap_proto.set(
@@ -1729,6 +1823,15 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "set_symbol_iterator",
         HostFunction::method("[Symbol.iterator]", 0, set_symbol_iterator),
+    );
+
+    ctx.register_builtin(
+        "map_set_iterator_next",
+        HostFunction::method("next", 0, map_set_iterator_next),
+    );
+    ctx.register_builtin(
+        "iterator_symbol_iterator",
+        HostFunction::method("[Symbol.iterator]", 0, iterator_symbol_iterator),
     );
 
     ctx.register_builtin(
