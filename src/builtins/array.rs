@@ -382,6 +382,16 @@ pub fn init_array(ctx: &mut JSContext) {
         let global_obj = global.as_object_mut();
         global_obj.set(proto_atom, proto_value);
     }
+
+    let mut iter_proto = JSObject::new();
+    let next_builtin = create_builtin_function(ctx, "array_iterator_next");
+    set_ne(&mut iter_proto, ctx.intern("next"), next_builtin);
+    if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
+        iter_proto.prototype = Some(obj_proto_ptr);
+    }
+    let iter_proto_ptr = Box::into_raw(Box::new(iter_proto)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(iter_proto_ptr);
+    ctx.set_array_iterator_prototype(iter_proto_ptr);
 }
 
 fn array_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -395,9 +405,60 @@ fn array_symbol_iterator(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let mut iter_obj = JSObject::new();
     iter_obj.set(arr_atom, this);
     iter_obj.set(idx_atom, JSValue::new_int(0));
+    if let Some(proto) = ctx.get_array_iterator_prototype() {
+        iter_obj.prototype = Some(proto as *mut JSObject);
+    }
     let ptr = Box::into_raw(Box::new(iter_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(ptr);
     JSValue::new_object(ptr)
+}
+
+fn array_iterator_next(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this = args.first().copied().unwrap_or(JSValue::undefined());
+    if !this.is_object() {
+        throw_type_error(ctx, "Method ArrayIterator.prototype.next called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let obj_ptr = this.get_ptr();
+    let obj = unsafe { &*(obj_ptr as *const JSObject) };
+    let obj_mut = unsafe { &mut *(obj_ptr as *mut JSObject) };
+    let arr_atom = ctx.common_atoms.__iter_arr__;
+    let idx_atom = ctx.common_atoms.__iter_idx__;
+    let iter_idx = obj.get(idx_atom).map(|v| if v.is_int() { v.get_int() as usize } else { 0 }).unwrap_or(0);
+    let arr_val = match obj.get(arr_atom) {
+        Some(v) => v,
+        None => {
+            throw_type_error(ctx, "Iterator has no [[IteratedObject]] slot");
+            return JSValue::undefined();
+        }
+    };
+    if !arr_val.is_object() {
+        throw_type_error(ctx, "Iterator [[IteratedObject]] is not an object");
+        return JSValue::undefined();
+    }
+    let arr_obj = arr_val.as_object();
+    let len = arr_obj.get(ctx.common_atoms.length).map(|v| js_to_length(&v) as usize).unwrap_or(0);
+    if iter_idx < len {
+        let value = super::array::array_get(arr_obj, iter_idx, ctx).unwrap_or(JSValue::undefined());
+        obj_mut.set(idx_atom, JSValue::new_int((iter_idx + 1) as i64));
+        let mut result = JSObject::new();
+        let done_atom = ctx.intern("done");
+        let value_atom = ctx.intern("value");
+        result.set(value_atom, value);
+        result.set(done_atom, JSValue::bool(false));
+        let ptr = Box::into_raw(Box::new(result)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        JSValue::new_object(ptr)
+    } else {
+        let mut result = JSObject::new();
+        let done_atom = ctx.intern("done");
+        let value_atom = ctx.intern("value");
+        result.set(value_atom, JSValue::undefined());
+        result.set(done_atom, JSValue::bool(true));
+        let ptr = Box::into_raw(Box::new(result)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        JSValue::new_object(ptr)
+    }
 }
 
 pub fn register_builtins(ctx: &mut JSContext) {
@@ -464,6 +525,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         HostFunction::method("reduceRight", 2, array_reduce_right),
     );
     ctx.register_builtin("array_sort", HostFunction::method("sort", 1, array_sort));
+    ctx.register_builtin(
+        "array_iterator_next",
+        HostFunction::method("next", 0, array_iterator_next),
+    );
     ctx.register_builtin(
         "array_reverse",
         HostFunction::method("reverse", 0, array_reverse),
@@ -1116,6 +1181,7 @@ fn array_is_array(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let source = args.get(0).copied().unwrap_or(JSValue::undefined());
     let map_fn = args.get(1).copied().filter(|v| v.is_function());
+    let map_fn_this = args.get(2).copied().unwrap_or(JSValue::undefined());
 
     if source.is_null_or_undefined() {
         throw_type_error(ctx, "Array.from requires an array-like object or iterable");
@@ -1144,7 +1210,7 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let sym_iter_atom = crate::builtins::symbol::get_symbol_iterator_atom(ctx);
     if let Some(iter_val) = obj.get(sym_iter_atom) {
         if iter_val.is_function() {
-            match call_callback(ctx, iter_val, &[]) {
+            match call_callback_with_this(ctx, iter_val, source, &[]) {
                 Ok(iterator) => {
                     if iterator.is_object() {
                         let iter_obj = iterator.as_object();
@@ -1152,7 +1218,7 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                         if let Some(next_val) = next_fn {
                             if next_val.is_function() {
                                 loop {
-                                    match call_callback(ctx, next_val, &[]) {
+                                    match call_callback_with_this(ctx, next_val, iterator, &[]) {
                                         Ok(result) => {
                                             if result.is_object() {
                                                 let robj = result.as_object();
@@ -1167,13 +1233,13 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                                                     .get(ctx.intern("value"))
                                                     .unwrap_or(JSValue::undefined());
                                                 if let Some(mf) = map_fn {
-                                                    let mapped = call_callback(
+                                                    let mapped = call_callback_with_this(
                                                         ctx,
                                                         mf,
+                                                        map_fn_this,
                                                         &[
                                                             value,
                                                             JSValue::new_int(items.len() as i64),
-                                                            source,
                                                         ],
                                                     );
                                                     match mapped {
@@ -1209,10 +1275,11 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let val = array_get(obj, i, ctx).unwrap_or(JSValue::undefined());
 
         if let Some(mf) = map_fn {
-            let mapped = call_callback(
+            let mapped = call_callback_with_this(
                 ctx,
                 mf,
-                &[val, JSValue::new_int(i as i64), source],
+                map_fn_this,
+                &[val, JSValue::new_int(i as i64)],
             );
             match mapped {
                 Ok(v) => items.push(v),

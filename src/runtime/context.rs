@@ -259,6 +259,7 @@ pub struct JSContext {
     string_prototype: Option<usize>,
     number_prototype: Option<usize>,
     array_prototype: Option<usize>,
+    array_iterator_prototype: Option<usize>,
     regexp_prototype: Option<usize>,
     date_prototype: Option<usize>,
     object_prototype: Option<usize>,
@@ -337,6 +338,7 @@ impl JSContext {
             string_prototype: None,
             number_prototype: None,
             array_prototype: None,
+            array_iterator_prototype: None,
             regexp_prototype: None,
             date_prototype: None,
             object_prototype: None,
@@ -586,6 +588,14 @@ impl JSContext {
 
     pub fn set_array_prototype(&mut self, ptr: usize) {
         self.array_prototype = Some(ptr);
+    }
+
+    pub fn set_array_iterator_prototype(&mut self, ptr: usize) {
+        self.array_iterator_prototype = Some(ptr);
+    }
+
+    pub fn get_array_iterator_prototype(&self) -> Option<usize> {
+        self.array_iterator_prototype
     }
 
     pub fn set_regexp_prototype(&mut self, ptr: usize) {
