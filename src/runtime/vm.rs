@@ -1131,6 +1131,61 @@ impl VM {
             } else {
                 Ok(false)
             }
+        } else if func_val.is_object() && is_call_new {
+            let obj = func_val.as_object();
+            if let Some(bound_fn) = obj.get(ctx.common_atoms.__boundFn) {
+                let caller_base = self.cached_registers_base;
+                let bound_args_val = obj.get(ctx.common_atoms.__boundArgs).filter(|v| v.is_object());
+                let bound_len = bound_args_val
+                    .and_then(|v| v.as_object().get(ctx.common_atoms.length))
+                    .map(|v| v.get_int() as usize)
+                    .unwrap_or(0);
+                let mut actual_args = Vec::with_capacity(bound_len + argc as usize);
+                if let Some(ref bound_args_val) = bound_args_val {
+                    let bound_args_obj = bound_args_val.as_object();
+                    for i in 0..bound_len {
+                        let key = self.int_atom(i, ctx);
+                        if let Some(arg_val) = bound_args_obj.get(key) {
+                            actual_args.push(arg_val);
+                        }
+                    }
+                }
+                for r in arg_regs {
+                    actual_args.push(self.registers[caller_base + *r as usize]);
+                }
+                let mut new_obj = crate::object::object::JSObject::new();
+                if bound_fn.is_function() {
+                    let target_func = bound_fn.as_function();
+                    let proto_atom = ctx.common_atoms.prototype;
+                    if let Some(proto_val) = target_func.base.get(proto_atom) {
+                        if proto_val.is_object() {
+                            let proto_ptr = proto_val.get_ptr();
+                            new_obj.prototype = Some(proto_ptr as *mut crate::object::object::JSObject);
+                        }
+                    }
+                }
+                let new_ptr = Box::into_raw(Box::new(new_obj)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(new_ptr);
+                let new_val = JSValue::new_object(new_ptr);
+                let result = self.call_function_with_this(ctx, bound_fn, new_val, &actual_args);
+                match result {
+                    Ok(r) => {
+                        let final_val = if r.is_object_like() { r } else { new_val };
+                        self.set_reg(dst, final_val);
+                    }
+                    Err(_) => {
+                        self.set_pending_type_error(ctx, "bound function construct failed");
+                    }
+                }
+                Ok(false)
+            } else {
+                let msg = format!(
+                    "{} is not a function",
+                    self.format_thrown_value(&func_val, ctx)
+                );
+                self.set_pending_type_error(ctx, &msg);
+                Ok(false)
+            }
         } else if func_val.is_object() && !is_call_new {
             let caller_base = self.cached_registers_base;
             let mut args_buf = [JSValue::undefined(); 16];
@@ -6391,8 +6446,8 @@ impl VM {
                                 JSValue::undefined()
                             };
                             self.set_reg(dst, result);
-                        }
-                    } else if func_val.is_object() && !is_call_new {
+            }
+        } else if func_val.is_object() && !is_call_new {
                         let result =
                             self.call_function_with_this(ctx, func_val, this_val, &args)?;
                         self.set_reg(dst, result);
