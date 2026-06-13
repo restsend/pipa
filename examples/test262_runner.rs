@@ -244,7 +244,6 @@ fn should_skip(meta: &TestMeta) -> bool {
     }
 
     let unsupported_features = [
-        "hashbang",
         "Promise.allSettled",
         "Promise.any",
         "FinalizationRegistry",
@@ -256,7 +255,7 @@ fn should_skip(meta: &TestMeta) -> bool {
         "ImportAssertions",
         "class-fields-private",
         "RegExp Unicode Sets",
-        " Symbols",
+        "symbols",
         "Proxy",
         "Temporal",
         "Intl.DurationFormat",
@@ -272,7 +271,6 @@ fn should_skip(meta: &TestMeta) -> bool {
         "resizable-arraybuffer",
         "Error.isError",
         "error-stack-accessor",
-        "Proxy",
     ];
 
     for feature in &unsupported_features {
