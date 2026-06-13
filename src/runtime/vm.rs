@@ -1381,6 +1381,12 @@ impl VM {
         self.pending_throw = Some(JSValue::new_object(ptr));
     }
 
+    fn rethrow_last_caught(&mut self) {
+        if let Some(exc) = self.last_caught_exception.take() {
+            self.pending_throw = Some(exc);
+        }
+    }
+
     #[cold]
     fn set_pending_reference_error(&mut self, ctx: &mut JSContext, msg: &str) {
         use crate::object::object::JSObject;
@@ -3359,7 +3365,10 @@ impl VM {
                         Opcode::MathAbs => f.abs(),
                         Opcode::MathFloor => {
                             let floored = f.floor();
-
+                            if floored == 0.0 && floored.is_sign_negative() {
+                                self.set_reg(dst, JSValue::new_float(-0.0));
+                                continue;
+                            }
                             const MAX_SAFE: f64 = (1i64 << 47) as f64;
                             if floored >= -MAX_SAFE && floored <= MAX_SAFE {
                                 self.set_reg(dst, JSValue::new_int(floored as i64));
@@ -3369,6 +3378,10 @@ impl VM {
                         }
                         Opcode::MathCeil => {
                             let ceiled = f.ceil();
+                            if ceiled == 0.0 && ceiled.is_sign_negative() {
+                                self.set_reg(dst, JSValue::new_float(-0.0));
+                                continue;
+                            }
                             const MAX_SAFE: f64 = (1i64 << 47) as f64;
                             if ceiled >= -MAX_SAFE && ceiled <= MAX_SAFE {
                                 self.set_reg(dst, JSValue::new_int(ceiled as i64));
@@ -3377,7 +3390,20 @@ impl VM {
                             ceiled
                         }
                         Opcode::MathRound => {
-                            let rounded = f.round();
+                            if f.is_nan() || f.is_infinite() {
+                                self.set_reg(dst, JSValue::new_float(f));
+                                continue;
+                            }
+                            if f == 0.0 {
+                                self.set_reg(dst, JSValue::new_float(if f.is_sign_negative() { -0.0 } else { f }));
+                                continue;
+                            }
+                            let r = (f + 0.5).floor();
+                            let rounded = if f < r - 0.5 { r - 1.0 } else { r };
+                            if rounded == 0.0 && f < 0.0 {
+                                self.set_reg(dst, JSValue::new_float(-0.0));
+                                continue;
+                            }
                             const MAX_SAFE: f64 = (1i64 << 47) as f64;
                             if rounded >= -MAX_SAFE && rounded <= MAX_SAFE {
                                 self.set_reg(dst, JSValue::new_int(rounded as i64));
@@ -3464,7 +3490,9 @@ impl VM {
                     } else {
                         Self::js_to_number(&b, ctx)
                     };
-                    let result = if op == Opcode::MathMin {
+                    let result = if fa.is_nan() || fb.is_nan() {
+                        f64::NAN
+                    } else if op == Opcode::MathMin {
                         if fa == 0.0 && fb == 0.0 {
                             if fa.is_sign_negative() { fa } else { fb }
                         } else {
@@ -4399,21 +4427,7 @@ impl VM {
                                 match self.call_function_with_this(ctx, getter, obj_val, &[]) {
                                     Ok(v) => v,
                                     Err(e) => {
-                                        let mut err = crate::object::object::JSObject::new();
-                                        err.set(
-                                            ctx.intern("name"),
-                                            JSValue::new_string(ctx.intern("ReferenceError")),
-                                        );
-                                        err.set(
-                                            ctx.intern("message"),
-                                            JSValue::new_string(ctx.intern(&e)),
-                                        );
-                                        if let Some(proto) = ctx.get_reference_error_prototype() {
-                                            err.prototype = Some(proto);
-                                        }
-                                        let ptr = Box::into_raw(Box::new(err)) as usize;
-                                        ctx.runtime_mut().gc_heap_mut().track(ptr);
-                                        let exc = JSValue::new_object(ptr);
+                                        let exc = self.last_caught_exception.take().unwrap_or(JSValue::undefined());
                                         match self.dispatch_throw_value(ctx, exc) {
                                             ThrowDispatch::Caught => JSValue::undefined(),
                                             ThrowDispatch::Uncaught(_) => {
@@ -7596,7 +7610,8 @@ impl VM {
                                         self.set_reg(dst, ret);
                                     }
                                     Err(msg) => {
-                                        return self.throw_reference_error(ctx, &msg);
+                                        self.rethrow_last_caught();
+                                        return None;
                                     }
                                 }
                             } else {
@@ -7645,28 +7660,8 @@ impl VM {
                                                 Ok(ret) => {
                                                     self.set_reg(dst, ret);
                                                 }
-                                                Err(msg) => {
-                                                    let mut err =
-                                                        crate::object::object::JSObject::new();
-                                                    err.set(
-                                                        ctx.intern("name"),
-                                                        JSValue::new_string(
-                                                            ctx.intern("ReferenceError"),
-                                                        ),
-                                                    );
-                                                    err.set(
-                                                        ctx.intern("message"),
-                                                        JSValue::new_string(ctx.intern(&msg)),
-                                                    );
-                                                    if let Some(proto) =
-                                                        ctx.get_reference_error_prototype()
-                                                    {
-                                                        err.prototype = Some(proto);
-                                                    }
-                                                    let ptr = Box::into_raw(Box::new(err)) as usize;
-                                                    ctx.runtime_mut().gc_heap_mut().track(ptr);
-                                                    self.pending_throw =
-                                                        Some(JSValue::new_object(ptr));
+                                                Err(_msg) => {
+                                                    self.rethrow_last_caught();
                                                     return None;
                                                 }
                                             }
