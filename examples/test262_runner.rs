@@ -2,9 +2,33 @@ use pipa::object::JSObject;
 use pipa::value::JSValue;
 use pipa::{JSRuntime, eval};
 use serde_yaml::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+
+thread_local! {
+    static PRINT_OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new());
+}
+
+fn test262_print(ctx: &mut pipa::JSContext, args: &[JSValue]) -> JSValue {
+    let msg = if let Some(v) = args.get(0) {
+        if v.is_string() {
+            let atom = v.get_atom();
+            ctx.get_atom_str(atom).to_string()
+        } else if v.is_undefined() {
+            "undefined".to_string()
+        } else {
+            format!("{:?}", v)
+        }
+    } else {
+        String::new()
+    };
+    PRINT_OUTPUT.with(|buf| {
+        buf.borrow_mut().push(msg);
+    });
+    JSValue::undefined()
+}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -161,13 +185,18 @@ fn inject_test262_globals(ctx: &mut pipa::JSContext) {
 
     let print_func = {
         let mut f = pipa::object::function::JSFunction::new_builtin(ctx.intern("print"), 1);
-        f.builtin_atom = Some(ctx.intern("console_log"));
-        f.builtin_func = ctx.get_builtin_func("console_log");
+        f.builtin_atom = Some(ctx.intern("test262_print"));
+        f.builtin_func = ctx.get_builtin_func("test262_print");
         let ptr = Box::into_raw(Box::new(f)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         JSValue::new_function(ptr)
     };
     global_obj.set(ctx.intern("print"), print_func);
+
+    ctx.register_builtin(
+        "test262_print",
+        pipa::host::HostFunction::new("print", 1, test262_print),
+    );
 
     ctx.register_builtin(
         "test262_create_realm",
@@ -236,7 +265,7 @@ fn load_harness_file(harness_dir: &Path, filename: &str) -> Option<String> {
 }
 
 fn should_skip(meta: &TestMeta) -> bool {
-    let unsupported_flags = ["module", "raw", "async"];
+    let unsupported_flags = ["module", "raw"];
     for flag in &unsupported_flags {
         if meta.flags.contains(&flag.to_string()) {
             return true;
@@ -320,11 +349,32 @@ fn run_test_mode(
     force_strict: bool,
 ) -> TestOutcome {
     let full_code = build_code(code, harness_code, force_strict);
+    let is_async = meta.flags.contains(&"async".to_string());
+
+    PRINT_OUTPUT.with(|buf| buf.borrow_mut().clear());
 
     match eval(ctx, &full_code) {
         Ok(_) => {
             if meta.has_negative {
                 TestOutcome::Failed("Expected error but test passed".to_string())
+            } else if is_async {
+                let outputs = PRINT_OUTPUT.with(|buf| buf.borrow().clone());
+                let mut async_failed = false;
+                let mut fail_msg = String::new();
+                for line in &outputs {
+                    if line.starts_with("Test262:AsyncTestFailure") {
+                        async_failed = true;
+                        fail_msg = line.clone();
+                    }
+                }
+                let has_complete = outputs.iter().any(|l| l.starts_with("Test262:AsyncTestComplete"));
+                if async_failed {
+                    TestOutcome::Failed(fail_msg)
+                } else if has_complete {
+                    TestOutcome::Passed
+                } else {
+                    TestOutcome::Failed("async test did not call $DONE()".to_string())
+                }
             } else {
                 TestOutcome::Passed
             }
@@ -394,6 +444,7 @@ fn main() {
 
     let assert_js = load_harness_file(&harness_dir, "assert.js");
     let sta_js = load_harness_file(&harness_dir, "sta.js");
+    let doneprint_js = load_harness_file(&harness_dir, "doneprintHandle.js");
     let mut include_cache: HashMap<String, Option<String>> = HashMap::new();
 
     println!("Verifying $262 harness...");
@@ -521,6 +572,10 @@ fn main() {
         }
         if let Some(ref assert_h) = assert_js {
             harness_code.push_str(assert_h);
+            harness_code.push('\n');
+        }
+        if let Some(ref dp) = doneprint_js {
+            harness_code.push_str(dp);
             harness_code.push('\n');
         }
         for include in &meta.includes {
