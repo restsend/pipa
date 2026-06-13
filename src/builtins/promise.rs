@@ -27,6 +27,7 @@ pub struct Reaction {
     pub handler: JSValue,
     pub is_reject: bool,
     pub is_all_settled: bool,
+    pub is_finally: bool,
 
     pub target_promise: JSValue,
 }
@@ -165,6 +166,7 @@ fn get_promise_reactions(ctx: &mut JSContext, obj: &JSObject) -> Vec<Reaction> {
                         let handler_atom = intern_str(ctx, "handler");
                         let is_reject_atom = intern_str(ctx, "isReject");
                         let all_settled_atom = intern_str(ctx, "allSettled");
+                        let finally_atom = intern_str(ctx, "isFinally");
                         let target_atom = intern_str(ctx, "target");
                         if let Some(handler) = r_obj.get(handler_atom) {
                             let is_reject = r_obj
@@ -175,6 +177,10 @@ fn get_promise_reactions(ctx: &mut JSContext, obj: &JSObject) -> Vec<Reaction> {
                                 .get(all_settled_atom)
                                 .map(|v| v.get_bool())
                                 .unwrap_or(false);
+                            let is_finally = r_obj
+                                .get(finally_atom)
+                                .map(|v| v.get_bool())
+                                .unwrap_or(false);
                             let target_promise = r_obj
                                 .get(target_atom)
                                 .unwrap_or(JSValue::undefined());
@@ -182,6 +188,7 @@ fn get_promise_reactions(ctx: &mut JSContext, obj: &JSObject) -> Vec<Reaction> {
                                 handler,
                                 is_reject,
                                 is_all_settled,
+                                is_finally,
                                 target_promise,
                             });
                         }
@@ -203,10 +210,12 @@ fn create_reaction_array(ctx: &mut JSContext, reactions: Vec<Reaction>) -> JSVal
         let handler_atom = intern_str(ctx, "handler");
         let is_reject_atom = intern_str(ctx, "isReject");
         let all_settled_atom = intern_str(ctx, "allSettled");
+        let finally_atom = intern_str(ctx, "isFinally");
         let target_atom = intern_str(ctx, "target");
         r_obj.set(handler_atom, reaction.handler);
         r_obj.set(is_reject_atom, JSValue::bool(reaction.is_reject));
         r_obj.set(all_settled_atom, JSValue::bool(reaction.is_all_settled));
+        r_obj.set(finally_atom, JSValue::bool(reaction.is_finally));
         r_obj.set(target_atom, reaction.target_promise);
         let r_ptr = Box::into_raw(Box::new(r_obj)) as usize;
         ctx.runtime_mut().gc_heap_mut().track(r_ptr);
@@ -327,7 +336,7 @@ fn promise_then(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let reaction = Reaction {
                 handler: on_fulfilled,
                 is_reject: false,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: false,
                 target_promise: target,
             };
             ctx.microtask_enqueue(Microtask::Reaction(reaction, result));
@@ -337,7 +346,7 @@ fn promise_then(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let reaction = Reaction {
                 handler: on_rejected,
                 is_reject: true,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: false,
                 target_promise: target,
             };
             ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
@@ -347,13 +356,13 @@ fn promise_then(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             reactions.push(Reaction {
                 handler: on_fulfilled,
                 is_reject: false,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: false,
                 target_promise: target,
             });
             reactions.push(Reaction {
                 handler: on_rejected,
                 is_reject: true,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: false,
                 target_promise: target,
             });
             let reactions_arr = create_reaction_array(ctx, reactions);
@@ -387,7 +396,7 @@ fn promise_catch(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let reaction = Reaction {
                 handler: on_rejected,
                 is_reject: false,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: false,
                 target_promise: target,
             };
             ctx.microtask_enqueue(Microtask::Reaction(reaction, result));
@@ -397,7 +406,7 @@ fn promise_catch(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let reaction = Reaction {
                 handler: on_rejected,
                 is_reject: true,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: false,
                 target_promise: target,
             };
             ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
@@ -407,7 +416,7 @@ fn promise_catch(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             reactions.push(Reaction {
                 handler: on_rejected,
                 is_reject: true,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: false,
                 target_promise: target,
             });
             let reactions_arr = create_reaction_array(ctx, reactions);
@@ -441,7 +450,7 @@ fn promise_finally(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let reaction = Reaction {
                 handler: on_finally,
                 is_reject: false,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: true,
                 target_promise: target,
             };
             ctx.microtask_enqueue(Microtask::Reaction(reaction, result));
@@ -451,7 +460,7 @@ fn promise_finally(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             let reaction = Reaction {
                 handler: on_finally,
                 is_reject: true,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: true,
                 target_promise: target,
             };
             ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
@@ -461,13 +470,13 @@ fn promise_finally(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             reactions.push(Reaction {
                 handler: on_finally,
                 is_reject: false,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: true,
                 target_promise: target,
             });
             reactions.push(Reaction {
                 handler: on_finally,
                 is_reject: true,
-                is_all_settled: false,
+                is_all_settled: false, is_finally: true,
                 target_promise: target,
             });
             let reactions_arr = create_reaction_array(ctx, reactions);
@@ -532,7 +541,7 @@ fn promise_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 let reaction = Reaction {
                     handler: JSValue::new_int(i as i64),
                     is_reject: false,
-                    is_all_settled: false,
+                    is_all_settled: false, is_finally: false,
                     target_promise: result_promise_val,
                 };
                 ctx.microtask_enqueue(Microtask::Reaction(reaction, value));
@@ -549,13 +558,13 @@ fn promise_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 reactions.push(Reaction {
                     handler: JSValue::new_int(i as i64),
                     is_reject: false,
-                    is_all_settled: false,
+                    is_all_settled: false, is_finally: false,
                     target_promise: result_promise_val,
                 });
                 reactions.push(Reaction {
                     handler: JSValue::new_int(i as i64),
                     is_reject: true,
-                    is_all_settled: false,
+                    is_all_settled: false, is_finally: false,
                     target_promise: result_promise_val,
                 });
                 let reactions_arr = create_reaction_array(ctx, reactions);
@@ -610,13 +619,13 @@ fn promise_race(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 reactions.push(Reaction {
                     handler: JSValue::new_int(-1),
                     is_reject: false,
-                    is_all_settled: false,
+                    is_all_settled: false, is_finally: false,
                     target_promise: result_promise_val,
                 });
                 reactions.push(Reaction {
                     handler: JSValue::new_int(-1),
                     is_reject: true,
-                    is_all_settled: false,
+                    is_all_settled: false, is_finally: false,
                     target_promise: result_promise_val,
                 });
                 let reactions_arr = create_reaction_array(ctx, reactions);
@@ -683,7 +692,7 @@ fn promise_all_settled(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 let reaction = Reaction {
                     handler: JSValue::new_int(i as i64),
                     is_reject: false,
-                    is_all_settled: true,
+                    is_all_settled: true, is_finally: false,
                     target_promise: result_promise_val,
                 };
                 ctx.microtask_enqueue(Microtask::Reaction(reaction, value));
@@ -693,7 +702,7 @@ fn promise_all_settled(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 let reaction = Reaction {
                     handler: JSValue::new_int(i as i64),
                     is_reject: true,
-                    is_all_settled: true,
+                    is_all_settled: true, is_finally: false,
                     target_promise: result_promise_val,
                 };
                 ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
@@ -704,13 +713,13 @@ fn promise_all_settled(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 reactions.push(Reaction {
                     handler: JSValue::new_int(i as i64),
                     is_reject: false,
-                    is_all_settled: true,
+                    is_all_settled: true, is_finally: false,
                     target_promise: result_promise_val,
                 });
                 reactions.push(Reaction {
                     handler: JSValue::new_int(i as i64),
                     is_reject: true,
-                    is_all_settled: true,
+                    is_all_settled: true, is_finally: false,
                     target_promise: result_promise_val,
                 });
                 let reactions_arr = create_reaction_array(ctx, reactions);
@@ -779,13 +788,13 @@ fn promise_any(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     reactions.push(Reaction {
                         handler: JSValue::new_int(i as i64),
                         is_reject: false,
-                        is_all_settled: false,
+                        is_all_settled: false, is_finally: false,
                         target_promise: result_promise_val,
                     });
                     reactions.push(Reaction {
                         handler: JSValue::new_int(i as i64),
                         is_reject: true,
-                        is_all_settled: false,
+                        is_all_settled: false, is_finally: false,
                         target_promise: result_promise_val,
                     });
                     let reactions_arr = create_reaction_array(ctx, reactions);
@@ -795,7 +804,7 @@ fn promise_any(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     let reaction = Reaction {
                         handler: JSValue::new_int(i as i64),
                         is_reject: true,
-                        is_all_settled: false,
+                        is_all_settled: false, is_finally: false,
                         target_promise: result_promise_val,
                     };
                     ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
@@ -874,13 +883,13 @@ fn promise_internal_resolve(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                     reactions.push(Reaction {
                         handler: JSValue::undefined(),
                         is_reject: false,
-                        is_all_settled: false,
+                        is_all_settled: false, is_finally: false,
                         target_promise: target,
                     });
                     reactions.push(Reaction {
                         handler: JSValue::undefined(),
                         is_reject: true,
-                        is_all_settled: false,
+                        is_all_settled: false, is_finally: false,
                         target_promise: target,
                     });
                     let reactions_arr = create_reaction_array(ctx, reactions);
@@ -1180,10 +1189,26 @@ pub fn run_microtasks_with_vm(ctx: &mut JSContext, vm: &mut crate::runtime::vm::
                     if reaction.target_promise.is_object() {
                         let target = reaction.target_promise.as_object_mut();
                         if target.is_promise() {
-                            match result {
-                                Ok(val) => fulfill_promise(ctx, target, val),
-                                Err(_) => {
-                                    reject_promise(ctx, target, JSValue::undefined());
+                            if reaction.is_finally {
+                                match result {
+                                    Ok(_) => {
+                                        if reaction.is_reject {
+                                            reject_promise(ctx, target, argument);
+                                        } else {
+                                            fulfill_promise(ctx, target, argument);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let msg = JSValue::new_string(ctx.intern(&e));
+                                        reject_promise(ctx, target, msg);
+                                    }
+                                }
+                            } else {
+                                match result {
+                                    Ok(val) => fulfill_promise(ctx, target, val),
+                                    Err(_) => {
+                                        reject_promise(ctx, target, JSValue::undefined());
+                                    }
                                 }
                             }
                         }
