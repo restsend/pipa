@@ -71,6 +71,9 @@ impl Default for MicrotaskQueue {
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
     let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
     func.set_builtin_marker(ctx, name);
+    if let Some(fp) = ctx.get_function_prototype() {
+        func.base.prototype = Some(fp);
+    }
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     JSValue::new_function(ptr)
@@ -1039,12 +1042,17 @@ fn create_promise_prototype(ctx: &mut JSContext) -> JSValue {
     let catch_atom = intern_str(ctx, "catch");
     let finally_atom = intern_str(ctx, "finally");
     proto.set(constructor_atom, JSValue::null());
-    proto.set(then_atom, create_builtin_function(ctx, "promise_then"));
-    proto.set(catch_atom, create_builtin_function(ctx, "promise_catch"));
-    proto.set(
-        finally_atom,
-        create_builtin_function(ctx, "promise_finally"),
-    );
+
+    use crate::builtins::global::set_non_enumerable;
+    set_non_enumerable(&mut proto, then_atom, create_builtin_function(ctx, "promise_then"));
+    set_non_enumerable(&mut proto, catch_atom, create_builtin_function(ctx, "promise_catch"));
+    set_non_enumerable(&mut proto, finally_atom, create_builtin_function(ctx, "promise_finally"));
+
+    let to_string_tag = crate::builtins::symbol::get_symbol_to_string_tag(ctx);
+    if to_string_tag.is_symbol() {
+        let sym_atom = crate::runtime::atom::Atom(0x40000000 | to_string_tag.get_symbol_id());
+        set_non_enumerable(&mut proto, sym_atom, JSValue::new_string(ctx.intern("Promise")));
+    }
 
     if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
         proto.prototype = Some(obj_proto_ptr);
@@ -1062,35 +1070,15 @@ pub fn init_promise(ctx: &mut JSContext) {
 
     let proto_ptr = proto_value.get_ptr();
     ctx.set_promise_prototype(proto_ptr);
-    promise_func.base.set(ctx.intern("prototype"), proto_value);
-    promise_func.base.set(
-        ctx.intern("resolve"),
-        create_builtin_function(ctx, "promise_resolve"),
-    );
-    promise_func.base.set(
-        ctx.intern("reject"),
-        create_builtin_function(ctx, "promise_reject"),
-    );
-    promise_func.base.set(
-        ctx.intern("all"),
-        create_builtin_function(ctx, "promise_all"),
-    );
-    promise_func.base.set(
-        ctx.intern("race"),
-        create_builtin_function(ctx, "promise_race"),
-    );
-    promise_func.base.set(
-        ctx.intern("allSettled"),
-        create_builtin_function(ctx, "promise_allSettled"),
-    );
-    promise_func.base.set(
-        ctx.intern("any"),
-        create_builtin_function(ctx, "promise_any"),
-    );
-    promise_func.base.set(
-        ctx.intern("withResolvers"),
-        create_builtin_function(ctx, "promise_with_resolvers"),
-    );
+    use crate::builtins::global::set_non_enumerable;
+    set_non_enumerable(&mut promise_func.base, ctx.intern("prototype"), proto_value);
+    set_non_enumerable(&mut promise_func.base, ctx.intern("resolve"), create_builtin_function(ctx, "promise_resolve"));
+    set_non_enumerable(&mut promise_func.base, ctx.intern("reject"), create_builtin_function(ctx, "promise_reject"));
+    set_non_enumerable(&mut promise_func.base, ctx.intern("all"), create_builtin_function(ctx, "promise_all"));
+    set_non_enumerable(&mut promise_func.base, ctx.intern("race"), create_builtin_function(ctx, "promise_race"));
+    set_non_enumerable(&mut promise_func.base, ctx.intern("allSettled"), create_builtin_function(ctx, "promise_allSettled"));
+    set_non_enumerable(&mut promise_func.base, ctx.intern("any"), create_builtin_function(ctx, "promise_any"));
+    set_non_enumerable(&mut promise_func.base, ctx.intern("withResolvers"), create_builtin_function(ctx, "promise_with_resolvers"));
     let promise_ptr = Box::into_raw(Box::new(promise_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(promise_ptr);
     let promise_value = JSValue::new_function(promise_ptr);
