@@ -376,117 +376,101 @@ fn promise_then(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn promise_catch(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() {
-        return JSValue::undefined();
-    }
-    let this_val = &args[0];
+    let this_val = args.get(0).copied().unwrap_or(JSValue::undefined());
     let on_rejected = args.get(1).copied().unwrap_or(JSValue::undefined());
-    if !this_val.is_object() {
-        return JSValue::undefined();
-    }
-    let promise = this_val.as_object_mut();
-    if !promise.is_promise() {
-        return JSValue::undefined();
-    }
-    let new_promise = create_promise(ctx);
-    let ptr_new = Box::into_raw(Box::new(new_promise)) as usize;
-    let target = JSValue::new_object(ptr_new);
-    let state = get_promise_state(ctx, promise);
-    let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
-    match state {
-        PromiseState::Fulfilled => {
-            let result = get_promise_result(ctx, promise);
-            let reaction = Reaction {
-                handler: on_rejected,
-                is_reject: false,
-                is_all_settled: false, is_finally: false,
-                target_promise: target,
-            };
-            ctx.microtask_enqueue(Microtask::Reaction(reaction, result));
+
+    let then_atom = ctx.intern("then");
+    let then_fn = if this_val.is_object() {
+        this_val.as_object().get(then_atom)
+    } else {
+        None
+    };
+
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        match then_fn {
+            Some(f) if f.is_function() => {
+                let result = vm.call_function_with_this(
+                    ctx,
+                    f,
+                    this_val,
+                    &[JSValue::undefined(), on_rejected],
+                );
+                match result {
+                    Ok(v) => v,
+                    Err(_) => {
+                        if let Some(exc) = vm.last_caught_exception.take() {
+                            vm.pending_throw = Some(exc);
+                        }
+                        JSValue::undefined()
+                    }
+                }
+            }
+            _ => {
+                let mut err = JSObject::new();
+                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Promise.prototype.catch called on non-Promise")));
+                if let Some(proto) = ctx.get_type_error_prototype() {
+                    err.prototype = Some(proto);
+                }
+                let ptr = Box::into_raw(Box::new(err)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(ptr);
+                ctx.pending_exception = Some(JSValue::new_object(ptr));
+                JSValue::undefined()
+            }
         }
-        PromiseState::Rejected => {
-            let reason = get_promise_result(ctx, promise);
-            let reaction = Reaction {
-                handler: on_rejected,
-                is_reject: true,
-                is_all_settled: false, is_finally: false,
-                target_promise: target,
-            };
-            ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
-        }
-        PromiseState::Pending => {
-            let mut reactions = get_promise_reactions(ctx, promise);
-            reactions.push(Reaction {
-                handler: on_rejected,
-                is_reject: true,
-                is_all_settled: false, is_finally: false,
-                target_promise: target,
-            });
-            let reactions_arr = create_reaction_array(ctx, reactions);
-            promise.set(reactions_atom, reactions_arr);
-        }
+    } else {
+        JSValue::undefined()
     }
-    target
 }
 
 fn promise_finally(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() {
-        return JSValue::undefined();
-    }
-    let this_val = &args[0];
+    let this_val = args.get(0).copied().unwrap_or(JSValue::undefined());
     let on_finally = args.get(1).copied().unwrap_or(JSValue::undefined());
-    if !this_val.is_object() {
-        return JSValue::undefined();
-    }
-    let promise = this_val.as_object_mut();
-    if !promise.is_promise() {
-        return JSValue::undefined();
-    }
-    let new_promise = create_promise(ctx);
-    let ptr_new = Box::into_raw(Box::new(new_promise)) as usize;
-    let target = JSValue::new_object(ptr_new);
-    let state = get_promise_state(ctx, promise);
-    let reactions_atom = intern_str(ctx, PROMISE_REACTIONS_SLOT);
-    match state {
-        PromiseState::Fulfilled => {
-            let result = get_promise_result(ctx, promise);
-            let reaction = Reaction {
-                handler: on_finally,
-                is_reject: false,
-                is_all_settled: false, is_finally: true,
-                target_promise: target,
-            };
-            ctx.microtask_enqueue(Microtask::Reaction(reaction, result));
+
+    let then_atom = ctx.intern("then");
+    let then_fn = if this_val.is_object() {
+        this_val.as_object().get(then_atom)
+    } else {
+        None
+    };
+
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        match then_fn {
+            Some(f) if f.is_function() => {
+                let result = vm.call_function_with_this(
+                    ctx,
+                    f,
+                    this_val,
+                    &[on_finally, on_finally],
+                );
+                match result {
+                    Ok(v) => v,
+                    Err(_) => {
+                        if let Some(exc) = vm.last_caught_exception.take() {
+                            vm.pending_throw = Some(exc);
+                        }
+                        JSValue::undefined()
+                    }
+                }
+            }
+            _ => {
+                let mut err = JSObject::new();
+                err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+                err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Promise.prototype.finally called on non-Promise")));
+                if let Some(proto) = ctx.get_type_error_prototype() {
+                    err.prototype = Some(proto);
+                }
+                let ptr = Box::into_raw(Box::new(err)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(ptr);
+                ctx.pending_exception = Some(JSValue::new_object(ptr));
+                JSValue::undefined()
+            }
         }
-        PromiseState::Rejected => {
-            let reason = get_promise_result(ctx, promise);
-            let reaction = Reaction {
-                handler: on_finally,
-                is_reject: true,
-                is_all_settled: false, is_finally: true,
-                target_promise: target,
-            };
-            ctx.microtask_enqueue(Microtask::Reaction(reaction, reason));
-        }
-        PromiseState::Pending => {
-            let mut reactions = get_promise_reactions(ctx, promise);
-            reactions.push(Reaction {
-                handler: on_finally,
-                is_reject: false,
-                is_all_settled: false, is_finally: true,
-                target_promise: target,
-            });
-            reactions.push(Reaction {
-                handler: on_finally,
-                is_reject: true,
-                is_all_settled: false, is_finally: true,
-                target_promise: target,
-            });
-            let reactions_arr = create_reaction_array(ctx, reactions);
-            promise.set(reactions_atom, reactions_arr);
-        }
+    } else {
+        JSValue::undefined()
     }
-    target
 }
 
 fn promise_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
