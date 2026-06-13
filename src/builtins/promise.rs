@@ -69,7 +69,11 @@ impl Default for MicrotaskQueue {
 }
 
 fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
-    let mut func = JSFunction::new_builtin(ctx.intern(name), 1);
+    create_builtin_function_arity(ctx, name, 1)
+}
+
+fn create_builtin_function_arity(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
+    let mut func = JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
     if let Some(fp) = ctx.get_function_prototype() {
         func.base.prototype = Some(fp);
@@ -315,11 +319,17 @@ fn promise_reject(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn promise_then(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.is_empty() {
-        return JSValue::undefined();
-    }
-    let this_val = &args[0];
+    let this_val = args.get(0).copied().unwrap_or(JSValue::undefined());
     if !this_val.is_object() {
+        let mut err = JSObject::new();
+        err.set(ctx.common_atoms.name, JSValue::new_string(ctx.intern("TypeError")));
+        err.set(ctx.common_atoms.message, JSValue::new_string(ctx.intern("Promise.prototype.then called on incompatible receiver")));
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
         return JSValue::undefined();
     }
     let promise = this_val.as_object_mut();
@@ -1028,7 +1038,7 @@ fn create_promise_prototype(ctx: &mut JSContext) -> JSValue {
     proto.set(constructor_atom, JSValue::null());
 
     use crate::builtins::global::set_non_enumerable;
-    set_non_enumerable(&mut proto, then_atom, create_builtin_function(ctx, "promise_then"));
+    set_non_enumerable(&mut proto, then_atom, create_builtin_function_arity(ctx, "promise_then", 2));
     set_non_enumerable(&mut proto, catch_atom, create_builtin_function(ctx, "promise_catch"));
     set_non_enumerable(&mut proto, finally_atom, create_builtin_function(ctx, "promise_finally"));
 
