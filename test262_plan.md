@@ -7,32 +7,35 @@
 - test262 不得有 crash：任何类别的运行不能产生 segfault
 - 每个 fix/优化单独 commit
 
-## Status (2026-05-27)
+## Status (2026-06-14)
+
+### Modules at 100%
+
+| Module | Total |
+|---|---|
+| Math | 324 |
+| parseInt | 55 |
+| parseFloat | 54 |
+| Boolean | 50 |
+| Number | 339 |
+| isNaN | 15 |
+| isFinite | 15 |
+| NaN | 6 |
+| Infinity | 6 |
+| eval | 9 (+1 skipped) |
 
 ### Completes without crash or hang
 
 | Module | Pass | Fail | Total | Pass Rate |
 |---|---|---|---|---|
-| Math | 317 | 7 | 324 | 97.8% |
-| Number | 334 | 5 | 339 | 98.5% |
-| Boolean | 49 | 1 | 50 | 98.0% |
-| parseInt | 51 | 4 | 55 | 92.7% |
-| parseFloat | 51 | 3 | 54 | 94.4% |
-| Symbol | 44 | 54 | 98 | 44.9% |
-| Error | 32 | 60 | 92 | 34.8% |
-| JSON | 73 | 92 | 165 | 44.2% |
-| Map | 44 | 159 | 203 | 21.7% |
-| Set | 72 | 310 | 382 | 18.8% |
-| Reflect | 33 | 120 | 153 | 21.6% |
-| Proxy | 0 | 311 | 311 | 0.0% |
-| Date | 231 | 363 | 594 | 38.9% |
-| Iterator | 52 | 461 | 513 | 10.1% |
-| RegExp | 769 | 1109 | 1878 | 40.9% |
-| Promise | 50 | 626 | 676 | 7.4% |
-| Object | 2025 | 554 | 2579 | 78.5% |
-| String | 929 | 293 | 1222 | 76.0% |
-| Array | 804 | 1533 | 2337 | 34.4% |
-| Function | 392 | 115 | 507 | 77.3% |
+| Symbol | 94 | 4 | 98 | 95.9% |
+| global | 27 | 2 | 29 | 93.1% |
+| undefined | 7 | 1 | 8 | 87.5% |
+| decodeURI | 54 | 1 | 55 | 98.2% |
+| decodeURIComponent | 55 | 1 | 56 | 98.2% |
+| encodeURI | 24 | 7 | 31 | 77.4% |
+| encodeURIComponent | 24 | 7 | 31 | 77.4% |
+| ThrowTypeError | 4 | 10 | 14 | 28.6% |
 
 ### Slow (very large array operations, not hangs)
 
@@ -98,3 +101,9 @@ Fixes:
 - 2026-05-28: Fixed Error constructor property descriptors: message/name/cause now non-enumerable. Error 32.6% -> 34.8%
 - 2026-05-28: Fixed String method position coercion, split limit, startsWith/endsWith, constructor prop. String 75.4% -> 76.0%
 - 2026-05-28: Added Date.prototype.constructor and toJSON. Date 36.9% -> 38.9%
+- 2026-06-14: Made function prototype patching recursive (fixes nested builtin methods like Number.prototype.toFixed.hasOwnProperty). Number 98.8% -> 99.7%. bench-v8 1149 (noisy)
+- 2026-06-14: Fixed Number.prototype.toString/valueOf to check prototype chain (must be Number wrapper). Fixed toFixed for very large numbers (>=1e21). Number 99.7% -> 100%
+- 2026-06-14: Fixed global isNaN/isFinite to use proper ToNumber (string/array/object). isNaN 40% -> 100%, isFinite 40% -> 100%
+- 2026-06-14: Fixed js_to_primitive_number to honor Symbol.toPrimitive. Symbol 94.9% -> 95.9%
+- 2026-06-14: Added Symbol.species accessor to Array/Map/Set/RegExp/Promise constructors
+- 2026-06-14: Treated undefined/NaN/Infinity as Identifiers (not Literals) so assignments/delete work per spec. NaN 100%, Infinity 100%, undefined 87.5%
