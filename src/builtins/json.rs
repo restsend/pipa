@@ -147,7 +147,7 @@ pub fn json_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 }
             }
             if let Some(s) = got_primitive {
-                match super::json_parser::JsonParser::new(&s).parse_value(ctx) {
+                match super::json_parser::JsonParser::new(&s).parse_root(ctx) {
                     Ok(v) => return v,
                     Err(_) => {
                         let mut err = crate::object::object::JSObject::new_typed(crate::object::object::ObjectType::Error);
@@ -174,7 +174,7 @@ pub fn json_parse(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         String::new()
     };
 
-    match super::json_parser::JsonParser::new(&text).parse_value(ctx) {
+    match super::json_parser::JsonParser::new(&text).parse_root(ctx) {
         Ok(root_val) => {
             if let Some(reviver) = args.get(1) {
                 if reviver.is_function() {

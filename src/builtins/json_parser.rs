@@ -87,6 +87,18 @@ impl<'a> JsonParser<'a> {
         }
     }
 
+    pub fn parse_root(&mut self, ctx: &mut JSContext) -> Result<JSValue, String> {
+        let val = self.parse_value(ctx)?;
+        self.skip_whitespace();
+        if self.pos != self.input.len() {
+            return Err(format!(
+                "JSON: unexpected trailing content at pos {}",
+                self.pos
+            ));
+        }
+        Ok(val)
+    }
+
     fn parse_literal(&mut self, expected: &[u8], value: JSValue) -> Result<JSValue, String> {
         let end = self.pos + expected.len();
         if end <= self.input.len() && &self.input[self.pos..end] == expected {
@@ -207,6 +219,14 @@ impl<'a> JsonParser<'a> {
 
         if first_special < self.input.len() && self.input[first_special] == b'"' {
             let slice = &self.input[start..first_special];
+            for &b in slice {
+                if b < 0x20 {
+                    return Err(format!(
+                        "JSON: unescaped control character U+{:04X} at pos {}",
+                        b, start
+                    ));
+                }
+            }
             let s = unsafe { std::str::from_utf8_unchecked(slice) };
             let atom = ctx.intern(s);
             self.pos = first_special + 1;
@@ -215,6 +235,14 @@ impl<'a> JsonParser<'a> {
 
         let mut buf = if first_special > start {
             let slice = &self.input[start..first_special];
+            for &b in slice {
+                if b < 0x20 {
+                    return Err(format!(
+                        "JSON: unescaped control character U+{:04X} at pos {}",
+                        b, start
+                    ));
+                }
+            }
             let s = unsafe { std::str::from_utf8_unchecked(slice) };
             s.to_string()
         } else {
@@ -249,6 +277,14 @@ impl<'a> JsonParser<'a> {
 
                     let next_special = find_string_end(self.input, self.pos);
                     let span = &self.input[self.pos..next_special];
+                    for &b in span {
+                        if b < 0x20 {
+                            return Err(format!(
+                                "JSON: unescaped control character U+{:04X} at pos {}",
+                                b, self.pos
+                            ));
+                        }
+                    }
 
                     buf.push_str(unsafe { std::str::from_utf8_unchecked(span) });
                     self.pos = next_special;
@@ -348,6 +384,9 @@ impl<'a> JsonParser<'a> {
         self.skip_whitespace();
 
         let mut obj = JSObject::new();
+        if let Some(obj_proto_ptr) = ctx.get_object_prototype() {
+            obj.prototype = Some(obj_proto_ptr);
+        }
 
         if self.peek() != Some(b'}') {
             loop {
