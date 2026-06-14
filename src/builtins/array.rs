@@ -204,7 +204,7 @@ pub fn init_array(ctx: &mut JSContext) {
     }
 
     let proto_atom = ctx.intern("ArrayPrototype");
-    let mut proto_obj = JSObject::new();
+    let mut proto_obj = JSObject::new_array();
     set_ne(
         &mut proto_obj,
         ctx.intern("push"),
