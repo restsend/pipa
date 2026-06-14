@@ -23,18 +23,20 @@
 | NaN | 6 |
 | Infinity | 6 |
 | eval | 9 (+1 skipped) |
+| undefined | 8 |
+| global | 29 |
+| decodeURI | 55 |
+| decodeURIComponent | 56 |
 
 ### Completes without crash or hang
 
 | Module | Pass | Fail | Total | Pass Rate |
 |---|---|---|---|---|
 | Symbol | 94 | 4 | 98 | 95.9% |
-| global | 27 | 2 | 29 | 93.1% |
-| undefined | 7 | 1 | 8 | 87.5% |
-| decodeURI | 54 | 1 | 55 | 98.2% |
-| decodeURIComponent | 55 | 1 | 56 | 98.2% |
-| encodeURI | 24 | 7 | 31 | 77.4% |
-| encodeURIComponent | 24 | 7 | 31 | 77.4% |
+| Array/isArray | 27 | 0 | 27 (+2 skipped) | 100% of non-skipped |
+| String/fromCharCode | 16 | 1 | 17 | 94.1% |
+| encodeURI | 26 | 5 | 31 | 83.9% |
+| encodeURIComponent | 26 | 5 | 31 | 83.9% |
 | ThrowTypeError | 4 | 10 | 14 | 28.6% |
 
 ### Slow (very large array operations, not hangs)
@@ -107,3 +109,6 @@ Fixes:
 - 2026-06-14: Fixed js_to_primitive_number to honor Symbol.toPrimitive. Symbol 94.9% -> 95.9%
 - 2026-06-14: Added Symbol.species accessor to Array/Map/Set/RegExp/Promise constructors
 - 2026-06-14: Treated undefined/NaN/Infinity as Identifiers (not Literals) so assignments/delete work per spec. NaN 100%, Infinity 100%, undefined 87.5%
+- 2026-06-14: Spec-correct String.fromCharCode via ToUint16 + UTF-16-lossy decode. Number(bigint) handled explicitly; ToNumber(BigInt) throws. decodeURI 100%, decodeURIComponent 100%, fromCharCode 94%
+- 2026-06-14: Made Array.prototype an exotic Array object. Array.isArray 100%
+- 2026-06-14: Enforce strict-mode TypeError for non-writable SetField (obj[key] = ...) and SetGlobal (var on non-writable global). undefined 100%, global 100%
