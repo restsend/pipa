@@ -1792,8 +1792,24 @@ pub fn js_to_number_value(ctx: &mut JSContext, v: &JSValue) -> Result<f64, ()> {
         return Err(());
     }
     if v.is_bigint() {
-        let bv = v.as_object().get_bigint_value();
-        return Ok(bv as f64);
+        let mut err = crate::object::object::JSObject::new_typed(
+            crate::object::object::ObjectType::Error,
+        );
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Cannot convert a BigInt value to a number")),
+        );
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return Err(());
     }
     if v.is_string() {
         let s = ctx.get_atom_str(v.get_atom());
@@ -1849,6 +1865,20 @@ pub fn js_to_number_value(ctx: &mut JSContext, v: &JSValue) -> Result<f64, ()> {
 fn number_constructor(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::new_int(0);
+    }
+    if args[0].is_bigint() {
+        let bv = args[0].as_object().get_bigint_value();
+        let f = bv as f64;
+        if f.is_nan() {
+            return JSValue::new_float(f64::NAN);
+        }
+        if f == 0.0 && f.is_sign_negative() {
+            return JSValue::new_float(-0.0);
+        }
+        if f == f.floor() && f.is_finite() && f.abs() < 140737488355328.0 {
+            return JSValue::new_int(f as i64);
+        }
+        return JSValue::new_float(f);
     }
     match js_to_number_value(ctx, &args[0]) {
         Ok(f) => {

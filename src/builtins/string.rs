@@ -1116,20 +1116,26 @@ fn from_str_or_hex(s: &str) -> u32 {
 }
 
 fn string_fromcharcode(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let mut result = String::new();
+    let mut units: Vec<u16> = Vec::with_capacity(args.len());
     for arg in args {
-        let code = if arg.is_string() {
-            from_str_or_hex(ctx.get_atom_str(arg.get_atom()))
-        } else if arg.is_int() {
-            arg.get_int() as u32
-        } else {
-            0
+        let n = match crate::builtins::global::js_to_number_value(ctx, arg) {
+            Ok(n) => n,
+            Err(()) => return JSValue::undefined(),
         };
-        if let Some(c) = char::from_u32(code & 0xFFFF) {
-            result.push(c);
-        }
+        let unit = to_uint16(n);
+        units.push(unit);
     }
+    let result: String = String::from_utf16_lossy(&units);
     JSValue::new_string(ctx.intern(&result))
+}
+
+fn to_uint16(n: f64) -> u16 {
+    if n.is_nan() || n.is_infinite() {
+        return 0;
+    }
+    let i = n.trunc();
+    let modulo = ((i.round() as i128).rem_euclid(65536)) as u16;
+    modulo
 }
 
 fn string_fromcodepoint(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
