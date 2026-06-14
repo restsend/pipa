@@ -183,7 +183,9 @@ pub fn init_globals(ctx: &mut JSContext) {
                 if value.is_function() {
                     let func =
                         unsafe { crate::value::JSValue::function_from_ptr_mut(value.get_ptr()) };
-                    func.base.set_prototype_raw(fn_proto_ptr);
+                    if func.base.prototype.is_none() {
+                        func.base.set_prototype_raw(fn_proto_ptr);
+                    }
                 }
             }
         }

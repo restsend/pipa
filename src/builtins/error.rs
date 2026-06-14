@@ -119,6 +119,25 @@ pub fn init_error(ctx: &mut JSContext) {
     init_range_error(ctx);
     init_uri_error(ctx);
     init_eval_error(ctx);
+
+    let global = ctx.global();
+    if global.is_object() {
+        let error_ctor_val = global.as_object().get(error_atom);
+        if let Some(error_ctor) = error_ctor_val {
+            if error_ctor.is_function() {
+                let error_ctor_ptr = error_ctor.get_ptr() as *mut crate::object::object::JSObject;
+                for name in ["TypeError", "ReferenceError", "SyntaxError", "RangeError", "URIError", "EvalError"] {
+                    let atom = ctx.intern(name);
+                    if let Some(ctor_val) = global.as_object().get(atom) {
+                        if ctor_val.is_function() {
+                            let ctor = unsafe { JSValue::function_from_ptr_mut(ctor_val.get_ptr()) };
+                            ctor.base.set_prototype_raw(error_ctor_ptr);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn init_type_error(ctx: &mut JSContext) {

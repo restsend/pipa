@@ -413,6 +413,10 @@ impl JSValue {
             return self.get_atom().0 == other.get_atom().0;
         }
 
+        if self.is_object_like() && other.is_object_like() {
+            return self.get_ptr() == other.get_ptr();
+        }
+
         false
     }
 
