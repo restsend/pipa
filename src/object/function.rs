@@ -222,6 +222,11 @@ impl JSFunction {
         if ctx.builtin_needs_this(builtin_name) {
             self.set_builtin_needs_this(true);
         }
+        if self.base.prototype.is_none() {
+            if let Some(fp) = ctx.get_function_prototype() {
+                self.base.prototype = Some(fp);
+            }
+        }
         if let Some(display_name) = ctx.get_builtin_name(builtin_name) {
             self.name = ctx.intern(display_name);
         }

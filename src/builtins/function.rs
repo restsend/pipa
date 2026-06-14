@@ -62,6 +62,20 @@ fn create_builtin_method(
 }
 
 fn patch_function_values_with_function_prototype(obj: &mut JSObject, fn_proto_ptr: *mut JSObject) {
+    patch_function_values_recursive(obj, fn_proto_ptr, &mut Vec::new());
+}
+
+fn patch_function_values_recursive(
+    obj: &mut JSObject,
+    fn_proto_ptr: *mut JSObject,
+    visited: &mut Vec<usize>,
+) {
+    let obj_addr = obj as *mut JSObject as usize;
+    if visited.contains(&obj_addr) {
+        return;
+    }
+    visited.push(obj_addr);
+
     let mut values = Vec::new();
     obj.for_each_property(|_atom, value, _attrs| {
         values.push(value);
@@ -70,7 +84,13 @@ fn patch_function_values_with_function_prototype(obj: &mut JSObject, fn_proto_pt
     for value in values {
         if value.is_function() {
             let func = unsafe { JSValue::function_from_ptr_mut(value.get_ptr()) };
-            func.base.set_prototype_raw(fn_proto_ptr);
+            if func.base.prototype.is_none() {
+                func.base.set_prototype_raw(fn_proto_ptr);
+            }
+            patch_function_values_recursive(&mut func.base, fn_proto_ptr, visited);
+        } else if value.is_object() {
+            let nested = value.as_object_mut();
+            patch_function_values_recursive(nested, fn_proto_ptr, visited);
         }
     }
 }
@@ -177,18 +197,6 @@ pub fn init_function(ctx: &mut JSContext) {
     if global.is_object() {
         let global_obj = global.as_object_mut();
         patch_function_values_with_function_prototype(global_obj, proto_ptr as *mut JSObject);
-
-        let mut nested = Vec::new();
-        global_obj.for_each_property(|_atom, value, _attrs| {
-            if value.is_object() || value.is_function() {
-                nested.push(value);
-            }
-        });
-
-        for value in nested {
-            let nested_obj = value.as_object_mut();
-            patch_function_values_with_function_prototype(nested_obj, proto_ptr as *mut JSObject);
-        }
     }
 
     let mut function_ctor = JSFunction::new_builtin(ctx.common_atoms.function, 1);
