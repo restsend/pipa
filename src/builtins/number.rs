@@ -192,6 +192,37 @@ pub fn number_to_string(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     } else if this.is_object() {
         let obj = this.as_object();
+        let number_proto = ctx.get_number_prototype();
+        let mut is_number_wrapper = false;
+        if let Some(np) = number_proto {
+            let this_ptr = this.get_ptr();
+            if this_ptr as usize == np as usize {
+                is_number_wrapper = true;
+            }
+            if !is_number_wrapper {
+                let mut current = this.as_object().prototype;
+                let mut depth = 0u32;
+                while let Some(p) = current {
+                    if p.is_null() || depth > 10 {
+                        break;
+                    }
+                    if p as usize == np as usize {
+                        is_number_wrapper = true;
+                        break;
+                    }
+                    unsafe {
+                        current = (*p).prototype;
+                    }
+                    depth += 1;
+                }
+            }
+        }
+        if !is_number_wrapper {
+            return throw_type_error_if_no_exception(
+                ctx,
+                "Number.prototype.toString requires 'this' to be a Number",
+            );
+        }
         if let Some(v) = obj.get(ctx.common_atoms.__value__) {
             if v.is_int() {
                 let n = v.get_int();

@@ -526,25 +526,26 @@ fn js_import(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 }
 
-fn global_isnan(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn global_isnan(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::bool(true);
     }
-    let val = args[0];
-    if val.is_int() || val.is_float() {
-        JSValue::bool(val.to_number().is_nan())
-    } else {
-        let n = val.to_number();
-        JSValue::bool(n.is_nan())
-    }
+    let n = match js_to_number_value(ctx, &args[0]) {
+        Ok(n) => n,
+        Err(()) => return JSValue::undefined(),
+    };
+    JSValue::bool(n.is_nan())
 }
 
-fn global_isfinite(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn global_isfinite(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         return JSValue::bool(false);
     }
-    let v = args[0].get_float();
-    JSValue::bool(!v.is_nan() && v.is_finite())
+    let n = match js_to_number_value(ctx, &args[0]) {
+        Ok(n) => n,
+        Err(()) => return JSValue::undefined(),
+    };
+    JSValue::bool(n.is_finite())
 }
 
 fn global_eval(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1631,6 +1632,91 @@ fn js_to_primitive_number(ctx: &mut JSContext, v: &JSValue) -> Option<JSValue> {
     }
     if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
         let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+
+        let to_prim_atom = {
+            let global = ctx.global();
+            if global.is_object() {
+                global
+                    .as_object()
+                    .get(ctx.intern("Symbol.toPrimitive"))
+                    .filter(|v| v.is_symbol())
+                    .map(|v| {
+                        crate::runtime::atom::Atom(0x40000000 | v.get_symbol_id())
+                    })
+            } else {
+                None
+            }
+        };
+        if let Some(tp_atom) = to_prim_atom {
+            let mut cur: Option<*mut crate::object::object::JSObject> = Some(v.get_ptr() as *mut crate::object::object::JSObject);
+            let mut depth = 0u32;
+            while let Some(p) = cur {
+                if depth > 100 {
+                    break;
+                }
+                unsafe {
+                    let tp_val = (*p).get_own_value(tp_atom);
+                    if let Some(f) = tp_val {
+                        if !f.is_function() {
+                            let mut err = crate::object::object::JSObject::new_typed(
+                                crate::object::object::ObjectType::Error,
+                            );
+                            err.set(
+                                ctx.common_atoms.name,
+                                JSValue::new_string(ctx.intern("TypeError")),
+                            );
+                            err.set(
+                                ctx.common_atoms.message,
+                                JSValue::new_string(ctx.intern(
+                                    "Symbol.toPrimitive is not a function",
+                                )),
+                            );
+                            if let Some(proto) = ctx.get_type_error_prototype() {
+                                err.prototype = Some(proto);
+                            }
+                            let ptr = Box::into_raw(Box::new(err)) as usize;
+                            ctx.runtime_mut().gc_heap_mut().track(ptr);
+                            ctx.pending_exception = Some(JSValue::new_object(ptr));
+                            return None;
+                        }
+                        let hint = JSValue::new_string(ctx.intern("number"));
+                        let r = vm.call_function_with_this(ctx, f, v.clone(), &[hint]);
+                        if ctx.pending_exception.is_some() {
+                            return None;
+                        }
+                        if let Ok(rv) = r {
+                            if rv.is_object() || rv.is_function() {
+                                let mut err = crate::object::object::JSObject::new_typed(
+                                    crate::object::object::ObjectType::Error,
+                                );
+                                err.set(
+                                    ctx.common_atoms.name,
+                                    JSValue::new_string(ctx.intern("TypeError")),
+                                );
+                                err.set(
+                                    ctx.common_atoms.message,
+                                    JSValue::new_string(ctx.intern(
+                                        "Cannot convert object to primitive value",
+                                    )),
+                                );
+                                if let Some(proto) = ctx.get_type_error_prototype() {
+                                    err.prototype = Some(proto);
+                                }
+                                let ptr = Box::into_raw(Box::new(err)) as usize;
+                                ctx.runtime_mut().gc_heap_mut().track(ptr);
+                                ctx.pending_exception = Some(JSValue::new_object(ptr));
+                                return None;
+                            }
+                            return Some(rv);
+                        }
+                        return None;
+                    }
+                    cur = (*p).prototype;
+                }
+                depth += 1;
+            }
+        }
+
         let value_of_atom = ctx.intern("valueOf");
         let to_string_atom = ctx.intern("toString");
         if let Some(valueof_fn) = obj.get(value_of_atom) {
@@ -1686,6 +1772,23 @@ pub fn js_to_number_value(ctx: &mut JSContext, v: &JSValue) -> Result<f64, ()> {
         return Ok(f64::NAN);
     }
     if v.is_symbol() {
+        let mut err = crate::object::object::JSObject::new_typed(
+            crate::object::object::ObjectType::Error,
+        );
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Cannot convert a Symbol value to a number")),
+        );
+        if let Some(proto) = ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
         return Err(());
     }
     if v.is_bigint() {
@@ -1975,11 +2078,12 @@ fn number_value_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return *this;
     }
     if this.is_object() {
-        let obj = this.as_object();
-        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
-            if v.is_int() || v.is_float() {
-                return v;
+        let val = this_number_value(ctx, this);
+        if let Some(f) = val {
+            if f == f.floor() && f.is_finite() && f.abs() < 140737488355328.0 {
+                return JSValue::new_int(f as i64);
             }
+            return JSValue::new_float(f);
         }
     }
     let mut err = JSObject::new();
@@ -2137,12 +2241,39 @@ fn this_number_value(ctx: &mut JSContext, this: &JSValue) -> Option<f64> {
     }
     if this.is_object() {
         let obj = this.as_object();
-        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
-            if v.is_int() {
-                return Some(v.get_int() as f64);
+        let number_proto = ctx.get_number_prototype();
+        let mut is_number_wrapper = false;
+        if let Some(np) = number_proto {
+            let this_ptr = this.get_ptr();
+            if this_ptr as usize == np as usize {
+                is_number_wrapper = true;
             }
-            if v.is_float() {
-                return Some(v.get_float());
+            if !is_number_wrapper {
+                let mut current = this.as_object().prototype;
+                let mut depth = 0u32;
+                while let Some(p) = current {
+                    if p.is_null() || depth > 10 {
+                        break;
+                    }
+                    if p as usize == np as usize {
+                        is_number_wrapper = true;
+                        break;
+                    }
+                    unsafe {
+                        current = (*p).prototype;
+                    }
+                    depth += 1;
+                }
+            }
+        }
+        if is_number_wrapper {
+            if let Some(v) = obj.get(ctx.common_atoms.__value__) {
+                if v.is_int() {
+                    return Some(v.get_int() as f64);
+                }
+                if v.is_float() {
+                    return Some(v.get_float());
+                }
             }
         }
     }
@@ -2315,6 +2446,10 @@ fn number_to_fixed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else {
             "-Infinity"
         }));
+    }
+    if val.abs() >= 1e21 {
+        let s = format!("{}", val);
+        return JSValue::new_string(ctx.intern(&s));
     }
     let result = format!("{:.1$}", val, digits);
     JSValue::new_string(ctx.intern(&result))
