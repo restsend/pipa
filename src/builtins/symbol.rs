@@ -741,6 +741,10 @@ pub fn register_builtins(ctx: &mut JSContext) {
         "symbol_toPrimitive",
         HostFunction::method("[Symbol.toPrimitive]", 1, symbol_to_primitive),
     );
+    ctx.register_builtin(
+        "symbol_species_get",
+        HostFunction::new("get [Symbol.species]", 0, species_getter),
+    );
 }
 
 pub fn fix_prototype_chain(ctx: &mut JSContext) {
@@ -805,6 +809,56 @@ pub fn get_symbol_to_string_tag_prop_key(ctx: &mut JSContext) -> Atom {
 
 pub fn get_symbol_species(ctx: &mut JSContext) -> JSValue {
     get_or_create_well_known_symbol(ctx, SYMBOL_SPECIES_DESC)
+}
+
+fn species_getter(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if let Some(this_val) = args.first() {
+        *this_val
+    } else {
+        JSValue::undefined()
+    }
+}
+
+pub fn install_species_accessor(ctx: &mut JSContext, ctor_val: &JSValue) {
+    if !ctor_val.is_function() {
+        return;
+    }
+    let species_sym = get_symbol_species(ctx);
+    if species_sym.is_undefined() {
+        return;
+    }
+    let species_atom = crate::runtime::atom::Atom(0x40000000 | species_sym.get_symbol_id());
+
+    let getter_fn = {
+        let name_atom = ctx.intern("get [Symbol.species]");
+        let mut f = crate::object::function::JSFunction::new_builtin(
+            name_atom,
+            0,
+        );
+        f.builtin_atom = Some(ctx.intern("symbol_species_get"));
+        f.builtin_func = ctx.get_builtin_func("symbol_species_get");
+        let name_desc = crate::object::object::PropertyDescriptor {
+            value: Some(JSValue::new_string(name_atom)),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        };
+        f.base.define_property(ctx.common_atoms.name, name_desc);
+        let ptr = Box::into_raw(Box::new(f)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track_function(ptr);
+        JSValue::new_function(ptr)
+    };
+
+    let func_mut = ctor_val.as_function_mut();
+    let entry = crate::object::object::AccessorEntry {
+        get: Some(getter_fn),
+        set: None,
+        enumerable: false,
+        configurable: true,
+    };
+    func_mut.base.ensure_extra().accessors.get_or_insert_with(|| Box::new(crate::util::FxHashMap::default())).insert(species_atom, entry);
 }
 
 pub fn get_symbol_to_string_tag(ctx: &mut JSContext) -> JSValue {

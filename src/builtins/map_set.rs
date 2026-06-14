@@ -1754,6 +1754,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
         let group_by_fn = create_builtin_fn(ctx, "map_group_by", 2);
         map_func_ref.base.set(ctx.intern("groupBy"), group_by_fn);
     }
+    crate::builtins::symbol::install_species_accessor(ctx, &map_ctor);
     unsafe {
         let proto_ref = &mut *(map_proto_ptr as *mut crate::object::object::JSObject);
         proto_ref.set(ctx.common_atoms.constructor, map_ctor);
@@ -1823,6 +1824,7 @@ pub fn init_map_set(ctx: &mut JSContext) {
         let set_func_ref = set_ctor.as_function_mut();
         set_func_ref.base.set(ctx.common_atoms.prototype, set_proto_value);
     }
+    crate::builtins::symbol::install_species_accessor(ctx, &set_ctor);
     unsafe {
         let proto_ref = &mut *(set_proto_ptr as *mut crate::object::object::JSObject);
         proto_ref.set(ctx.common_atoms.constructor, set_ctor);

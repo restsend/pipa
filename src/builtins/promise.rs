@@ -75,9 +75,6 @@ fn create_builtin_function(ctx: &mut JSContext, name: &str) -> JSValue {
 fn create_builtin_function_arity(ctx: &mut JSContext, name: &str, arity: u32) -> JSValue {
     let mut func = JSFunction::new_builtin(ctx.intern(name), arity);
     func.set_builtin_marker(ctx, name);
-    if let Some(fp) = ctx.get_function_prototype() {
-        func.base.prototype = Some(fp);
-    }
     let ptr = Box::into_raw(Box::new(func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(ptr);
     JSValue::new_function(ptr)
@@ -1076,6 +1073,8 @@ pub fn init_promise(ctx: &mut JSContext) {
     let promise_ptr = Box::into_raw(Box::new(promise_func)) as usize;
     ctx.runtime_mut().gc_heap_mut().track_function(promise_ptr);
     let promise_value = JSValue::new_function(promise_ptr);
+
+    crate::builtins::symbol::install_species_accessor(ctx, &promise_value);
 
     let proto_mut = unsafe { &mut *(proto_ptr as *mut JSObject) };
     proto_mut.set(ctx.intern("constructor"), promise_value);

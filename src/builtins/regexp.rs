@@ -34,7 +34,8 @@ pub fn init_regexp(ctx: &mut JSContext) {
         let regexp_atom = ctx.common_atoms.regexp;
 
         let regexp_func = create_builtin_function(ctx, "regexp_constructor");
-        crate::builtins::global::set_non_enumerable(global_obj, regexp_atom, regexp_func);
+        crate::builtins::global::set_non_enumerable(global_obj, regexp_atom, regexp_func.clone());
+        crate::builtins::symbol::install_species_accessor(ctx, &regexp_func);
     }
 
     let proto_atom = ctx.intern("RegExpPrototype");

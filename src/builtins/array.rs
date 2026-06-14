@@ -392,6 +392,8 @@ pub fn init_array(ctx: &mut JSContext) {
         .base
         .set(ctx.common_atoms.prototype, proto_value);
 
+    crate::builtins::symbol::install_species_accessor(ctx, &array_value);
+
     if global.is_object() {
         let global_obj = global.as_object_mut();
         global_obj.set(proto_atom, proto_value);
