@@ -3988,6 +3988,25 @@ impl VM {
                         }
                         let global = ctx.global();
                         if global.is_object() {
+                            let global_obj_ref = global.as_object();
+                            if is_strict {
+                                if let Some(desc) = global_obj_ref.get_own_descriptor(atom) {
+                                    if !desc.writable && desc.get.is_none() && desc.set.is_none() {
+                                        self.set_pending_type_error(
+                                            ctx,
+                                            "Cannot assign to read only property",
+                                        );
+                                        if let Some(exc) = self.pending_throw.take() {
+                                            match self.dispatch_throw_value(ctx, exc) {
+                                                ThrowDispatch::Caught => continue,
+                                                ThrowDispatch::Uncaught(e) => return Err(e),
+                                                ThrowDispatch::AsyncComplete(o) => return Ok(o),
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                }
+                            }
                             let global_obj = global.as_object_mut();
                             global_obj.set_cached(atom, val, ctx.shape_cache_mut());
                         }
@@ -4591,7 +4610,24 @@ impl VM {
                                 }
                             }
                         } else {
-                            js_obj.set_cached(atom, value, ctx.shape_cache_mut());
+                            let pre_offset = js_obj.find_offset(atom);
+                            if pre_offset.is_some() && !js_obj.is_prop_writable_at(pre_offset) {
+                                if self.frames[self.frame_index].is_strict_frame {
+                                    self.set_pending_type_error(
+                                        ctx,
+                                        "Cannot assign to read only property",
+                                    );
+                                    if let Some(exc) = self.pending_throw.take() {
+                                        match self.dispatch_throw_value(ctx, exc) {
+                                            ThrowDispatch::Caught => {}
+                                            ThrowDispatch::Uncaught(e) => return Err(e),
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            } else {
+                                js_obj.set_cached(atom, value, ctx.shape_cache_mut());
+                            }
                         }
                     } else if obj_val.is_object_like() && key_val.is_float() {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(obj_val.get_ptr()) };
@@ -4607,7 +4643,24 @@ impl VM {
                                 }
                             }
                         } else {
-                            js_obj.set_cached(atom, value, ctx.shape_cache_mut());
+                            let pre_offset = js_obj.find_offset(atom);
+                            if pre_offset.is_some() && !js_obj.is_prop_writable_at(pre_offset) {
+                                if self.frames[self.frame_index].is_strict_frame {
+                                    self.set_pending_type_error(
+                                        ctx,
+                                        "Cannot assign to read only property",
+                                    );
+                                    if let Some(exc) = self.pending_throw.take() {
+                                        match self.dispatch_throw_value(ctx, exc) {
+                                            ThrowDispatch::Caught => {}
+                                            ThrowDispatch::Uncaught(e) => return Err(e),
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            } else {
+                                js_obj.set_cached(atom, value, ctx.shape_cache_mut());
+                            }
                         }
                     } else if obj_val.is_object_like() && key_val.is_symbol() {
                         let js_obj = unsafe { JSValue::object_from_ptr_mut(obj_val.get_ptr()) };
