@@ -2037,19 +2037,23 @@ impl Parser {
             self.advance();
             return Ok(Expression::Literal(Literal::Null));
         }
-        if self.at_keyword("undefined")
-            || (self.cur_type() == Some(TokenType::Identifier) && self.cur_value() == "undefined")
-        {
+        if self.cur_type() == Some(TokenType::Identifier) && self.cur_value() == "undefined" {
             self.advance();
-            return Ok(Expression::Literal(Literal::Undefined));
+            return Ok(Expression::Identifier(Identifier {
+                name: "undefined".to_string(),
+            }));
         }
         if self.cur_type() == Some(TokenType::Identifier) && self.cur_value() == "NaN" {
             self.advance();
-            return Ok(Expression::Literal(Literal::Number(f64::NAN)));
+            return Ok(Expression::Identifier(Identifier {
+                name: "NaN".to_string(),
+            }));
         }
         if self.cur_type() == Some(TokenType::Identifier) && self.cur_value() == "Infinity" {
             self.advance();
-            return Ok(Expression::Literal(Literal::Number(f64::INFINITY)));
+            return Ok(Expression::Identifier(Identifier {
+                name: "Infinity".to_string(),
+            }));
         }
         if self.at_keyword("this") {
             self.advance();
