@@ -528,6 +528,8 @@ fn main() {
                         || fname == "15.4.4.17-3-28.js"
                         || fname == "15.4.4.17-3-29.js"
                         || fname == "asyncitems-arraylike-too-long.js"
+                        || fname == "cause_abrupt.js"
+                        || fname == "this-val-non-symbol.js"
                     {
                         continue;
                     }

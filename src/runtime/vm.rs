@@ -8499,7 +8499,7 @@ impl VM {
         result
     }
 
-    fn ordinary_to_primitive(&mut self, v: &JSValue, hint: &str, ctx: &mut JSContext) -> JSValue {
+    pub fn ordinary_to_primitive(&mut self, v: &JSValue, hint: &str, ctx: &mut JSContext) -> JSValue {
         if !v.is_object() && !v.is_function() {
             return *v;
         }

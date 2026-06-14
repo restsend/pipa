@@ -624,7 +624,8 @@ fn reflect_get(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let i = key_val.get_int();
         if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
     } else {
-        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        let s = to_property_key_string(ctx, key_val);
+        if ctx.pending_exception.is_some() { return JSValue::undefined(); }
         ctx.intern(&s)
     };
     let receiver = args.get(2).copied().unwrap_or(args[0]);
@@ -682,7 +683,8 @@ fn reflect_set(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let i = key_val.get_int();
         if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
     } else {
-        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        let s = to_property_key_string(ctx, key_val);
+        if ctx.pending_exception.is_some() { return JSValue::undefined(); }
         ctx.intern(&s)
     };
     target.as_object_mut().set(key, value);
@@ -710,7 +712,8 @@ fn reflect_has(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let i = key_val.get_int();
         if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
     } else {
-        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        let s = to_property_key_string(ctx, key_val);
+        if ctx.pending_exception.is_some() { return JSValue::undefined(); }
         ctx.intern(&s)
     };
     JSValue::bool(args[0].as_object().has_property(key))
@@ -737,7 +740,8 @@ fn reflect_delete_property(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let i = key_val.get_int();
         if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
     } else {
-        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        let s = to_property_key_string(ctx, key_val);
+        if ctx.pending_exception.is_some() { return JSValue::undefined(); }
         ctx.intern(&s)
     };
     let result = args[0].as_object_mut().delete(key);
@@ -764,7 +768,8 @@ fn reflect_define_property(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let i = key_val.get_int();
         if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
     } else {
-        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        let s = to_property_key_string(ctx, key_val);
+        if ctx.pending_exception.is_some() { return JSValue::undefined(); }
         ctx.intern(&s)
     };
     let attrs = &args[2];
@@ -812,7 +817,8 @@ fn reflect_get_own_property_descriptor(ctx: &mut JSContext, args: &[JSValue]) ->
         let i = key_val.get_int();
         if i >= 0 && i < 100 { ctx.int_atom_mut(i as usize) } else { ctx.intern(&i.to_string()) }
     } else {
-        let s = crate::builtins::global::jsvalue_to_string(key_val, ctx);
+        let s = to_property_key_string(ctx, key_val);
+        if ctx.pending_exception.is_some() { return JSValue::undefined(); }
         ctx.intern(&s)
     };
     if let Some(desc) = args[0].as_object().get_own_descriptor(key) {
@@ -1594,6 +1600,42 @@ fn init_json(ctx: &mut JSContext) {
         let global_obj = global.as_object_mut();
         set_non_enumerable(global_obj, json_atom, json_value);
     }
+}
+
+pub fn to_property_key_string(ctx: &mut JSContext, v: &JSValue) -> String {
+    if v.is_string() {
+        return ctx.get_atom_str(v.get_atom()).to_string();
+    }
+    if v.is_int() {
+        return v.get_int().to_string();
+    }
+    if v.is_float() {
+        return crate::builtins::string::js_float_to_string(v.get_float());
+    }
+    if v.is_undefined() {
+        return "undefined".to_string();
+    }
+    if v.is_null() {
+        return "null".to_string();
+    }
+    if v.is_bool() {
+        return v.get_bool().to_string();
+    }
+    if v.is_symbol() {
+        throw_type_error(ctx, "Cannot convert a Symbol value to a property key");
+        return String::new();
+    }
+    if v.is_object() {
+        if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+            let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+            let prim = vm.ordinary_to_primitive(v, "string", ctx);
+            if ctx.pending_exception.is_some() {
+                return String::new();
+            }
+            return to_property_key_string(ctx, &prim);
+        }
+    }
+    String::new()
 }
 
 pub fn throw_type_error(ctx: &mut JSContext, msg: &str) -> JSValue {
