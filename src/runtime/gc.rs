@@ -12,10 +12,16 @@ pub const TAG_FUNCTION: u8 = 2;
 const COLOR_WHITE: u8 = 0;
 const COLOR_GRAY: u8 = 1;
 const COLOR_BLACK: u8 = 2;
-const MIN_HEAP_THRESHOLD: usize = 8 * 1024 * 1024;
-const GC_GROWTH_FACTOR: usize = 12;
+const MIN_HEAP_THRESHOLD: usize = 1024 * 1024;
+const NURSERY_PINNED_STREAK_LIMIT: usize = 10;
 
-
+fn nursery_pinned_streak_limit() -> usize {
+    env::var("PIPA_NURSERY_PINNED_STREAK_LIMIT")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .map(|value| value.max(1))
+        .unwrap_or(NURSERY_PINNED_STREAK_LIMIT)
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct GcDebugConfig {
@@ -203,9 +209,13 @@ pub struct GcHeap {
     pub nursery: Nursery,
     nursery_indices: Vec<usize>,
     nursery_enabled: bool,
+    nursery_pinned_streak: usize,
+    last_minor_survivor_count: usize,
     pub minor_collections: usize,
 
     pub deleted_props_count: usize,
+
+    nursery_pinned_streak_limit: usize,
     debug: GcDebugConfig,
     debug_stats: GcDebugStats,
 
@@ -227,11 +237,13 @@ impl GcHeap {
             total_allocated: 0,
             threshold: MIN_HEAP_THRESHOLD,
             live_count: 0,
-            count_threshold: 100_000,
+            count_threshold: 2_000_000,
             nursery: Nursery::new(16 * 1024 * 1024),
             nursery_indices: Vec::new(),
             nursery_enabled: true,
-
+            nursery_pinned_streak: 0,
+            nursery_pinned_streak_limit: nursery_pinned_streak_limit(),
+            last_minor_survivor_count: 0,
             minor_collections: 0,
             deleted_props_count: 0,
 
@@ -809,6 +821,27 @@ impl GcHeap {
         self.count_threshold = (self.live_count.saturating_mul(8)).max(2_000_000);
     }
 
+    fn note_minor_gc_result(&mut self, freed: usize) {
+        let survivor_count = self.nursery_indices.len();
+        if survivor_count == 0 {
+            self.nursery_enabled = true;
+            self.nursery_pinned_streak = 0;
+            self.last_minor_survivor_count = 0;
+            return;
+        }
+
+        if freed == 0 && survivor_count == self.last_minor_survivor_count {
+            self.nursery_pinned_streak += 1;
+            if self.nursery_pinned_streak >= self.nursery_pinned_streak_limit {
+                self.nursery_enabled = false;
+            }
+        } else {
+            self.nursery_pinned_streak = 0;
+        }
+
+        self.last_minor_survivor_count = survivor_count;
+    }
+
     pub fn minor_gc(&mut self, roots: &[JSValue]) -> usize {
         let before = self.snapshot();
         let seq = self.debug_collection_start("minor", roots);
@@ -876,6 +909,7 @@ impl GcHeap {
         self.gray_stack.clear();
         self.minor_collections += 1;
         let freed = dead.len();
+        self.note_minor_gc_result(freed);
         self.debug_collection_end(seq, "minor", before, freed, &dead_entries);
         freed
     }
@@ -958,8 +992,10 @@ impl GcHeap {
         self.nursery_indices = live_nursery_indices;
         if self.nursery_indices.is_empty() {
             self.nursery.reset();
+            self.nursery_enabled = true;
+        } else {
+            self.nursery_enabled = false;
         }
-        self.nursery_enabled = true;
         self.gray_stack.clear();
         self.refresh_threshold_after_full_gc();
         self.debug_collection_end(seq, "full", before, freed, &dead_entries);
