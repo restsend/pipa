@@ -505,11 +505,11 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "array_from",
-        HostFunction::new("from", 1, array_from),
+        HostFunction::method("from", 1, array_from),
     );
     ctx.register_builtin(
         "array_of",
-        HostFunction::new("of", 0, array_of),
+        HostFunction::method("of", 0, array_of),
     );
     ctx.register_builtin(
         "array_fromAsync",
@@ -1195,9 +1195,10 @@ fn array_is_array(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 }
 
 fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let source = args.get(0).copied().unwrap_or(JSValue::undefined());
-    let map_fn = args.get(1).copied().filter(|v| v.is_function());
-    let map_fn_this = args.get(2).copied().unwrap_or(JSValue::undefined());
+    let ctor = args.first().copied().unwrap_or(JSValue::undefined());
+    let source = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let map_fn = args.get(2).copied().filter(|v| v.is_function());
+    let map_fn_this = args.get(3).copied().unwrap_or(JSValue::undefined());
 
     if source.is_null_or_undefined() {
         throw_type_error(ctx, "Array.from requires an array-like object or iterable");
@@ -1207,18 +1208,15 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let mut items: Vec<JSValue> = Vec::new();
 
     if source.is_string() {
-        let chars: Vec<char> = {
-            let s = ctx.get_atom_str(source.get_atom());
-            s.chars().collect()
-        };
-        for ch in chars {
+        let s = ctx.get_atom_str(source.get_atom()).to_string();
+        for ch in s.chars() {
             items.push(JSValue::new_string(ctx.intern(&ch.to_string())));
         }
-        return create_array_obj(ctx, &items);
+        return create_array_obj_from_ctor(ctx, ctor, &items);
     }
 
     if !source.is_object() {
-        return create_array_obj(ctx, &items);
+        return create_array_obj_from_ctor(ctx, ctor, &items);
     }
 
     let obj = source.as_object();
@@ -1275,7 +1273,7 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                             }
                         }
                     }
-                    return create_array_obj(ctx, &items);
+                    return create_array_obj_from_ctor_iter(ctx, ctor, &items);
                 }
                 Err(_) => return JSValue::undefined(),
             }
@@ -1306,16 +1304,83 @@ fn array_from(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     }
 
-    create_array_obj(ctx, &items)
+    create_array_obj_from_ctor(ctx, ctor, &items)
+}
+
+fn is_builtin_array_ctor(ctx: &mut JSContext, ctor: JSValue) -> bool {
+    if !ctor.is_function() {
+        return false;
+    }
+    if let Some(ba) = ctor.as_function().builtin_atom {
+        ctx.get_atom_str(ba) == "array_constructor"
+    } else {
+        false
+    }
+}
+
+fn create_array_obj_from_ctor(ctx: &mut JSContext, ctor: JSValue, items: &[JSValue]) -> JSValue {
+    if !ctor.is_function() || is_builtin_array_ctor(ctx, ctor) {
+        return create_array_obj(ctx, items);
+    }
+
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        match vm.construct(ctx, ctor, &[JSValue::new_int(items.len() as i64)]) {
+            Ok(arr) => {
+                if arr.is_object_like() {
+                    let arr_obj = arr.as_object_mut();
+                    for (i, &val) in items.iter().enumerate() {
+                        let key = ctx.int_atom_mut(i);
+                        arr_obj.set(key, val);
+                    }
+                    arr_obj.set(ctx.common_atoms.length, JSValue::new_int(items.len() as i64));
+                }
+                return arr;
+            }
+            Err(_) => return JSValue::undefined(),
+        }
+    }
+
+    create_array_obj(ctx, items)
+}
+
+fn create_array_obj_from_ctor_iter(ctx: &mut JSContext, ctor: JSValue, items: &[JSValue]) -> JSValue {
+    if !ctor.is_function() || is_builtin_array_ctor(ctx, ctor) {
+        return create_array_obj(ctx, items);
+    }
+
+    if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        match vm.construct(ctx, ctor, &[]) {
+            Ok(arr) => {
+                if arr.is_object_like() {
+                    let arr_obj = arr.as_object_mut();
+                    for (i, &val) in items.iter().enumerate() {
+                        let key = ctx.int_atom_mut(i);
+                        arr_obj.set(key, val);
+                    }
+                    arr_obj.set(ctx.common_atoms.length, JSValue::new_int(items.len() as i64));
+                }
+                return arr;
+            }
+            Err(_) => return JSValue::undefined(),
+        }
+    }
+
+    create_array_obj(ctx, items)
 }
 
 fn array_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    let items: Vec<JSValue> = args.to_vec();
-    create_array_obj(ctx, &items)
+    let ctor = args.first().copied().unwrap_or(JSValue::undefined());
+    let items: Vec<JSValue> = args.iter().skip(1).copied().collect();
+    create_array_obj_from_ctor(ctx, ctor, &items)
 }
 
 fn create_array_obj(ctx: &mut JSContext, items: &[JSValue]) -> JSValue {
     let mut arr_obj = JSObject::new_array();
+    if let Some(proto_ptr) = ctx.get_array_prototype() {
+        arr_obj.set_prototype_raw(proto_ptr);
+    }
     for (i, &val) in items.iter().enumerate() {
         let key = ctx.int_atom_mut(i);
         arr_obj.set(key, val);
@@ -2222,13 +2287,26 @@ fn array_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
+    if this.is_undefined() {
+        throw_type_error(ctx, "Array.prototype.at requires an object");
+        return JSValue::undefined();
+    }
     if !this.is_object_like() {
         return JSValue::undefined();
     }
     let len_atom = ctx.common_atoms.length;
     let arr = this.as_object();
     let len = safe_array_len_with_ctx(&arr, len_atom, ctx) as usize;
-    let idx = args.get(1).map(|v| v.get_int()).unwrap_or(0);
+    let idx_arg = args.get(1).copied().unwrap_or(JSValue::undefined());
+    let n = match crate::builtins::global::js_to_number_value(ctx, &idx_arg) {
+        Ok(n) => n,
+        Err(()) => return JSValue::undefined(),
+    };
+    let idx = if n.is_nan() {
+        0i64
+    } else {
+        n.trunc() as i64
+    };
     let actual_idx = if idx < 0 { len as i64 + idx } else { idx };
     if actual_idx < 0 || actual_idx as usize >= len {
         return JSValue::undefined();

@@ -16,25 +16,25 @@
 
 No external C libraries or system dependencies for the above — everything is implemented from scratch in Rust.
 
-## Benchmarks (2026-06-05)
+## Benchmarks (2026-06-15)
 
 V8 benchmark suite comparison (higher is better):
 
 | Benchmark              |   qjs |   node |   boa |  pipa | vs qjs |
 |------------------------|-------|--------|-------|-------|--------|
-| Richards               |   963 |  45162 |   142 |   950 |  -1.3% |
-| DeltaBlue              |   941 |  98351 |   142 |   976 |  +3.7% |
-| Crypto                 |  1070 |  59358 |   126 |  1100 |  +2.8% |
-| RayTrace               |  1462 |  80659 |   312 |   956 | -34.6% |
-| EarleyBoyer            |  2083 |  92667 |   372 |  1848 | -11.3% |
-| RegExp                 |   329 |  13157 |  62.6 |  1018 | +209.4% |
-| Splay                  |  2410 |  50606 |   527 |  2038 | -15.4% |
-| NavierStokes           |  1809 |  56244 |   295 |  2115 | +16.9% |
-| **SCORE (total)**      | **1198** | **54138** | **203** | **1295** | **+8.1%** |
+| Richards               |   881 |  44629 |   133 |   866 |  -1.7% |
+| DeltaBlue              |   875 |  88373 |   136 |   828 |  -5.4% |
+| Crypto                 |  1013 |  56374 |   118 |   985 |  -2.8% |
+| RayTrace               |  1268 |  70299 |   276 |   589 | -53.5% |
+| EarleyBoyer            |  1831 |  84585 |   341 |  1225 | -33.1% |
+| RegExp                 |   306 |  12316 |  58.1 |   841 | +174.8% |
+| Splay                  |  2206 |  44299 |   459 |  2000 |  -9.3% |
+| NavierStokes           |  1759 |  54166 |   257 |  2087 | +18.6% |
+| **SCORE (total)**      | **1101** | **50001** | **185** | **1075** | **-2.4%** |
 
-Ranking: **#1 node** (54138) · **#2 pipa** (1295) · **#3 qjs** (1198) · **#4 boa** (203)
+Ranking: **#1 node** (50001) · **#2 qjs** (1101) · **#3 pipa** (1075) · **#4 boa** (185)
 
-## test262 Compatibility (2026-06-07)
+## test262 Compatibility (2026-06-15)
 
 Tested against [tc39/test262](https://github.com/tc39/test262) (excluding `intl402`).
 

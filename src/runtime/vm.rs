@@ -1752,6 +1752,61 @@ impl VM {
         self.call_function_with_this(ctx, func, JSValue::undefined(), args)
     }
 
+    pub fn construct(
+        &mut self,
+        ctx: &mut JSContext,
+        ctor: JSValue,
+        args: &[JSValue],
+    ) -> Result<JSValue, String> {
+        if !ctor.is_function() {
+            return Err("not a constructor".to_string());
+        }
+
+        let js_func = ctor.as_function();
+
+        let mut new_obj = crate::object::object::JSObject::new();
+
+        if !js_func.cached_prototype_ptr.is_null() {
+            new_obj.prototype = Some(js_func.cached_prototype_ptr);
+        } else {
+            let proto_key = ctx.common_atoms.prototype;
+            if let Some(proto_val) = js_func.base.get(proto_key) {
+                if proto_val.is_object_like() {
+                    let cptr = proto_val.get_ptr() as *mut crate::object::object::JSObject;
+                    ctor.as_function_mut().cached_prototype_ptr = cptr;
+                    new_obj.prototype = Some(cptr);
+                }
+            } else if !js_func.is_builtin() {
+                let mut pobj = crate::object::object::JSObject::new();
+                pobj.set(ctx.common_atoms.constructor, ctor);
+                if let Some(opp) = ctx.get_object_prototype() {
+                    pobj.prototype = Some(opp);
+                }
+                let pp = Box::into_raw(Box::new(pobj)) as usize;
+                ctx.runtime_mut().gc_heap_mut().track(pp);
+                ctor.as_function_mut().base.set(proto_key, JSValue::new_object(pp));
+                let cptr = pp as *mut crate::object::object::JSObject;
+                ctor.as_function_mut().cached_prototype_ptr = cptr;
+                new_obj.prototype = Some(cptr);
+            }
+        }
+
+        let new_ptr = Box::into_raw(Box::new(new_obj)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(new_ptr);
+        let new_val = JSValue::new_object(new_ptr);
+
+        match self.call_function_with_this(ctx, ctor, new_val, args) {
+            Ok(result) => {
+                if result.is_object_like() {
+                    Ok(result)
+                } else {
+                    Ok(new_val)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn call_function_with_this(
         &mut self,
         ctx: &mut JSContext,
@@ -4360,23 +4415,13 @@ impl VM {
                             }
                         } else if js_obj.is_mapped_arguments() {
                             let fi = js_obj.mapped_args_frame_index();
-                            let param_count = js_obj.mapped_args_param_count();
                             let idx = key_val.get_int();
                             if idx >= 0 && fi < self.frames.len() {
                                 let idx_u = idx as usize;
-                                if (idx as u32) < param_count {
-                                    let base = self.frames[fi].registers_base;
-                                    let reg_idx = base + 1 + idx_u;
-                                    if reg_idx < self.registers.len() {
-                                        self.set_reg(dst, self.registers[reg_idx]);
-                                        continue;
-                                    }
-                                } else {
-                                    let saved = &self.frames[fi].saved_args;
-                                    if idx_u < saved.len() {
-                                        self.set_reg(dst, saved[idx_u]);
-                                        continue;
-                                    }
+                                let saved = &self.frames[fi].saved_args;
+                                if idx_u < saved.len() {
+                                    self.set_reg(dst, saved[idx_u]);
+                                    continue;
                                 }
                             }
                             let idx = key_val.get_int();
@@ -8545,20 +8590,16 @@ impl VM {
         let mut has_tp = false;
 
         let has_own_tp = self.get_symbol_to_primitive_atom(ctx).map_or(false, |a| {
-            obj.get_own_value(a)
-                .or_else(|| {
-                    let mut cur = obj.prototype;
-                    while let Some(p) = cur {
-                        unsafe {
-                            if let Some(v) = (*p).get_own_value(a) {
-                                return Some(v);
-                            }
-                            cur = (*p).prototype;
-                        }
+            let mut cur: Option<*mut crate::object::object::JSObject> = Some(v.get_ptr() as *mut _);
+            while let Some(p) = cur {
+                unsafe {
+                    if let Some(v) = (*p).get_own_value(a) {
+                        return v.is_function();
                     }
-                    None
-                })
-                .map_or(false, |v| v.is_function())
+                    cur = (*p).prototype;
+                }
+            }
+            false
         });
         if has_own_tp {
             has_tp = true;
@@ -8602,7 +8643,7 @@ impl VM {
         }
         if !has_tp {
             if let Some(prim) = obj.get(ctx.common_atoms.__value__) {
-                if !prim.is_object() {
+                if !prim.is_object() && !prim.is_function() {
                     return prim;
                 }
             }

@@ -1701,6 +1701,9 @@ fn js_to_primitive_number(ctx: &mut JSContext, v: &JSValue) -> Option<JSValue> {
                 unsafe {
                     let tp_val = (*p).get_own_value(tp_atom);
                     if let Some(f) = tp_val {
+                        if f.is_null_or_undefined() {
+                            break;
+                        }
                         if !f.is_function() {
                             let mut err = crate::object::object::JSObject::new_typed(
                                 crate::object::object::ObjectType::Error,

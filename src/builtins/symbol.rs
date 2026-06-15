@@ -743,7 +743,7 @@ pub fn register_builtins(ctx: &mut JSContext) {
     );
     ctx.register_builtin(
         "symbol_species_get",
-        HostFunction::new("get [Symbol.species]", 0, species_getter),
+        HostFunction::method("get [Symbol.species]", 0, species_getter),
     );
 }
 
@@ -846,6 +846,15 @@ pub fn install_species_accessor(ctx: &mut JSContext, ctor_val: &JSValue) {
             set: None,
         };
         f.base.define_property(ctx.common_atoms.name, name_desc);
+        let length_desc = crate::object::object::PropertyDescriptor {
+            value: Some(JSValue::new_int(0)),
+            writable: false,
+            enumerable: false,
+            configurable: true,
+            get: None,
+            set: None,
+        };
+        f.base.define_property(ctx.common_atoms.length, length_desc);
         let ptr = Box::into_raw(Box::new(f)) as usize;
         ctx.runtime_mut().gc_heap_mut().track_function(ptr);
         JSValue::new_function(ptr)
