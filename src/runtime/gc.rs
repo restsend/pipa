@@ -909,7 +909,6 @@ impl GcHeap {
         self.gray_stack.clear();
         self.minor_collections += 1;
         let freed = dead.len();
-        self.note_minor_gc_result(freed);
         self.debug_collection_end(seq, "minor", before, freed, &dead_entries);
         freed
     }
@@ -992,14 +991,8 @@ impl GcHeap {
         self.nursery_indices = live_nursery_indices;
         if self.nursery_indices.is_empty() {
             self.nursery.reset();
-            self.nursery_enabled = true;
-        } else {
-            self.nursery_enabled = false;
         }
-        self.nursery_pinned_streak = 0;
-        self.last_minor_survivor_count = self.nursery_indices.len();
-        self.nursery_pinned_streak = 0;
-        self.last_minor_survivor_count = self.nursery_indices.len();
+        self.nursery_enabled = true;
         self.gray_stack.clear();
         self.refresh_threshold_after_full_gc();
         self.debug_collection_end(seq, "full", before, freed, &dead_entries);
