@@ -1682,15 +1682,21 @@ impl VM {
     pub fn maybe_gc(&mut self, ctx: &mut JSContext) {
         if self.allocation_count >= GC_CHECK_INTERVAL {
             self.allocation_count = 0;
-            let do_minor = ctx.runtime().gc_heap().nursery_is_full();
-            let do_full = ctx.runtime().gc_heap().should_collect();
-            if do_minor || do_full {
-                self.fill_gc_roots(ctx);
+            let heap = ctx.runtime().gc_heap();
+            let do_minor = heap.nursery_is_full();
+            let do_full = heap.should_collect();
 
-                let roots_ptr = self.gc_roots.as_ptr();
-                let roots_len = self.gc_roots.len();
-                let roots = unsafe { std::slice::from_raw_parts(roots_ptr, roots_len) };
-                if do_minor {
+            if do_minor || do_full {
+                // Skip minor GC if nursery has no collectible objects
+                // (e.g., only pinned survivors that never die)
+                let skip_minor = do_minor && heap.nursery_collectible_count() == 0
+                    && heap.nursery_pinned_count() > 0;
+
+                if do_minor && !skip_minor {
+                    self.fill_gc_roots(ctx);
+                    let roots_len = self.gc_roots.len();
+                    let roots_ptr = self.gc_roots.as_mut_ptr();
+                    let roots = unsafe { std::slice::from_raw_parts_mut(roots_ptr, roots_len) };
                     let _ = ctx.runtime_mut().minor_gc(roots);
                 }
 

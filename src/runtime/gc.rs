@@ -12,7 +12,8 @@ pub const TAG_FUNCTION: u8 = 2;
 const COLOR_WHITE: u8 = 0;
 const COLOR_GRAY: u8 = 1;
 const COLOR_BLACK: u8 = 2;
-const MIN_HEAP_THRESHOLD: usize = 1024 * 1024;
+const MIN_HEAP_THRESHOLD: usize = 32 * 1024 * 1024;
+const GC_GROWTH_FACTOR: usize = 12;
 const NURSERY_PINNED_STREAK_LIMIT: usize = 10;
 
 fn nursery_pinned_streak_limit() -> usize {
@@ -206,6 +207,7 @@ pub struct GcHeap {
     live_count: usize,
 
     count_threshold: usize,
+    nursery_capacity: usize,
     pub nursery: Nursery,
     nursery_indices: Vec<usize>,
     nursery_enabled: bool,
@@ -238,7 +240,8 @@ impl GcHeap {
             threshold: MIN_HEAP_THRESHOLD,
             live_count: 0,
             count_threshold: 2_000_000,
-            nursery: Nursery::new(16 * 1024 * 1024),
+            nursery_capacity: 32 * 1024 * 1024,
+            nursery: Nursery::new(32 * 1024 * 1024),
             nursery_indices: Vec::new(),
             nursery_enabled: true,
             nursery_pinned_streak: 0,
@@ -377,6 +380,22 @@ impl GcHeap {
 
     pub fn nursery_is_full(&self) -> bool {
         !self.gc_suppressed && self.nursery_enabled && !self.nursery.can_fit::<JSObject>()
+    }
+
+    pub fn nursery_collectible_count(&self) -> usize {
+        self.nursery_indices.len().saturating_sub(self.nursery_pinned_count())
+    }
+
+    pub fn nursery_pinned_count(&self) -> usize {
+        // Count objects in nursery_indices that were NOT recently allocated
+        // (they were promoted/survived previous GCs and persist in the nursery).
+        // We estimate this as: if nursery is full and offset hasn't changed,
+        // the remaining objects are pinned.
+        if self.nursery.usage() >= self.nursery_capacity {
+            self.nursery_indices.len()
+        } else {
+            0
+        }
     }
 
     pub fn untrack(&mut self, ptr: usize) {
@@ -816,9 +835,10 @@ impl GcHeap {
     }
 
     fn refresh_threshold_after_full_gc(&mut self) {
-        self.threshold = (self.total_allocated.saturating_mul(8)).max(MIN_HEAP_THRESHOLD);
-
-        self.count_threshold = (self.live_count.saturating_mul(8)).max(2_000_000);
+        self.threshold = (self.total_allocated.saturating_mul(GC_GROWTH_FACTOR))
+            .max(MIN_HEAP_THRESHOLD);
+        self.count_threshold = (self.live_count.saturating_mul(GC_GROWTH_FACTOR))
+            .max(2_000_000);
     }
 
     fn note_minor_gc_result(&mut self, freed: usize) {
