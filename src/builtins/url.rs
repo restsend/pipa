@@ -68,7 +68,10 @@ fn coerce_uri_input(ctx: &mut JSContext, args: &[JSValue]) -> Result<String, ()>
     if args[0].is_string() {
         return Ok(ctx.get_atom_str(args[0].get_atom()).to_string());
     }
-    if args[0].is_null() || args[0].is_undefined() {
+    if args[0].is_null() {
+        return Ok("null".to_string());
+    }
+    if args[0].is_undefined() {
         return Ok("undefined".to_string());
     }
     if args[0].is_symbol() {
