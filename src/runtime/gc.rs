@@ -1003,6 +1003,24 @@ impl GcHeap {
                         }
                     }
                 }
+                // Fix up cached_prototype_ptr for functions
+                let func_tag = self.tags[idx];
+                if func_tag == crate::runtime::gc::TAG_FUNCTION {
+                    let func = &mut *(ptr as *mut crate::object::function::JSFunction);
+                    if !func.cached_prototype_ptr.is_null() {
+                        let cp = func.cached_prototype_ptr as usize;
+                        if nursery_ref.contains(cp as *const u8) {
+                            let s = (*(cp as *const JSObject)).gc_slot;
+                            if s != u32::MAX {
+                                if let Some(&np) = objects_ref.get(s as usize) {
+                                    if np != 0 && np != cp {
+                                        func.cached_prototype_ptr = np as *mut JSObject;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
