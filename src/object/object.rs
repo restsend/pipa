@@ -141,7 +141,7 @@ const FLAG_HAS_DELETED_PROPS: u8 = 1 << 5;
 pub const ATTR_WRITABLE: u8 = 1 << 0;
 pub const ATTR_ENUMERABLE: u8 = 1 << 1;
 pub const ATTR_CONFIGURABLE: u8 = 1 << 2;
-pub const ATTR_DELETED: u8 = 1 << 7;
+const ATTR_DELETED: u8 = 1 << 7;
 const ATTR_DEFAULT: u8 = ATTR_WRITABLE | ATTR_ENUMERABLE | ATTR_CONFIGURABLE;
 
 #[derive(Clone, Debug)]
@@ -2043,12 +2043,6 @@ impl JSObject {
         }
     }
 
-    pub fn for_each_property_val_mut<F: FnMut(&mut PropSlot)>(&mut self, mut f: F) {
-        for slot in &mut self.props {
-            f(slot);
-        }
-    }
-
     #[inline]
     pub fn get_indexed(&self, index: usize) -> Option<JSValue> {
         self.extra
@@ -2140,10 +2134,6 @@ impl JSObject {
     #[inline(always)]
     pub fn props_len(&self) -> usize {
         self.props.len()
-    }
-
-    pub fn props_get(&self, idx: usize) -> Option<&PropSlot> {
-        self.props.get(idx)
     }
 
     pub fn iter_props(&self) -> SmallPropIter<'_> {

@@ -63,7 +63,7 @@ fn test_gc_memory_size() {
     assert_eq!(result.get_int(), 1);
 
     let after_size = runtime.gc_heap().total_size();
-    assert!(after_size >= initial_size, "Memory size should not decrease");
+    assert!(after_size > initial_size, "Memory size should increase");
 }
 
 #[test]

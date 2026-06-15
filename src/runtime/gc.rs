@@ -440,11 +440,7 @@ impl GcHeap {
             return false;
         }
         let idx = idx as usize;
-        let tracked = self.objects.get(idx).copied().unwrap_or(0);
-        if tracked == 0 {
-            return false;
-        }
-        if tracked != ptr && self.nursery.contains(tracked as *const u8) {
+        if self.objects.get(idx) != Some(&ptr) {
             return false;
         }
         if self.marks[idx] == COLOR_WHITE {
@@ -813,7 +809,7 @@ impl GcHeap {
         self.count_threshold = (self.live_count.saturating_mul(8)).max(2_000_000);
     }
 
-    pub fn minor_gc(&mut self, roots: &mut [JSValue]) -> usize {
+    pub fn minor_gc(&mut self, roots: &[JSValue]) -> usize {
         let before = self.snapshot();
         let seq = self.debug_collection_start("minor", roots);
 
@@ -830,12 +826,12 @@ impl GcHeap {
         }
 
         let mut dead = Vec::new();
-        let mut survivors: Vec<usize> = Vec::new();
+        let mut new_nursery_indices = Vec::new();
         for &idx in &self.nursery_indices {
             if self.marks[idx] == COLOR_WHITE {
                 dead.push(idx);
             } else {
-                survivors.push(idx);
+                new_nursery_indices.push(idx);
             }
         }
 
@@ -845,196 +841,21 @@ impl GcHeap {
             Vec::new()
         };
 
-        // Promote survivors: copy to Box, clear nursery Vecs to prevent
-        // shared Vec buffers from being freed when nursery copies are dropped.
-        for &idx in &survivors {
-            let old_ptr = self.objects[idx];
-            let tag = self.tags[idx];
-            let new_ptr = unsafe {
-                match tag {
-                    TAG_OBJECT => {
-                        let obj = std::ptr::read(old_ptr as *const JSObject);
-                        let nursery = &mut *(old_ptr as *mut JSObject);
-                        let old_props = nursery.take_props();
-                        self.prop_pool.push(old_props);
-                        Box::into_raw(Box::new(obj)) as usize
-                    }
-                    TAG_ARRAY => {
-                        let arr = std::ptr::read(old_ptr as *const crate::object::array_obj::JSArrayObject);
-                        let nursery = &mut *(old_ptr as *mut crate::object::array_obj::JSArrayObject);
-                        let old_props = nursery.header.take_props();
-                        self.prop_pool.push(old_props);
-                        nursery.elements = Vec::new();
-                        Box::into_raw(Box::new(arr)) as usize
-                    }
-                    TAG_FUNCTION => {
-                        let func = std::ptr::read(old_ptr as *const crate::object::function::JSFunction);
-                        let nursery = &mut *(old_ptr as *mut crate::object::function::JSFunction);
-                        let old_props = nursery.base.take_props();
-                        self.prop_pool.push(old_props);
-                        Box::into_raw(Box::new(func)) as usize
-                    }
-                    _ => old_ptr,
-                }
-            };
-            self.objects[idx] = new_ptr;
-            unsafe { (*(new_ptr as *mut JSObject)).gc_slot = idx as u32; }
-        }
-
-        // Fix up promoted objects' property values and prototypes
-        let objects_ref = &self.objects;
-        let nursery_ref = &self.nursery;
-        for &idx in &survivors {
-            let ptr = self.objects[idx];
-            unsafe {
-                let tag = self.tags[idx];
-                let obj = &mut *(ptr as *mut crate::object::object::JSObject);
-                // Fix up prototype
-                if let Some(pp) = obj.prototype {
-                    let ppa = pp as usize;
-                    if nursery_ref.contains(ppa as *const u8) {
-                        let s = (*(ppa as *const JSObject)).gc_slot;
-                        if s != u32::MAX {
-                            if let Some(&np) = objects_ref.get(s as usize) {
-                                if np != 0 && np != ppa {
-                                    obj.prototype = Some(np as *mut JSObject);
-                                }
-                            }
-                        }
-                    }
-                }
-                // Fix up property values using get+set (avoid mutable iteration)
-                for i in 0..obj.props_len() {
-                    if let Some(slot) = obj.props_get(i) {
-                        if slot.attrs == crate::object::object::ATTR_DELETED { continue; }
-                        let mut v = slot.value;
-                        if v.is_object() || v.is_function() {
-                            let p = v.get_ptr();
-                            if nursery_ref.contains(p as *const u8) {
-                                let s = (*(p as *const JSObject)).gc_slot;
-                                if s != u32::MAX {
-                                    if let Some(&np) = objects_ref.get(s as usize) {
-                                        if np != 0 && np != p {
-                                            obj.set(slot.atom, JSValue::new_object(np));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                // For TAG_ARRAY, fix up elements
-                if tag == crate::runtime::gc::TAG_ARRAY {
-                    let arr = &mut *(ptr as *mut crate::object::array_obj::JSArrayObject);
-                    for elem in arr.elements.iter_mut() {
-                        if elem.is_object() || elem.is_function() {
-                            let p = elem.get_ptr();
-                            if nursery_ref.contains(p as *const u8) {
-                                let s = (*(p as *const JSObject)).gc_slot;
-                                if s != u32::MAX {
-                                    if let Some(&np) = objects_ref.get(s as usize) {
-                                        if np != 0 && np != p {
-                                            *elem = JSValue::new_object(np);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                // For TAG_FUNCTION, fix up cached_prototype_ptr
-                if tag == crate::runtime::gc::TAG_FUNCTION {
-                    let func = &mut *(ptr as *mut crate::object::function::JSFunction);
-                    if !func.cached_prototype_ptr.is_null() {
-                        let cp = func.cached_prototype_ptr as usize;
-                        if nursery_ref.contains(cp as *const u8) {
-                            let s = (*(cp as *const JSObject)).gc_slot;
-                            if s != u32::MAX {
-                                if let Some(&np) = objects_ref.get(s as usize) {
-                                    if np != 0 && np != cp {
-                                        func.cached_prototype_ptr = np as *mut JSObject;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fix up ALL live objects' stale property references using safe read+set
-        let objects_ref = &self.objects;
-        let nursery_ref = &self.nursery;
-        for (idx, &ptr) in self.objects.iter().enumerate() {
-            if ptr == 0 || self.marks[idx] == COLOR_WHITE {
-                continue;
-            }
-            unsafe {
-                let obj = &mut *(ptr as *mut crate::object::object::JSObject);
-                if let Some(pp) = obj.prototype {
-                    let ppa = pp as usize;
-                    if nursery_ref.contains(ppa as *const u8) {
-                        let s = (*(ppa as *const JSObject)).gc_slot;
-                        if s != u32::MAX {
-                            if let Some(&np) = objects_ref.get(s as usize) {
-                                if np != 0 && np != ppa {
-                                    obj.prototype = Some(np as *mut JSObject);
-                                }
-                            }
-                        }
-                    }
-                }
-                for i in 0..obj.props_len() {
-                    if let Some(slot) = obj.props_get(i) {
-                        if slot.attrs == crate::object::object::ATTR_DELETED { continue; }
-                        let mut v = slot.value;
-                        if v.is_object() || v.is_function() {
-                            let p = v.get_ptr();
-                            if nursery_ref.contains(p as *const u8) {
-                                let s = (*(p as *const JSObject)).gc_slot;
-                                if s != u32::MAX {
-                                    if let Some(&np) = objects_ref.get(s as usize) {
-                                        if np != 0 && np != p {
-                                            obj.set(slot.atom, JSValue::new_object(np));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                // Fix up cached_prototype_ptr for functions
-                let func_tag = self.tags[idx];
-                if func_tag == crate::runtime::gc::TAG_FUNCTION {
-                    let func = &mut *(ptr as *mut crate::object::function::JSFunction);
-                    if !func.cached_prototype_ptr.is_null() {
-                        let cp = func.cached_prototype_ptr as usize;
-                        if nursery_ref.contains(cp as *const u8) {
-                            let s = (*(cp as *const JSObject)).gc_slot;
-                            if s != u32::MAX {
-                                if let Some(&np) = objects_ref.get(s as usize) {
-                                    if np != 0 && np != cp {
-                                        func.cached_prototype_ptr = np as *mut JSObject;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Drop dead nursery objects
         for &idx in &dead {
             let ptr = self.objects[idx];
             let tag = self.tags[idx];
             unsafe {
                 if tag == TAG_OBJECT {
                     let obj = &mut *(ptr as *mut JSObject);
+
                     let mut props = obj.take_props();
                     props.clear();
+
                     std::ptr::drop_in_place(ptr as *mut JSObject);
-                    if props.capacity() <= 8 { self.prop_pool.push(props); }
+
+                    if props.capacity() <= 8 {
+                        self.prop_pool.push(props);
+                    }
                 } else {
                     Self::drop_in_place_tracked(ptr, tag);
                 }
@@ -1044,9 +865,14 @@ impl GcHeap {
             self.tags[idx] = TAG_OBJECT;
             self.free_list.push(idx);
         }
+        self.gray_stack.clear();
+        self.clean_stale_properties_on_nursery_survivors();
 
-        self.nursery_indices.clear();
-        self.nursery_enabled = true;
+        self.nursery_indices = new_nursery_indices;
+        if self.nursery_indices.is_empty() {
+            self.nursery.reset();
+            self.nursery_enabled = true;
+        }
         self.gray_stack.clear();
         self.minor_collections += 1;
         let freed = dead.len();
@@ -1225,14 +1051,6 @@ impl GcHeap {
 
     pub fn object_count(&self) -> usize {
         self.objects.iter().filter(|&&p| p != 0).count()
-    }
-
-    pub fn objects(&self) -> &[usize] {
-        &self.objects
-    }
-
-    pub fn nursery(&self) -> &Nursery {
-        &self.nursery
     }
 
     #[inline]
