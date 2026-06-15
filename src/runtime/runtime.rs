@@ -72,7 +72,7 @@ impl JSRuntime {
         self.gc_heap.run_gc(roots)
     }
 
-    pub fn minor_gc(&mut self, roots: &[JSValue]) -> usize {
+    pub fn minor_gc(&mut self, roots: &mut [JSValue]) -> usize {
         self.gc_heap.minor_gc(roots)
     }
 

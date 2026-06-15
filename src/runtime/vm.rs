@@ -1689,9 +1689,12 @@ impl VM {
 
                 let roots_ptr = self.gc_roots.as_ptr();
                 let roots_len = self.gc_roots.len();
-                let roots = unsafe { std::slice::from_raw_parts(roots_ptr, roots_len) };
+                let roots = unsafe { std::slice::from_raw_parts_mut(roots_ptr as *mut JSValue, roots_len) };
                 if do_minor {
-                    let _ = ctx.runtime_mut().minor_gc(roots);
+                    let freed = ctx.runtime_mut().minor_gc(roots);
+                    if freed > 0 {
+                        self.fixup_registers_after_gc(ctx);
+                    }
                 }
 
                 if do_full || ctx.runtime().gc_heap().should_collect() {
@@ -1701,11 +1704,45 @@ impl VM {
         }
     }
 
+    fn fixup_registers_after_gc(&mut self, ctx: &JSContext) {
+        let heap = ctx.runtime().gc_heap();
+        let nursery = heap.nursery();
+        let helper = |v: &mut JSValue| {
+            if v.is_object() || v.is_function() {
+                let p = v.get_ptr();
+                if nursery.contains(p as *const u8) {
+                    let slot = unsafe { (*(p as *const crate::object::object::JSObject)).gc_slot };
+                    if slot != u32::MAX {
+                        if let Some(&np) = heap.objects().get(slot as usize) {
+                            if np != 0 && np != p {
+                                *v = JSValue::new_object(np);
+                            }
+                        }
+                    }
+                }
+            }
+        };
+        for v in self.registers.iter_mut() {
+            helper(v);
+        }
+        for fi in 0..=self.frame_index {
+            if let Some(ptr) = self.frames[fi].function_ptr {
+                let mut v = JSValue::new_function(ptr);
+                helper(&mut v);
+                if v.is_function() { self.frames[fi].function_ptr = Some(v.get_ptr()); }
+            }
+            helper(&mut self.frames[fi].this_value);
+        }
+        for v in self.gc_roots.iter_mut() {
+            helper(v);
+        }
+    }
+
     pub fn minor_gc(&mut self, ctx: &mut JSContext) -> usize {
         self.fill_gc_roots(ctx);
-        let roots_ptr = self.gc_roots.as_ptr();
         let roots_len = self.gc_roots.len();
-        let roots = unsafe { std::slice::from_raw_parts(roots_ptr, roots_len) };
+        let roots_ptr = self.gc_roots.as_mut_ptr();
+        let roots = unsafe { std::slice::from_raw_parts_mut(roots_ptr, roots_len) };
         ctx.runtime_mut().minor_gc(roots)
     }
 
