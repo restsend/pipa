@@ -312,6 +312,16 @@ pub fn init_string(ctx: &mut JSContext) {
     );
     set_ne(
         &mut proto_obj,
+        ctx.intern("toLocaleLowerCase"),
+        create_builtin_function(ctx, "string_toLocaleLowerCase"),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("toLocaleUpperCase"),
+        create_builtin_function(ctx, "string_toLocaleUpperCase"),
+    );
+    set_ne(
+        &mut proto_obj,
         ctx.intern("split"),
         create_builtin_function(ctx, "string_split"),
     );
@@ -511,6 +521,14 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "string_toUpperCase",
         HostFunction::method("toUpperCase", 0, string_to_upper_case),
+    );
+    ctx.register_builtin(
+        "string_toLocaleLowerCase",
+        HostFunction::method("toLocaleLowerCase", 0, string_to_locale_lower_case),
+    );
+    ctx.register_builtin(
+        "string_toLocaleUpperCase",
+        HostFunction::method("toLocaleUpperCase", 0, string_to_locale_upper_case),
     );
     ctx.register_builtin(
         "string_split",
@@ -996,6 +1014,14 @@ fn string_to_upper_case(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     JSValue::new_string(ctx.intern(&s))
+}
+
+fn string_to_locale_lower_case(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    string_to_lower_case(ctx, args)
+}
+
+fn string_to_locale_upper_case(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    string_to_upper_case(ctx, args)
 }
 
 fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
