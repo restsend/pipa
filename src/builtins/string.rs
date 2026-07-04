@@ -272,6 +272,16 @@ pub fn init_string(ctx: &mut JSContext) {
     );
     set_ne(
         &mut proto_obj,
+        ctx.intern("localeCompare"),
+        create_builtin_function(ctx, "string_localeCompare"),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("normalize"),
+        create_builtin_function(ctx, "string_normalize"),
+    );
+    set_ne(
+        &mut proto_obj,
         ctx.intern("slice"),
         create_builtin_function(ctx, "string_slice"),
     );
@@ -473,6 +483,14 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "string_lastIndexOf",
         HostFunction::method("lastIndexOf", 1, string_last_index_of),
+    );
+    ctx.register_builtin(
+        "string_localeCompare",
+        HostFunction::method("localeCompare", 1, string_locale_compare),
+    );
+    ctx.register_builtin(
+        "string_normalize",
+        HostFunction::method("normalize", 0, string_normalize),
     );
     ctx.register_builtin(
         "string_slice",
@@ -814,6 +832,60 @@ fn string_last_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
         None => JSValue::new_int(-1),
     }
+}
+
+fn string_locale_compare(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this_s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
+    let cmp_s = if args.len() > 1 {
+        match require_string_coercible(ctx, &args[1]) {
+            Some(s) => s,
+            None => return JSValue::undefined(),
+        }
+    } else {
+        "undefined".to_string()
+    };
+    let res = match this_s.cmp(&cmp_s) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    };
+    JSValue::new_int(res)
+}
+
+fn string_normalize(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let this_s = match require_string_coercible(ctx, &args[0]) {
+        Some(s) => s,
+        None => return JSValue::undefined(),
+    };
+    if args.len() > 1 && !args[1].is_undefined() {
+        let form_str = match require_string_coercible(ctx, &args[1]) {
+            Some(s) => s,
+            None => return JSValue::undefined(),
+        };
+        let valid = matches!(form_str.as_str(), "NFC" | "NFD" | "NFKC" | "NFKD");
+        if !valid {
+            let mut err = JSObject::new();
+            err.set(
+                ctx.common_atoms.name,
+                JSValue::new_string(ctx.intern("RangeError")),
+            );
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("Normalization form is invalid")),
+            );
+            if let Some(proto) = ctx.get_range_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+    }
+    JSValue::new_string(ctx.intern(&this_s))
 }
 
 fn string_substring(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
