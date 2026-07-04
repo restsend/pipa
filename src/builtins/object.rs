@@ -194,6 +194,26 @@ pub fn init_object(ctx: &mut JSContext) {
         ctx.common_atoms.to_locale_string,
         create_builtin_function(ctx, "object_to_locale_string"),
     );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("__defineGetter__"),
+        create_builtin_function(ctx, "object_define_getter"),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("__defineSetter__"),
+        create_builtin_function(ctx, "object_define_setter"),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("__lookupGetter__"),
+        create_builtin_function(ctx, "object_lookup_getter"),
+    );
+    set_ne(
+        &mut proto_obj,
+        ctx.intern("__lookupSetter__"),
+        create_builtin_function(ctx, "object_lookup_setter"),
+    );
     let proto_ptr = Box::into_raw(Box::new(proto_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(proto_ptr);
     ctx.set_object_prototype(proto_ptr);
@@ -504,6 +524,22 @@ pub fn register_builtins(ctx: &mut JSContext) {
     ctx.register_builtin(
         "object_to_locale_string",
         HostFunction::method("toLocaleString", 0, object_to_locale_string),
+    );
+    ctx.register_builtin(
+        "object_define_getter",
+        HostFunction::method("__defineGetter__", 2, object_define_getter),
+    );
+    ctx.register_builtin(
+        "object_define_setter",
+        HostFunction::method("__defineSetter__", 2, object_define_setter),
+    );
+    ctx.register_builtin(
+        "object_lookup_getter",
+        HostFunction::method("__lookupGetter__", 1, object_lookup_getter),
+    );
+    ctx.register_builtin(
+        "object_lookup_setter",
+        HostFunction::method("__lookupSetter__", 1, object_lookup_setter),
     );
 }
 
@@ -1003,6 +1039,120 @@ fn object_property_is_enumerable(ctx: &mut JSContext, args: &[JSValue]) -> JSVal
         return JSValue::bool(desc.enumerable);
     }
     JSValue::bool(false)
+}
+
+fn lookup_accessor(ctx: &mut JSContext, args: &[JSValue], want_getter: bool) -> JSValue {
+    if args.len() < 2 || !is_object_like(&args[0]) {
+        return JSValue::undefined();
+    }
+    let Some(atom) = to_property_atom(ctx, &args[1]) else {
+        return JSValue::undefined();
+    };
+    let mut current = Some(unsafe { args[0].get_ptr() as *mut JSObject });
+    while let Some(ptr) = current {
+        let obj = unsafe { &*ptr };
+        if let Some(entry) = obj.get_own_accessor_entry(atom) {
+            let v = if want_getter { entry.get } else { entry.set };
+            return v.unwrap_or(JSValue::undefined());
+        }
+        if obj.has_own(atom) {
+            return JSValue::undefined();
+        }
+        current = obj.prototype;
+    }
+    JSValue::undefined()
+}
+
+fn object_lookup_getter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    lookup_accessor(ctx, args, true)
+}
+
+fn object_lookup_setter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    lookup_accessor(ctx, args, false)
+}
+
+fn define_legacy_accessor(
+    ctx: &mut JSContext,
+    args: &[JSValue],
+    getter: bool,
+) -> JSValue {
+    if args.is_empty() || !is_object_like(&args[0]) {
+        let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(p) = ctx.get_type_error_prototype() {
+            err.prototype = Some(p);
+        }
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("this is not an object")),
+        );
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let Some(atom) = to_property_atom(ctx, &args[1]) else {
+        return args[0].clone();
+    };
+    let func = args.get(2).copied().unwrap_or(JSValue::undefined());
+    if !func.is_undefined() && !func.is_function() {
+        let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(p) = ctx.get_type_error_prototype() {
+            err.prototype = Some(p);
+        }
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("getter/setter must be a function")),
+        );
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    let pd = crate::object::object::PropertyDescriptor {
+        value: None,
+        writable: false,
+        enumerable: true,
+        configurable: true,
+        get: if getter { Some(func) } else { None },
+        set: if getter { None } else { Some(func) },
+    };
+    let obj = args[0].as_object_mut();
+    let ok = obj.define_property_ext(atom, pd, false, true, true);
+    if !ok {
+        let mut err = JSObject::new_typed(crate::object::object::ObjectType::Error);
+        if let Some(p) = ctx.get_type_error_prototype() {
+            err.prototype = Some(p);
+        }
+        err.set(
+            ctx.common_atoms.name,
+            JSValue::new_string(ctx.intern("TypeError")),
+        );
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Cannot redefine property")),
+        );
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
+    args[0].clone()
+}
+
+fn object_define_getter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    define_legacy_accessor(ctx, args, true)
+}
+
+fn object_define_setter(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    define_legacy_accessor(ctx, args, false)
 }
 
 fn object_from_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
