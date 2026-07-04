@@ -881,7 +881,12 @@ fn array_concat(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     for item in concat_items {
         if item.is_object() {
             let obj = item.as_object();
-            let is_spreadable = obj.is_array();
+            let spread_atom =
+                crate::builtins::symbol::get_symbol_is_concat_spreadable_atom(ctx);
+            let is_spreadable = match obj.get(spread_atom) {
+                Some(v) if !v.is_undefined() => v.is_truthy(),
+                _ => obj.is_array(),
+            };
             if is_spreadable {
                 let item_len = if let Some(l) = obj.get(length_atom) {
                     if l.is_int() { l.get_int() as u32 } else { 0 }
