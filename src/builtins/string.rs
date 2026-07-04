@@ -1569,39 +1569,111 @@ fn string_replace(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         } else {
             return JSValue::new_string(ctx.intern(&s));
         };
-        let replacement = if args[2].is_string() {
-            ctx.get_atom_str(args[2].get_atom()).to_string()
-        } else if args[2].is_function() {
-            if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
-                let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
-                let result = vm.call_function_with_this(
-                    ctx,
-                    args[2],
-                    JSValue::undefined(),
-                    &[args[1].clone(), JSValue::new_int(0), args[0].clone()],
-                );
-                match result {
-                    Ok(v) => {
-                        if v.is_string() {
-                            ctx.get_atom_str(v.get_atom()).to_string()
-                        } else if v.is_undefined() {
-                            "undefined".to_string()
-                        } else if v.is_null() {
-                            "null".to_string()
-                        } else {
-                            format!("{}", v.get_int())
-                        }
-                    }
-                    Err(_) => String::new(),
-                }
-            } else {
-                String::new()
+        match s.find(&search) {
+            None => JSValue::new_string(ctx.intern(&s)),
+            Some(pos) => {
+                let end = pos + search.len();
+                let matched = search.clone();
+                let repl_str = if args[2].is_function() {
+                    call_replace_function(ctx, args[2], &matched, pos, &s, &[])
+                } else if args[2].is_string() {
+                    let r = ctx.get_atom_str(args[2].get_atom()).to_string();
+                    apply_replace_pattern(&r, &matched, pos, end, &s)
+                } else {
+                    String::new()
+                };
+                let mut result = String::with_capacity(s.len() + repl_str.len());
+                result.push_str(&s[..pos]);
+                result.push_str(&repl_str);
+                result.push_str(&s[end..]);
+                JSValue::new_string(ctx.intern(&result))
             }
-        } else {
-            String::new()
-        };
-        let result = s.replace(&search, &replacement);
-        JSValue::new_string(ctx.intern(&result))
+        }
+    }
+}
+
+fn call_replace_function(
+    ctx: &mut JSContext,
+    func: JSValue,
+    matched: &str,
+    position: usize,
+    full: &str,
+    captures: &[&str],
+) -> String {
+    let mut args: Vec<JSValue> = Vec::with_capacity(3 + captures.len());
+    args.push(JSValue::new_string(ctx.intern(matched)));
+    for c in captures {
+        args.push(JSValue::new_string(ctx.intern(c)));
+    }
+    args.push(JSValue::new_int(position as i64));
+    args.push(JSValue::new_string(ctx.intern(full)));
+    let val = if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+        let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+        match vm.call_function_with_this(ctx, func, JSValue::undefined(), &args) {
+            Ok(v) => v,
+            Err(_) => JSValue::undefined(),
+        }
+    } else {
+        JSValue::undefined()
+    };
+    js_to_string_arg(&val, ctx)
+}
+
+fn apply_replace_pattern(replacement: &str, matched: &str, start: usize, end: usize, full: &str) -> String {
+    let bytes = replacement.as_bytes();
+    let mut out = String::with_capacity(replacement.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$' && i + 1 < bytes.len() {
+            let d = bytes[i + 1];
+            match d {
+                b'$' => {
+                    out.push('$');
+                    i += 2;
+                    continue;
+                }
+                b'&' => {
+                    out.push_str(matched);
+                    i += 2;
+                    continue;
+                }
+                b'`' => {
+                    out.push_str(&full[..start]);
+                    i += 2;
+                    continue;
+                }
+                b'\'' => {
+                    out.push_str(&full[end..]);
+                    i += 2;
+                    continue;
+                }
+                n @ (b'1'..=b'9') => {
+                    // capture groups unsupported for plain-string replace -> empty
+                    let _ = n;
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        // copy one UTF-8 char
+        let ch_len = utf8_len(bytes[i]);
+        out.push_str(std::str::from_utf8(&bytes[i..i + ch_len]).unwrap_or(""));
+        i += ch_len;
+    }
+    out
+}
+
+#[inline]
+fn utf8_len(b: u8) -> usize {
+    if b < 0x80 {
+        1
+    } else if b >> 5 == 0b110 {
+        2
+    } else if b >> 4 == 0b1110 {
+        3
+    } else {
+        4
     }
 }
 
