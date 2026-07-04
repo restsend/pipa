@@ -957,21 +957,18 @@ fn array_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_int(-1);
     }
 
-    let this = &args[0];
+    let this = args[0];
     let search = &args[1];
 
-    if !this.is_object_like() {
+    if !require_object_coercible(ctx, &this) {
         return JSValue::new_int(-1);
     }
 
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u64 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len_with_ctx(obj, length_atom, ctx);
 
     let from_index_f = if args.len() > 2 {
         args[2].to_number()
@@ -1031,21 +1028,18 @@ fn array_includes(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::bool(false);
     }
 
-    let this = &args[0];
+    let this = args[0];
     let search = &args[1];
 
-    if !this.is_object_like() {
+    if !require_object_coercible(ctx, &this) {
         return JSValue::bool(false);
     }
 
-    let obj = this.as_object();
+    let this_obj = to_object_or_return_undefined(this, ctx);
+    let obj = this_obj.as_object();
 
     let length_atom = ctx.common_atoms.length;
-    let len = if let Some(l) = obj.get(length_atom) {
-        if l.is_int() { l.get_int() as u64 } else { 0 }
-    } else {
-        0
-    };
+    let len = safe_array_len_with_ctx(obj, length_atom, ctx);
 
     let from_index_f = if args.len() > 2 {
         args[2].to_number()
