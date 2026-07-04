@@ -49,8 +49,7 @@ pub fn js_float_to_string(f: f64) -> String {
 fn this_to_string(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
     if this.is_string() {
         return Some(ctx.get_atom_str(this.get_atom()).to_string());
-    }
-    if this.is_undefined() || this.is_null() {
+    }    if this.is_undefined() || this.is_null() {
         let mut err = JSObject::new();
         err.set(
             ctx.common_atoms.name,
@@ -101,6 +100,33 @@ fn this_to_string(ctx: &mut JSContext, this: &JSValue) -> Option<String> {
                 });
             }
         }
+        if let Some(vm_ptr) = ctx.get_register_vm_ptr() {
+            let ts_fn = obj.get(ctx.common_atoms.to_string);
+            if let Some(ts) = ts_fn {
+                if ts.is_function() {
+                    let vm = unsafe { &mut *(vm_ptr as *mut crate::runtime::vm::VM) };
+                    if let Ok(r) = vm.call_function_with_this(ctx, ts, *this, &[]) {
+                        if r.is_string() {
+                            return Some(ctx.get_atom_str(r.get_atom()).to_string());
+                        }
+                        if r.is_int() {
+                            return Some(format!("{}", r.get_int()));
+                        }
+                        if r.is_float() {
+                            return Some(js_float_to_string(r.get_float()));
+                        }
+                        if r.is_bool() {
+                            return Some(if r.get_bool() {
+                                "true".to_string()
+                            } else {
+                                "false".to_string()
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        return Some("[object Object]".to_string());
     }
     Some(format!("{}", this.to_number()))
 }
@@ -141,26 +167,7 @@ fn require_string_coercible(ctx: &mut JSContext, this: &JSValue) -> Option<Strin
         return Some(js_float_to_string(this.get_float()));
     }
     if this.is_object() {
-        let obj = this.as_object();
-        if let Some(v) = obj.get(ctx.common_atoms.__value__) {
-            if v.is_string() {
-                return Some(ctx.get_atom_str(v.get_atom()).to_string());
-            }
-            if v.is_int() {
-                return Some(format!("{}", v.get_int()));
-            }
-            if v.is_float() {
-                return Some(js_float_to_string(v.get_float()));
-            }
-            if v.is_bool() {
-                return Some(if v.get_bool() {
-                    "true".to_string()
-                } else {
-                    "false".to_string()
-                });
-            }
-        }
-        return Some(ctx.get_atom_str(this.get_atom()).to_string());
+        return this_to_string(ctx, this);
     }
     Some(ctx.get_atom_str(this.get_atom()).to_string())
 }
