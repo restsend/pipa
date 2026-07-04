@@ -1459,17 +1459,60 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     // Array exotic object: length is always non-configurable
     if obj_ref.is_array() {
         let len_atom = _ctx.intern("length");
-        if prop_atom == len_atom && has_configurable && pd.configurable {
-            let mut err = crate::object::object::JSObject::new_typed(
-                crate::object::object::ObjectType::Error,
-            );
-            if let Some(proto) = _ctx.get_type_error_prototype() { err.prototype = Some(proto); }
-            err.set(_ctx.common_atoms.name, JSValue::new_string(_ctx.intern("TypeError")));
-            err.set(_ctx.common_atoms.message, JSValue::new_string(_ctx.intern("Cannot redefine property: length")));
-            let ptr = Box::into_raw(Box::new(err)) as usize;
-            _ctx.runtime_mut().gc_heap_mut().track(ptr);
-            _ctx.pending_exception = Some(JSValue::new_object(ptr));
-            return JSValue::undefined();
+        if prop_atom == len_atom {
+            if has_configurable && pd.configurable {
+                let mut err = crate::object::object::JSObject::new_typed(
+                    crate::object::object::ObjectType::Error,
+                );
+                if let Some(proto) = _ctx.get_type_error_prototype() {
+                    err.prototype = Some(proto);
+                }
+                err.set(
+                    _ctx.common_atoms.name,
+                    JSValue::new_string(_ctx.intern("TypeError")),
+                );
+                err.set(
+                    _ctx.common_atoms.message,
+                    JSValue::new_string(_ctx.intern("Cannot redefine property: length")),
+                );
+                let ptr = Box::into_raw(Box::new(err)) as usize;
+                _ctx.runtime_mut().gc_heap_mut().track(ptr);
+                _ctx.pending_exception = Some(JSValue::new_object(ptr));
+                return JSValue::undefined();
+            }
+            if let Some(v) = pd.value {
+                let valid_len = if v.is_int() {
+                    let i = v.get_int();
+                    i >= 0 && i <= 0xFFFF_FFFF
+                } else if v.is_float() {
+                    let f = v.get_float();
+                    f.is_finite() && f.fract() == 0.0 && f >= 0.0 && f <= 4294967295.0
+                } else if v.is_undefined() {
+                    true
+                } else {
+                    false
+                };
+                if !valid_len {
+                    let mut err = crate::object::object::JSObject::new_typed(
+                        crate::object::object::ObjectType::Error,
+                    );
+                    if let Some(proto) = _ctx.get_range_error_prototype() {
+                        err.prototype = Some(proto);
+                    }
+                    err.set(
+                        _ctx.common_atoms.name,
+                        JSValue::new_string(_ctx.intern("RangeError")),
+                    );
+                    err.set(
+                        _ctx.common_atoms.message,
+                        JSValue::new_string(_ctx.intern("Invalid array length")),
+                    );
+                    let ptr = Box::into_raw(Box::new(err)) as usize;
+                    _ctx.runtime_mut().gc_heap_mut().track(ptr);
+                    _ctx.pending_exception = Some(JSValue::new_object(ptr));
+                    return JSValue::undefined();
+                }
+            }
         }
     }
 
