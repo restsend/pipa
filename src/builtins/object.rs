@@ -1062,13 +1062,23 @@ fn object_property_is_enumerable(ctx: &mut JSContext, args: &[JSValue]) -> JSVal
 }
 
 fn lookup_accessor(ctx: &mut JSContext, args: &[JSValue], want_getter: bool) -> JSValue {
-    if args.len() < 2 || !is_object_like(&args[0]) {
+    if args.is_empty() {
         return JSValue::undefined();
     }
+    let this_val = &args[0];
+    if this_val.is_undefined() || this_val.is_null() {
+        crate::builtins::global::throw_type_error(ctx, "Object.prototype.__lookupGetter__ called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let this = if this_val.is_object_like() {
+        this_val.clone()
+    } else {
+        object_to_object(ctx, this_val)
+    };
     let Some(atom) = to_property_atom(ctx, &args[1]) else {
         return JSValue::undefined();
     };
-    let mut current = Some(unsafe { args[0].get_ptr() as *mut JSObject });
+    let mut current = Some(this.get_ptr() as *mut JSObject);
     while let Some(ptr) = current {
         let obj = unsafe { &*ptr };
         if let Some(entry) = obj.get_own_accessor_entry(atom) {
