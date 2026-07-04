@@ -929,6 +929,9 @@ fn string_to_upper_case(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
         result.set(ctx.common_atoms.length, JSValue::new_int(0));
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
@@ -1005,6 +1008,9 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             }
 
             let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
             for (i, part) in parts.iter().enumerate() {
                 let key = ctx.int_atom_mut(i);
                 let part_atom = ctx.intern(part);
@@ -1039,11 +1045,17 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         };
         if limit == 0 {
             let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
             result.set(length_atom, JSValue::new_int(0));
             let ptr = Box::into_raw(Box::new(result)) as usize;
             return JSValue::new_object(ptr);
         }
         let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
         result.set(ctx.int_atom_mut(0), JSValue::new_string(s_atom));
         result.set(length_atom, JSValue::new_int(1));
         let ptr = Box::into_raw(Box::new(result)) as usize;
@@ -1063,12 +1075,18 @@ fn string_split(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     if limit == 0 {
         let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
         result.set(length_atom, JSValue::new_int(0));
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
     }
 
     let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
 
     if separator.is_empty() {
         let chars: Vec<char> = s.chars().collect();
@@ -1759,6 +1777,9 @@ fn string_code_point_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 fn string_match_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
         let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
         result.set(ctx.common_atoms.length, JSValue::new_int(0));
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
@@ -1817,6 +1838,9 @@ fn string_match_all(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     };
 
     let mut result_array = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result_array.set_prototype_raw(p);
+    }
     let length_atom = ctx.common_atoms.length;
     let mut match_count = 0;
 
@@ -2009,6 +2033,9 @@ fn string_match(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 return JSValue::null();
             }
             let mut arr = JSObject::new_array();
+            if let Some(p) = ctx.get_array_prototype() {
+                arr.set_prototype_raw(p);
+            }
             let length_atom = ctx.common_atoms.length;
             for (i, m) in results.iter().enumerate() {
                 let key = ctx.int_atom_mut(i);
@@ -2027,6 +2054,9 @@ fn string_match(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 let end = (pos + pattern.len()).min(s.len());
                 let match_str = &s[pos..end];
                 let mut result = JSObject::new_array();
+    if let Some(p) = ctx.get_array_prototype() {
+        result.set_prototype_raw(p);
+    }
                 result.set(ctx.intern("0"), JSValue::new_string(ctx.intern(match_str)));
                 result.set(ctx.common_atoms.index, JSValue::new_int(pos as i64));
                 result.set(ctx.common_atoms.input, JSValue::new_string(ctx.intern(&s)));
