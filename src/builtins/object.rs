@@ -555,6 +555,14 @@ pub fn register_builtins(ctx: &mut JSContext) {
 
 fn object_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
+        return JSValue::undefined();
+    }
+    let this = &args[0];
+    if this.is_undefined() || this.is_null() {
+        crate::builtins::global::throw_type_error(ctx, "Cannot convert undefined or null to object");
+        return JSValue::undefined();
+    }
+    if !this.is_object_like() {
         let mut result = JSObject::new_array();
         if let Some(proto_ptr) = ctx.get_array_prototype() {
             result.prototype = Some(proto_ptr);
@@ -563,20 +571,7 @@ fn object_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
     }
-
-    let obj_val = &args[0];
-    if !obj_val.is_object() {
-        let mut result = JSObject::new_array();
-        if let Some(proto_ptr) = ctx.get_array_prototype() {
-            result.prototype = Some(proto_ptr);
-        }
-        result.set(ctx.common_atoms.length, JSValue::new_int(0));
-        let ptr = Box::into_raw(Box::new(result)) as usize;
-        return JSValue::new_object(ptr);
-    }
-
-    let obj = obj_val.as_object();
-
+    let obj = this.as_object();
     let keys = obj.enumerable_keys();
     let mut result = JSObject::new_array();
     if let Some(proto_ptr) = ctx.get_array_prototype() {
@@ -584,7 +579,6 @@ fn object_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let length_atom = ctx.common_atoms.length;
     result.set(length_atom, JSValue::new_int(keys.len() as i64));
-
     for (i, key) in keys.iter().enumerate() {
         let key_str = ctx.get_atom_str(*key).to_string();
         result.set(
@@ -592,13 +586,20 @@ fn object_keys(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
             JSValue::new_string(ctx.intern(&key_str)),
         );
     }
-
     let result_ptr = Box::into_raw(Box::new(result)) as usize;
     JSValue::new_object(result_ptr)
 }
 
 fn object_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
+        return JSValue::undefined();
+    }
+    let this = &args[0];
+    if this.is_undefined() || this.is_null() {
+        crate::builtins::global::throw_type_error(ctx, "Cannot convert undefined or null to object");
+        return JSValue::undefined();
+    }
+    if !this.is_object_like() {
         let mut result = JSObject::new_array();
         if let Some(proto_ptr) = ctx.get_array_prototype() {
             result.prototype = Some(proto_ptr);
@@ -607,20 +608,7 @@ fn object_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
     }
-
-    let obj_val = &args[0];
-    if !obj_val.is_object() {
-        let mut result = JSObject::new_array();
-        if let Some(proto_ptr) = ctx.get_array_prototype() {
-            result.prototype = Some(proto_ptr);
-        }
-        result.set(ctx.common_atoms.length, JSValue::new_int(0));
-        let ptr = Box::into_raw(Box::new(result)) as usize;
-        return JSValue::new_object(ptr);
-    }
-
-    let obj = obj_val.as_object();
-
+    let obj = this.as_object();
     let values: Vec<_> = obj.own_properties().into_iter().map(|(_, v)| v).collect();
     let mut result = JSObject::new_array();
     if let Some(proto_ptr) = ctx.get_array_prototype() {
@@ -628,17 +616,23 @@ fn object_values(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let length_atom = ctx.common_atoms.length;
     result.set(length_atom, JSValue::new_int(values.len() as i64));
-
     for (i, val) in values.iter().enumerate() {
         result.set(ctx.int_atom_mut(i), *val);
     }
-
     let result_ptr = Box::into_raw(Box::new(result)) as usize;
     JSValue::new_object(result_ptr)
 }
 
 fn object_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.is_empty() {
+        return JSValue::undefined();
+    }
+    let this = &args[0];
+    if this.is_undefined() || this.is_null() {
+        crate::builtins::global::throw_type_error(ctx, "Cannot convert undefined or null to object");
+        return JSValue::undefined();
+    }
+    if !this.is_object_like() {
         let mut result = JSObject::new_array();
         if let Some(proto_ptr) = ctx.get_array_prototype() {
             result.prototype = Some(proto_ptr);
@@ -647,20 +641,7 @@ fn object_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         let ptr = Box::into_raw(Box::new(result)) as usize;
         return JSValue::new_object(ptr);
     }
-
-    let obj_val = &args[0];
-    if !obj_val.is_object() {
-        let mut result = JSObject::new_array();
-        if let Some(proto_ptr) = ctx.get_array_prototype() {
-            result.prototype = Some(proto_ptr);
-        }
-        result.set(ctx.common_atoms.length, JSValue::new_int(0));
-        let ptr = Box::into_raw(Box::new(result)) as usize;
-        return JSValue::new_object(ptr);
-    }
-
-    let obj = obj_val.as_object();
-
+    let obj = this.as_object();
     let entries: Vec<_> = obj.own_properties().into_iter().collect();
     let mut result = JSObject::new_array();
     if let Some(proto_ptr) = ctx.get_array_prototype() {
