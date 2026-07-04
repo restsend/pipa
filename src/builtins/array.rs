@@ -2320,13 +2320,10 @@ fn array_at(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if this.is_undefined() {
-        throw_type_error(ctx, "Array.prototype.at requires an object");
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
-    if !this.is_object_like() {
-        return JSValue::undefined();
-    }
+    let this = to_object_or_return_undefined(this, ctx);
     let len_atom = ctx.common_atoms.length;
     let arr = this.as_object();
     let len = safe_array_len_with_ctx(&arr, len_atom, ctx) as usize;
@@ -2352,9 +2349,10 @@ fn array_to_sorted(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object_like() {
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
+    let this = to_object_or_return_undefined(this, ctx);
     let comparefn = args.get(1).copied().unwrap_or(JSValue::undefined());
     if !comparefn.is_undefined() && !comparefn.is_function() {
         throw_type_error(ctx, "Comparison function is not callable");
@@ -2416,9 +2414,10 @@ fn array_to_reversed(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object_like() {
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
+    let this = to_object_or_return_undefined(this, ctx);
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
@@ -2453,9 +2452,10 @@ fn array_with(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     let this = args[0];
     let idx = args[1].get_int();
     let value = args[2];
-    if !this.is_object_like() {
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
+    let this = to_object_or_return_undefined(this, ctx);
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
@@ -2496,9 +2496,10 @@ fn array_last_index_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
     let this = args[0];
     let search = args[1];
-    if !this.is_object_like() {
+    if !require_object_coercible(ctx, &this) {
         return JSValue::new_int(-1);
     }
+    let this = to_object_or_return_undefined(this, ctx);
     let len_atom = ctx.common_atoms.length;
     let arr = this.as_object();
     let len = arr.get(len_atom).map(|v| v.get_int() as u64).unwrap_or(0);
