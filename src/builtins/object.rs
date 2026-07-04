@@ -1323,13 +1323,40 @@ fn object_define_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         }
     }
 
-    obj_ref.define_property_ext(
+    let ok = obj_ref.define_property_ext(
         prop_atom,
         pd,
         has_writable,
         has_enumerable,
         has_configurable,
     );
+    if !ok {
+        let name_str = if prop.is_string() {
+            _ctx.get_atom_str(prop.get_atom()).to_string()
+        } else if prop.is_int() {
+            prop.get_int().to_string()
+        } else {
+            String::new()
+        };
+        let mut err = crate::object::object::JSObject::new_typed(
+            crate::object::object::ObjectType::Error,
+        );
+        if let Some(proto) = _ctx.get_type_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(
+            _ctx.common_atoms.name,
+            JSValue::new_string(_ctx.intern("TypeError")),
+        );
+        err.set(
+            _ctx.common_atoms.message,
+            JSValue::new_string(_ctx.intern(&format!("Cannot redefine property: {}", name_str))),
+        );
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        _ctx.runtime_mut().gc_heap_mut().track(ptr);
+        _ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    }
     obj.clone()
 }
 
@@ -1377,7 +1404,27 @@ fn object_define_properties(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
                 set,
             };
 
-            obj_ref.define_property(key_atom, pd);
+            let ok = obj_ref.define_property(key_atom, pd);
+            if !ok {
+                let mut err = crate::object::object::JSObject::new_typed(
+                    crate::object::object::ObjectType::Error,
+                );
+                if let Some(proto) = _ctx.get_type_error_prototype() {
+                    err.prototype = Some(proto);
+                }
+                err.set(
+                    _ctx.common_atoms.name,
+                    JSValue::new_string(_ctx.intern("TypeError")),
+                );
+                err.set(
+                    _ctx.common_atoms.message,
+                    JSValue::new_string(_ctx.intern("Cannot redefine property")),
+                );
+                let ptr = Box::into_raw(Box::new(err)) as usize;
+                _ctx.runtime_mut().gc_heap_mut().track(ptr);
+                _ctx.pending_exception = Some(JSValue::new_object(ptr));
+                return JSValue::undefined();
+            }
         }
     }
 

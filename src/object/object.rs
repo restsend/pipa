@@ -1686,23 +1686,73 @@ impl JSObject {
     ) -> bool {
         if let Some(existing) = self.get_own_descriptor(prop) {
             if !existing.configurable {
-                if has_writable && desc.writable != existing.writable {
+                if has_configurable && desc.configurable {
                     return false;
                 }
                 if has_enumerable && desc.enumerable != existing.enumerable {
                     return false;
                 }
-                if has_configurable && desc.configurable != existing.configurable {
+                let existing_is_accessor = existing.get.is_some() || existing.set.is_some();
+                let desc_is_accessor = desc.get.is_some() || desc.set.is_some();
+                if existing_is_accessor {
+                    if desc_is_accessor {
+                        let undef = JSValue::undefined();
+                        if let Some(dg) = desc.get {
+                            let eg = existing.get.unwrap_or(undef);
+                            if dg.raw_bits() != eg.raw_bits() {
+                                return false;
+                            }
+                        }
+                        if let Some(ds) = desc.set {
+                            let es = existing.set.unwrap_or(undef);
+                            if ds.raw_bits() != es.raw_bits() {
+                                return false;
+                            }
+                        }
+                        if let Some(extra) = self.extra.as_mut() {
+                            if let Some(accs) = extra.accessors.as_mut() {
+                                if let Some(entry) = accs.get_mut(&prop) {
+                                    entry.enumerable = desc.enumerable;
+                                }
+                            }
+                        }
+                        return true;
+                    }
+                    if desc.value.is_some() || has_writable {
+                        return false;
+                    }
+                    return true;
+                }
+                if desc_is_accessor {
+                    return false;
+                }
+                if has_writable && desc.writable && !existing.writable {
                     return false;
                 }
                 if let Some(value) = desc.value {
                     if !existing.writable {
-                        return false;
+                        let cur = self
+                            .get_by_offset(self.find_offset(prop).unwrap_or(usize::MAX))
+                            .unwrap_or(JSValue::undefined());
+                        if value.raw_bits() != cur.raw_bits() {
+                            return false;
+                        }
+                    } else if let Some(offset) = self.find_offset(prop) {
+                        if offset < self.props.len() && self.props[offset].attrs != ATTR_DELETED {
+                            self.props[offset].value = value;
+                        }
                     }
-                    self.set(prop, value);
                 }
-                if desc.get.is_some() || desc.set.is_some() {
-                    return false;
+                if has_writable {
+                    if let Some(offset) = self.find_offset(prop) {
+                        if offset < self.props.len() && self.props[offset].attrs != ATTR_DELETED {
+                            self.props[offset].attrs = attrs_from_bools(
+                                desc.writable,
+                                desc.enumerable,
+                                desc.configurable,
+                            );
+                        }
+                    }
                 }
                 return true;
             }
@@ -1718,6 +1768,13 @@ impl JSObject {
             }
             // Update the existing property in-place to preserve creation order
             if desc.is_accessor() {
+                if let Some(offset) = self.find_offset(prop) {
+                    if offset < self.props.len() && self.props[offset].attrs != ATTR_DELETED {
+                        self.props[offset].value = JSValue::undefined();
+                        self.props[offset].attrs = ATTR_DELETED;
+                        self.flags |= FLAG_HAS_DELETED_PROPS;
+                    }
+                }
                 let extra = self.ensure_extra();
                 let accs = extra
                     .accessors
@@ -1738,22 +1795,28 @@ impl JSObject {
                         .get_or_insert_with(|| Box::new(Vec::new()));
                     order.push(prop);
                 }
-            } else if let Some(value) = desc.value {
-                if let Some(offset) = self.find_offset(prop) {
-                    if offset < self.props.len() {
-                        self.props[offset].value = value;
-                        self.props[offset].attrs =
-                            attrs_from_bools(desc.writable, desc.enumerable, desc.configurable);
+            } else {
+                let new_attrs =
+                    attrs_from_bools(desc.writable, desc.enumerable, desc.configurable);
+                if let Some(value) = desc.value {
+                    if let Some(offset) = self.find_offset(prop) {
+                        if offset < self.props.len() && self.props[offset].attrs != ATTR_DELETED {
+                            self.props[offset].value = value;
+                            self.props[offset].attrs = new_attrs;
+                        }
+                    } else {
+                        self.props.push(PropSlot::new(prop, value, new_attrs));
                     }
-                } else {
-                    self.props.push(PropSlot::new(
-                        prop,
-                        value,
-                        attrs_from_bools(desc.writable, desc.enumerable, desc.configurable),
-                    ));
+                } else if let Some(offset) = self.find_offset(prop) {
+                    if offset < self.props.len() && self.props[offset].attrs != ATTR_DELETED {
+                        self.props[offset].attrs = new_attrs;
+                    }
                 }
             }
             return true;
+        }
+        if !self.extensible() {
+            return false;
         }
         if desc.is_accessor() {
             let extra = self.ensure_extra();
@@ -1773,7 +1836,8 @@ impl JSObject {
                 .property_order
                 .get_or_insert_with(|| Box::new(Vec::new()));
             order.push(prop);
-        } else if let Some(value) = desc.value {
+        } else {
+            let value = desc.value.unwrap_or(JSValue::undefined());
             self.props.push(PropSlot::new(
                 prop,
                 value,
