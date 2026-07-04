@@ -1444,6 +1444,7 @@ fn object_get_own_property_descriptor(ctx: &mut JSContext, args: &[JSValue]) -> 
 
     if let Some(pd) = obj_ref.get_own_descriptor(prop_atom) {
         let mut desc_obj = JSObject::new();
+        desc_obj.prototype = ctx.get_object_prototype();
         if pd.get.is_some() || pd.set.is_some() {
             desc_obj.set(ctx.intern("get"), pd.get.unwrap_or(JSValue::undefined()));
             desc_obj.set(ctx.intern("set"), pd.set.unwrap_or(JSValue::undefined()));
@@ -1477,6 +1478,7 @@ fn object_get_own_property_descriptors(ctx: &mut JSContext, args: &[JSValue]) ->
     for key_atom in obj_ref.keys() {
         if let Some(pd) = obj_ref.get_own_descriptor(key_atom) {
             let mut desc_obj = JSObject::new();
+            desc_obj.prototype = ctx.get_object_prototype();
             if pd.get.is_some() || pd.set.is_some() {
                 desc_obj.set(ctx.intern("get"), pd.get.unwrap_or(JSValue::undefined()));
                 desc_obj.set(ctx.intern("set"), pd.set.unwrap_or(JSValue::undefined()));
