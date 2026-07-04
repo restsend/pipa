@@ -74,6 +74,16 @@ pub fn object_to_object(ctx: &mut JSContext, value: &JSValue) -> JSValue {
         ctx.runtime_mut().gc_heap_mut().track(ptr);
         return JSValue::new_object(ptr);
     }
+    if value.is_bigint() {
+        let mut obj = JSObject::new();
+        if let Some(proto_ptr) = ctx.get_bigint_prototype() {
+            obj.prototype = Some(proto_ptr);
+        }
+        obj.set(ctx.common_atoms.__value__, *value);
+        let ptr = Box::into_raw(Box::new(obj)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        return JSValue::new_object(ptr);
+    }
     JSValue::undefined()
 }
 
