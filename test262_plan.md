@@ -112,3 +112,9 @@ Fixes:
 - 2026-06-14: Spec-correct String.fromCharCode via ToUint16 + UTF-16-lossy decode. Number(bigint) handled explicitly; ToNumber(BigInt) throws. decodeURI 100%, decodeURIComponent 100%, fromCharCode 94%
 - 2026-06-14: Made Array.prototype an exotic Array object. Array.isArray 100%
 - 2026-06-14: Enforce strict-mode TypeError for non-writable SetField (obj[key] = ...) and SetGlobal (var on non-writable global). undefined 100%, global 100%
+- 2026-07-04: Object.defineProperty/defineProperties now throw TypeError on [[DefineOwnProperty]] rejection; define_property_ext made spec-correct (non-extensible rejection, data prop for value-less descriptors, attribute-only updates, data<->accessor transitions, non-configurable validation: writable->non-writable allowed, SameValue get/set additions, same-value writes). defineProperty 681->277, defineProperties 423->265-ish, Object 1684->901.
+- 2026-07-04: Object.getOwnPropertyDescriptor/getOwnPropertyDescriptors set Object.prototype on returned descriptor objects (were prototype-less, missing inherited methods). getOwnPropertyDescriptor 101->67.
+- 2026-07-04: String.prototype split/match/matchAll/etc. result arrays now get Array.prototype (were prototype-less). String/prototype 585->513 (resolves the 89 'split.constructor' failures).
+- 2026-07-04: Implemented String.prototype.localeCompare (code-unit compare) and normalize (form validation, RangeError on invalid). localeCompare 0->11/13, normalize 0->6/14.
+- 2026-07-04: Object.prototype __defineGetter__/__defineSetter__/__lookupGetter__/__lookupSetter__ (Annex B accessor methods). Object/prototype 101->69.
+- 2026-07-04: Object.defineProperty validates array length value (RangeError on >2^32-1). defineProperty 290->277. Object category overall 1684->901 failing. bench-v8 8/8 pass throughout.
