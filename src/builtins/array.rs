@@ -1578,9 +1578,24 @@ fn array_reduce(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
 
     if args.len() > 2 {
         accumulator = args[2];
+        start_index = 0;
     } else {
-        accumulator = array_get(obj, 0, ctx).unwrap_or_else(JSValue::undefined);
-        start_index = 1;
+        let mut found: Option<JSValue> = None;
+        while start_index < len {
+            if let Some(v) = array_get(obj, start_index, ctx) {
+                found = Some(v);
+                start_index += 1;
+                break;
+            }
+            start_index += 1;
+        }
+        match found {
+            Some(v) => accumulator = v,
+            None => {
+                throw_type_error(ctx, "Reduce of empty array with no initial value");
+                return JSValue::undefined();
+            }
+        }
     }
 
     for i in start_index..len {
