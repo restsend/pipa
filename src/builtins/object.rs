@@ -909,20 +909,29 @@ fn object_set_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     args[0].clone()
 }
 
-fn object_has_own_property(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 {
+fn object_has_own_property(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    if args.is_empty() {
         return JSValue::bool(false);
     }
-    let this = &args[0];
-    if !is_object_like(this) {
-        return JSValue::bool(false);
-    }
-    let Some(atom) = to_property_atom(_ctx, &args[1]) else {
-        return JSValue::bool(false);
+    let key_atom = if args.len() > 1 {
+        to_property_atom(ctx, &args[1])
+    } else {
+        None
     };
-    let obj = this.as_object();
-    let result = obj.has_own(atom);
-    JSValue::bool(result)
+    let this_val = &args[0];
+    if this_val.is_undefined() || this_val.is_null() {
+        crate::builtins::global::throw_type_error(ctx, "Object.prototype.hasOwnProperty called on incompatible receiver");
+        return JSValue::undefined();
+    }
+    let this_obj = if this_val.is_object_like() {
+        this_val.clone()
+    } else {
+        object_to_object(ctx, this_val)
+    };
+    match key_atom {
+        Some(atom) => JSValue::bool(this_obj.as_object().has_own(atom)),
+        None => JSValue::bool(false),
+    }
 }
 
 fn object_value_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1002,17 +1011,18 @@ fn object_to_locale_string(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     object_to_string(_ctx, args)
 }
 
-fn object_is_prototype_of(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn object_is_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
-        return JSValue::bool(false);
-    }
-    let this = &args[0];
-    if !this.is_object_like() {
         return JSValue::bool(false);
     }
     let v = &args[1];
     if !v.is_object_like() {
         return JSValue::bool(false);
+    }
+    let this = &args[0];
+    if !this.is_object_like() {
+        crate::builtins::global::throw_type_error(ctx, "isPrototypeOf called on incompatible receiver");
+        return JSValue::undefined();
     }
     let this_ptr = this.get_ptr() as *mut JSObject;
     let mut current = v.get_ptr() as *mut JSObject;

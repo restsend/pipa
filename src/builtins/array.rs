@@ -2069,9 +2069,10 @@ fn array_to_spliced(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::undefined();
     }
     let this = args[0];
-    if !this.is_object_like() {
+    if !require_object_coercible(ctx, &this) {
         return JSValue::undefined();
     }
+    let this = to_object_or_return_undefined(this, ctx);
     let len_atom = ctx.common_atoms.length;
     let len = {
         let arr = this.as_object();
