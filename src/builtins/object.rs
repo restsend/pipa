@@ -812,26 +812,26 @@ fn object_get_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::null();
     }
     let obj_val = &args[0];
-    if obj_val.is_symbol() {
-        if let Some(proto_ptr) = ctx.get_symbol_prototype() {
-            return JSValue::new_object(proto_ptr as usize);
-        }
-        return JSValue::null();
+    if obj_val.is_undefined() || obj_val.is_null() {
+        crate::builtins::global::throw_type_error(ctx, "Cannot convert undefined or null to object");
+        return JSValue::undefined();
     }
-    if !is_object_like(obj_val) {
-        return JSValue::null();
-    }
-
-    let obj = obj_val.as_object();
-    if let Some(proto_ptr) = obj.prototype {
+    let obj = if obj_val.is_object_like() {
+        *obj_val
+    } else {
+        object_to_object(ctx, obj_val)
+    };
+    let obj_ref = obj.as_object();
+    if let Some(proto_ptr) = obj_ref.prototype {
         return JSValue::new_object(proto_ptr as usize);
     }
     JSValue::null()
 }
 
 fn object_set_prototype_of(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
-    if args.len() < 2 || !is_object_like(&args[0]) {
-        return JSValue::null();
+    if args.len() < 2 || !args[0].is_object_like() {
+        crate::builtins::global::throw_type_error(ctx, "Object.setPrototypeOf requires an object");
+        return JSValue::undefined();
     }
 
     let obj = args[0].as_object_mut();
@@ -1205,21 +1205,25 @@ fn object_from_entries(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     JSValue::new_object(result_ptr)
 }
 
-fn object_has_own(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+fn object_has_own(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     if args.len() < 2 {
         return JSValue::bool(false);
     }
     let obj_val = &args[0];
-    let prop = &args[1];
-    if !is_object_like(obj_val) {
-        return JSValue::bool(false);
+    if obj_val.is_undefined() || obj_val.is_null() {
+        crate::builtins::global::throw_type_error(ctx, "Cannot convert undefined or null to object");
+        return JSValue::undefined();
     }
-    let Some(atom) = to_property_atom(_ctx, prop) else {
+    let obj = if obj_val.is_object_like() {
+        *obj_val
+    } else {
+        object_to_object(ctx, obj_val)
+    };
+    let prop = &args[1];
+    let Some(atom) = to_property_atom(ctx, prop) else {
         return JSValue::bool(false);
     };
-    let obj = obj_val.as_object();
-
-    JSValue::bool(obj.has_own(atom))
+    JSValue::bool(obj.as_object().has_own(atom))
 }
 
 fn object_is(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
