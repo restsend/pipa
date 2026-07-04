@@ -1321,8 +1321,18 @@ fn string_trim(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         Some(s) => s,
         None => return JSValue::undefined(),
     };
-    let trimmed = s.trim();
+    let trimmed = s.trim_matches(is_js_trim_whitespace);
     JSValue::new_string(ctx.intern(trimmed))
+}
+
+#[inline]
+fn is_js_trim_whitespace(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0009}' | '\u{000A}' | '\u{000B}' | '\u{000C}' | '\u{000D}' | '\u{0020}'
+            | '\u{00A0}' | '\u{FEFF}' | '\u{1680}' | '\u{2028}' | '\u{2029}' | '\u{202F}'
+            | '\u{205F}' | '\u{3000}' | '\u{2000}'..='\u{200A}'
+    )
 }
 
 fn string_trim_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
@@ -1330,7 +1340,7 @@ fn string_trim_start(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_string(ctx.intern(""));
     }
     match this_to_string(ctx, &args[0]) {
-        Some(s) => JSValue::new_string(ctx.intern(s.trim_start())),
+        Some(s) => JSValue::new_string(ctx.intern(s.trim_start_matches(is_js_trim_whitespace))),
         None => JSValue::undefined(),
     }
 }
@@ -1340,7 +1350,7 @@ fn string_trim_end(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
         return JSValue::new_string(ctx.intern(""));
     }
     match this_to_string(ctx, &args[0]) {
-        Some(s) => JSValue::new_string(ctx.intern(s.trim_end())),
+        Some(s) => JSValue::new_string(ctx.intern(s.trim_end_matches(is_js_trim_whitespace))),
         None => JSValue::undefined(),
     }
 }
