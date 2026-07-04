@@ -137,6 +137,7 @@ const FLAG_IS_GENERATOR: u8 = 1 << 3;
 const FLAG_DENSE_ARRAY: u8 = 1 << 4;
 
 const FLAG_HAS_DELETED_PROPS: u8 = 1 << 5;
+const FLAG_IS_RAW_JSON: u8 = 1 << 6;
 
 pub const ATTR_WRITABLE: u8 = 1 << 0;
 pub const ATTR_ENUMERABLE: u8 = 1 << 1;
@@ -593,6 +594,14 @@ impl JSObject {
     #[inline(always)]
     pub fn extensible(&self) -> bool {
         self.flags & FLAG_EXTENSIBLE != 0
+    }
+    #[inline(always)]
+    pub fn is_raw_json(&self) -> bool {
+        self.flags & FLAG_IS_RAW_JSON != 0
+    }
+    #[inline(always)]
+    pub fn set_raw_json(&mut self) {
+        self.flags |= FLAG_IS_RAW_JSON;
     }
     #[inline(always)]
     pub fn set_extensible(&mut self, val: bool) {

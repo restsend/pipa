@@ -10,7 +10,7 @@ use crate::builtins::fetch;
 use crate::builtins::function;
 use crate::builtins::generator;
 use crate::builtins::intl;
-use crate::builtins::json::{json_parse, json_stringify};
+use crate::builtins::json::{json_is_raw_json, json_parse, json_raw_json, json_stringify};
 use crate::builtins::map_set;
 use crate::builtins::math;
 use crate::builtins::number::number_to_string;
@@ -1550,14 +1550,26 @@ fn init_json(ctx: &mut JSContext) {
         "json_stringify",
         HostFunction::new("stringify", 3, json_stringify),
     );
+    ctx.register_builtin(
+        "json_rawJSON",
+        HostFunction::new("rawJSON", 1, json_raw_json),
+    );
+    ctx.register_builtin(
+        "json_isRawJSON",
+        HostFunction::new("isRawJSON", 1, json_is_raw_json),
+    );
 
     let json_atom = ctx.intern("JSON");
     let tag_key = symbol::get_symbol_to_string_tag_prop_key(ctx);
     let mut json_obj = JSObject::new();
     let parse_fn = create_builtin_function(ctx, "json_parse");
     let stringify_fn = create_builtin_function(ctx, "json_stringify");
+    let raw_json_fn = create_builtin_function(ctx, "json_rawJSON");
+    let is_raw_json_fn = create_builtin_function(ctx, "json_isRawJSON");
     json_obj.set(ctx.intern("parse"), parse_fn);
     json_obj.set(ctx.intern("stringify"), stringify_fn);
+    json_obj.set(ctx.intern("rawJSON"), raw_json_fn);
+    json_obj.set(ctx.intern("isRawJSON"), is_raw_json_fn);
     let json_ptr = Box::into_raw(Box::new(json_obj)) as usize;
     ctx.runtime_mut().gc_heap_mut().track(json_ptr);
     let json_value = JSValue::new_object(json_ptr);

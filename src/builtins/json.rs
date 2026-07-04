@@ -232,6 +232,72 @@ pub fn json_stringify(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
     }
 }
 
+pub fn json_raw_json(ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let text = args.get(0).copied().unwrap_or(JSValue::undefined());
+    let s = if text.is_string() {
+        ctx.get_atom_str(text.get_atom()).to_string()
+    } else if text.is_int() {
+        text.get_int().to_string()
+    } else if text.is_float() {
+        text.get_float().to_string()
+    } else if text.is_bool() {
+        text.get_bool().to_string()
+    } else if text.is_null() {
+        "null".to_string()
+    } else {
+        let mut err = crate::object::object::JSObject::new_typed(
+            crate::object::object::ObjectType::Error,
+        );
+        if let Some(proto) = ctx.get_syntax_error_prototype() {
+            err.prototype = Some(proto);
+        }
+        err.set(
+            ctx.common_atoms.message,
+            JSValue::new_string(ctx.intern("Cannot convert to JSON text")),
+        );
+        let ptr = Box::into_raw(Box::new(err)) as usize;
+        ctx.runtime_mut().gc_heap_mut().track(ptr);
+        ctx.pending_exception = Some(JSValue::new_object(ptr));
+        return JSValue::undefined();
+    };
+
+    match super::json_parser::JsonParser::new(&s).parse_root(ctx) {
+        Ok(_) => {}
+        Err(_) => {
+            let mut err = crate::object::object::JSObject::new_typed(
+                crate::object::object::ObjectType::Error,
+            );
+            if let Some(proto) = ctx.get_syntax_error_prototype() {
+                err.prototype = Some(proto);
+            }
+            err.set(
+                ctx.common_atoms.message,
+                JSValue::new_string(ctx.intern("Invalid JSON text")),
+            );
+            let ptr = Box::into_raw(Box::new(err)) as usize;
+            ctx.runtime_mut().gc_heap_mut().track(ptr);
+            ctx.pending_exception = Some(JSValue::new_object(ptr));
+            return JSValue::undefined();
+        }
+    }
+
+    let mut obj = crate::object::object::JSObject::new();
+    obj.prototype = ctx.get_object_prototype();
+    obj.set_raw_json();
+    obj.set(
+        ctx.intern("rawJSON"),
+        JSValue::new_string(ctx.intern(&s)),
+    );
+    let ptr = Box::into_raw(Box::new(obj)) as usize;
+    ctx.runtime_mut().gc_heap_mut().track(ptr);
+    JSValue::new_object(ptr)
+}
+
+pub fn json_is_raw_json(_ctx: &mut JSContext, args: &[JSValue]) -> JSValue {
+    let v = args.get(0).copied().unwrap_or(JSValue::undefined());
+    JSValue::bool(v.is_object() && v.as_object().is_raw_json())
+}
+
 fn apply_to_json(ctx: &mut JSContext, val: &mut JSValue, key: crate::runtime::atom::Atom) {
     let to_json_fn = get_to_json(ctx, *val);
     if let Some(f) = to_json_fn {
@@ -371,13 +437,7 @@ fn json_walk(ctx: &mut JSContext, reviver: JSValue, holder: JSValue, key: crate:
             None
         };
         let val = val2.unwrap_or(JSValue::undefined());
-        // Create context object for reviver (3rd argument)
-        let context_obj = crate::object::object::JSObject::new();
-        let cptr = Box::into_raw(Box::new(context_obj)) as usize;
-        ctx.runtime_mut().gc_heap_mut().track(cptr);
-        let context_val = JSValue::new_object(cptr);
-        
-        let args = vec![JSValue::new_string(ctx.intern(&key_str)), val, context_val];
+        let args = vec![JSValue::new_string(ctx.intern(&key_str)), val];
         match vm.call_function_with_this(ctx, reviver, holder, &args) {
             Ok(r) => {
                 if ctx.pending_exception.is_some() {
@@ -562,6 +622,15 @@ fn jsvalue_to_json_internal(
     seen: &mut Vec<usize>,
     key: crate::runtime::atom::Atom,
 ) -> Option<String> {
+    if value.is_object() && value.as_object().is_raw_json() {
+        let raw = value
+            .as_object()
+            .get(ctx.intern("rawJSON"))
+            .unwrap_or(JSValue::undefined());
+        if raw.is_string() {
+            return Some(ctx.get_atom_str(raw.get_atom()).to_string());
+        }
+    }
     if value.is_null() {
         return Some("null".to_string());
     }
